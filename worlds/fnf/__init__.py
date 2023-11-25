@@ -44,6 +44,26 @@ class FNFWorld(World):
         super(FNFWorld, self).__init__(world, player)
         self.song_list = [
             "Tutorial",
-            "MILF",
+            "Bopeebo", 
+            "Fresh", 
+            "Dad Battle",
+            "Spookeez", 
+            "South", 
+            "Monster",
+            "Pico", 
+            "Philly Nice", 
+            "Blammed",
+            "Satin Panties", 
+            "High", 
+            "Milf",
+            "Cocoa", 
+            "Eggnog", 
+            "Winter Horrorland",
+            "Senpai", 
+            "Roses", 
+            "Thorns",
+            "Ugh", 
+            "Guns", 
+            "Stress"
             # whatever other songs
         ]
