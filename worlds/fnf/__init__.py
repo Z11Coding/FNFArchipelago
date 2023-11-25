@@ -11,7 +11,7 @@ class FNFWebWorld(WebWorld):
     bug_report_page = "https://github.com/Yuta12342/Action-Engine/issues"
     setup_en = Tutorial(
         "Mod Setup and Use Guide",
-        "A guide to setting up the Muse Dash Archipelago Mod on your computer.",
+        "A guide to setting up the Funkipelago on your computer.",
         "English",
         "setup_en.md",
         "setup/en",
