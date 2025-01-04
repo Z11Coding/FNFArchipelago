@@ -6,7 +6,8 @@
 import typing
 
 from BaseClasses import Item, ItemClassification
-from typing import List
+from typing import List, NamedTuple, Optional, Union
+from BaseClasses import Item, ItemClassification
 
 class FNFBaseList:
     baseSongs: List[str] = [
@@ -41,43 +42,47 @@ class FNFBaseList:
             'Beat Battle',
             'Beat Battle 2'
         ]
+    items: List[str] = [
+        "Shield", "Max HP Up",
+        "Note Checks", "Song Checks",
+        "Blue Balls Curse", "Ghost Chat", "SvC Effect", "Tutorial Trap", "Fake Transition"
+    ]
 
-items: List[str] = [
-    "Shield", "Max HP Up",
-    "Note Checks", "Song Checks",
-    "Blue Balls Curse", "Ghost Chat", "SvC Effect", "Tutorial Trap", "Fake Transition"
-]
+    item_groups = {
+        "Helpers": ["Shield", "Max HP Up"],
+        "Targets": ["Note Checks", "Song Checks"],
+        "Traps": ["Blue Balls Curse", "Ghost Chat", "SvC Effect", "Tutorial Trap", "Fake Transition"]
+    }
+    # This is gonna drive me insane
+    globalSongList: List[str] = [
+        "Tutorial",
+        "Bopeebo", "Fresh", "Dad Battle",
+        "Spookeez", "South", "Monster",
+        "Pico", "Philly Nice", "Blammed",
+        "Satin Panties", "High", "Milf",
+        "Cocoa", "Eggnog", "Winter Horrorland",
+        "Senpai", "Roses", "Thorns",
+        "Ugh", "Guns", "Stress",
+        "Darnell", "Lit Up", "2Hot", "Blazin",
+        "Darnell (BF Mix)"
+    ]
 
+    # This is gonna drive me insane
+    localSongList: List[str] = []
 
-item_groups = {
-    "Helpers": ["Shield", "Max HP Up"],
-    "Targets": ["Note Checks", "Song Checks"],
-    "Traps":   ["Blue Balls Curse", "Ghost Chat", "SvC Effect", "Tutorial Trap", "Fake Transition"]
-}
-
-item_table = {
-    item: 690000 + x for x, item in enumerate(items)
-}
-
+class SongData(NamedTuple):
+    """Special data container to contain the metadata of each song to make filtering work."""
+    code: Optional[int]
 
 class FunkinItem(Item):
-    game = "Friday Night Funkin"
-    type: str
+    game: str = "Friday Night Funkin"
 
-    def __init__(self, name, classification, code, player):
-        super(FunkinItem, self).__init__(
-            name, classification, code, player)
+    def __init__(self, name: str, player: int, data: Optional[int]) -> None:
+        super().__init__(name, ItemClassification.progression, data, player)
 
-        if code is None:
-            self.type = "Event"
-        elif name in item_groups["Traps"]:
-            self.type = "Trap"
-            self.classification = ItemClassification.trap
-        elif name in item_groups["Targets"]:
-            self.type = "Target"
-            self.classification = ItemClassification.progression
-        elif name in item_groups["Helpers"]:
-            self.type = "Helper"
-            self.classification = ItemClassification.useful
-        else:
-            self.type = "Other"
+
+class FunkinFixedItem(Item):
+    game: str = "Friday Night Funkin"
+
+    def __init__(self, name: str, classification: ItemClassification, code: Optional[int], player: int) -> None:
+        super().__init__(name, classification, code, player)

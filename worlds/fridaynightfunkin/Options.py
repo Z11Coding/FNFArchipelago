@@ -4,8 +4,8 @@
 # https://opensource.org/licenses/MIT
 
 from dataclasses import dataclass
-from Options import Toggle, OptionSet, Range, PerGameCommonOptions, OptionGroup, DeathLink
-from Items import FNFBaseList
+from Options import Toggle, OptionSet, OptionList, Range, PerGameCommonOptions, OptionGroup, DeathLink
+from .Items import FNFBaseList
 class AllowMods(Toggle):
     """Enables the ability to use mods for your run. 
     (Should be kept off if you don't have any mods.)
@@ -35,7 +35,7 @@ class UnlockMethod(OptionSet):
     valid_keys = ["Note Checks", "Song Completion"]
     default = "Note Checks"
 
-class songList(OptionSet):
+class songList(OptionList):
     """The list of songs that will be added to the game"""
     display_name = "Song List"
     valid_keys = []
@@ -45,56 +45,56 @@ class trapAmount(Range):
     """The list of songs that will be added to the game"""
     display_name = "Trap Weight"
     range_start = 0
-    range_end = 1367
+    range_end = 35
     default = 15
 
 class bbcWeight(Range):
     """The amount of BBC (haha very funny yuta) in a run"""
     display_name = "Blue Balls Curse Trap Weight"
     range_start = 0
-    range_end = 87
+    range_end = 35
     default = 15
 
 class ghostChatWeight(Range):
     """The amount of Ghost Chat Traps in a run"""
     display_name = "Ghost Chat Trap Weight"
     range_start = 0
-    range_end = 844
+    range_end = 35
     default = 15
 
 class svcWeight(Range):
     """The amount of Ghost Chat Traps in a run"""
     display_name = "SvC Effect Trap Weight"
     range_start = 0
-    range_end = 132
+    range_end = 35
     default = 15
 
 class tutorialWeight(Range):
     """The amount of Tutorial Traps in a run"""
     display_name = "Tutorial Trap Weight"
     range_start = 0
-    range_end = 369
+    range_end = 35
     default = 15
 
 class fakeTransWeight(Range):
     """The amount of Fake Transition Traps in a run"""
     display_name = "Fake Transition Trap Weight"
     range_start = 0
-    range_end = 38
+    range_end = 35
     default = 15
 
 class shieldWeight(Range):
     """The amount of Shield in a run"""
     display_name = "Shield Item Weight"
     range_start = 0
-    range_end = 38
+    range_end = 35
     default = 15
 
 class MHPWeight(Range):
     """The amount of Shield in a run"""
     display_name = "Max HP Up Item Weight"
     range_start = 0
-    range_end = 38
+    range_end = 35
     default = 15
 
 class ChartModChangeChance(Range):
@@ -103,17 +103,38 @@ class ChartModChangeChance(Range):
     """
     display_name = "Chart Modifier Trap Count"
     range_start = 0
-    range_end = 18
+    range_end = 35
     default = 15
 
-option_groups = [
+
+class TicketPercentage(Range):
+    """
+    How many tickets you need to collect based on the number of songs.
+    Like Muse Dash, Higher numbers leads to more consistent game lengths, but will cause individual music sheets to be less important.
+    """
+    range_start = 10
+    range_end = 50
+    default = 30
+    display_name = "Ticket Percentage"
+
+
+class TicketWinPercentage(Range):
+    """The percentage of tickets in the item pool that are needed to unlock the winning song."""
+    range_start = 50
+    range_end = 100
+    default = 80
+    display_name = "Tickets Needed to Win"
+
+fnf_option_groups = [
     OptionGroup("Base Settings", [
         AllowMods,
         SongStarter,
         UnlockType,
         UnlockMethod,
         songList,
-        DeathLink
+        DeathLink,
+        TicketPercentage,
+        TicketWinPercentage
     ]),
     OptionGroup("Traps", [
         trapAmount,
@@ -132,10 +153,19 @@ option_groups = [
 @dataclass
 class FunkinOptions(PerGameCommonOptions):
     allow_mods: AllowMods
-    starting_songs: SongStarter
+    starting_song: SongStarter
     chart_modifier_change_chance: ChartModChangeChance
     unlock_type: UnlockType
     unlock_method: UnlockMethod
     songList: songList
     trapAmount: trapAmount
-    trapAmount: trapAmount
+    bbcWeight: bbcWeight
+    ghostChatWeight: ghostChatWeight
+    svcWeight: svcWeight
+    tutorialWeight: tutorialWeight
+    fakeTransWeight: fakeTransWeight
+    shieldWeight: shieldWeight
+    MHPWeight: MHPWeight
+    death_link: DeathLink
+    ticket_percentage: TicketPercentage
+    ticket_win_percentage: TicketWinPercentage
