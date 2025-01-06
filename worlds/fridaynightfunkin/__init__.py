@@ -184,12 +184,11 @@ class FunkinWorld(World):
         self.random.shuffle(all_selected_locations)
 
         # Adds 1 item locations per song to the menu region.
-        while len(all_selected_locations) > 0:
-            name = all_selected_locations[0]
+        for i in range(0, (len(all_selected_locations))):
+            name = all_selected_locations[i]
             loc1 = FunkinLocation(self.player, name, self.fnfUtil.song_locations[name], menu_region)
             loc1.access_rule = lambda state, place=name: state.has(place, self.player)
             menu_region.locations.append(loc1)
-            all_selected_locations.remove(name)
 
     def create_song_pool(self, available_song_keys: List[str]):
         if self.options.starting_song.value != "":
@@ -220,8 +219,11 @@ class FunkinWorld(World):
         song_keys_in_pool = FNFBaseList.localSongList.copy()
         item_count = self.get_ticket_count()
 
+        '''
+        I'll figure this out eventually
         # First add all goal song tokens
-
+        for _ in range(0, item_count):
+            self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))'''
 
         # Then add 1 copy of every song
         item_count += len(FNFBaseList.localSongList)
@@ -270,8 +272,10 @@ class FunkinWorld(World):
             self.multiworld.itempool.append(item)
 
     def set_rules(self) -> None:
+        '''self.multiworld.completion_condition[self.player] = lambda state: \
+            state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())'''
         self.multiworld.completion_condition[self.player] = lambda state: \
-            state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())
+            state.has('2Hot', self.player, 1)
 
     def get_trap_count(self) -> int:
         multiplier = self.options.trapAmount.value / 100.0

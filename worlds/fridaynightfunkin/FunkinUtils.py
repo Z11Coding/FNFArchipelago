@@ -1,13 +1,6 @@
 from collections import ChainMap
-from typing import Dict, List, Set, Optional, NamedTuple
-from .Items import FNFBaseList
-
-class SongData(NamedTuple):
-    """
-        Special data container to contain the metadata of each song to make filtering work.
-        yes I stole this from muse dash. leave me alone im trying ;_;
-    """
-    code: Optional[int]
+from typing import Dict, List
+from .Items import FNFBaseList, SongData
 
 class FunkinUtils:
     STARTING_CODE = 6900000
@@ -45,7 +38,6 @@ class FunkinUtils:
         "Max HP Up": 3
     }
 
-
     item_names_to_id: ChainMap = ChainMap({}, filler_items, trap_items)
     location_names_to_id: ChainMap = ChainMap({}, song_locations)
 
@@ -66,11 +58,17 @@ class FunkinUtils:
             self.loc_id_by_index.append(location_id_index)
             location_id_index += 1
 
+        # It doesn't work without this?????? why?????
+        for name in self.song_items.keys():
+            self.song_locations[f"{name}"] = location_id_index
+            self.loc_id_by_index.append(location_id_index)
+            location_id_index += 1
+
     def get_songs_map(self) -> List[str]:
         """Literally just shoves the songs into a list."""
         filtered_list = []
 
-        for songKey, songData in FNFBaseList.localSongList:
+        for songKey in FNFBaseList.localSongList:
             filtered_list.append(songKey)
 
         return filtered_list

@@ -1,13 +1,8 @@
-# Copyright (c) 2022 FelicitusNeko
-#
-# This software is released under the MIT License.
-# https://opensource.org/licenses/MIT
-
-import typing
-
-from BaseClasses import Item, ItemClassification
 from typing import List, NamedTuple, Optional, Union
 from BaseClasses import Item, ItemClassification
+
+class SongData(NamedTuple):
+    code: Optional[int]
 
 class FNFBaseList:
     baseSongs: List[str] = [
@@ -70,15 +65,11 @@ class FNFBaseList:
     # This is gonna drive me insane
     localSongList: List[str] = []
 
-class SongData(NamedTuple):
-    """Special data container to contain the metadata of each song to make filtering work."""
-    code: Optional[int]
-
 class FunkinItem(Item):
     game: str = "Friday Night Funkin"
 
-    def __init__(self, name: str, player: int, data: Optional[int]) -> None:
-        super().__init__(name, ItemClassification.progression, data, player)
+    def __init__(self, name: str, player: int, data: Union[SongData]) -> None:
+        super().__init__(name, ItemClassification.progression, data.code, player)
 
 
 class FunkinFixedItem(Item):
