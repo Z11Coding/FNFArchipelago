@@ -3,13 +3,15 @@ import sys
 import ast
 import Utils
 from typing import Any, List, Dict
-from worlds.fridaynightfunkin import FNFBaseList, FunkinUtils
+from worlds.fridaynightfunkin import FNFBaseList, FunkinUtils, FunkinWorld
 
 curPlayer: int = 0
 def extract_mod_data() -> Dict[int, List[str]]:
     """
     Extracts mod data from YAML files and converts it to a list of dictionaries.
     """
+
+    curPlayer = FunkinWorld.player
 
     user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
     folder_path = sys.argv[sys.argv.index("--player_files_path") + 1] if "--player_files_path" in sys.argv else user_path
@@ -47,7 +49,7 @@ def extract_mod_data() -> Dict[int, List[str]]:
                                 songsList2ohboyherewego = item.split(':')
                                 falseSongList = str(songsList2ohboyherewego[1][2:-1])
                                 trueSongList.append(falseSongList)
-                                FNFBaseList.localSongList[curPlayer] = trueSongList
+                                FNFBaseList.localSongList[curPlayer] = falseSongList
                                 print('Songs for player ' + str(curPlayer) + ": " + str(trueSongList))
 
 
