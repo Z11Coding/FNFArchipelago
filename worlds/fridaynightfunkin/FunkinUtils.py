@@ -47,17 +47,34 @@ class FunkinUtils:
 
     item_names_to_id = ChainMap({SHOW_TICKET_NAME: SHOW_TICKET_CODE}, filler_items, trap_items, song_items)
     location_names_to_id = ChainMap(song_locations)
-    def __init__(self, player) -> None:
+    def __init__(self) -> None:
         item_id_index = self.STARTING_CODE + (len(FNFBaseList.localSongList.keys()) + 100)
         self.item_names_to_id = ChainMap({self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, self.filler_items, self.trap_items, self.song_items)
         self.location_names_to_id = ChainMap(self.song_locations)
 
-        mod_data = extract_mod_data()
 
-        for song in mod_data[curPlayer]:
-            song_name = song
-            self.song_items[song_name] = SongData(item_id_index, False, song_name)
-            item_id_index += 1
+
+    def get_songs_map(self) -> List[str]:
+        """Literally just shoves the songs into a list."""
+        filtered_list = []
+
+        for songKey in self.song_items.keys():
+            filtered_list.append(songKey)
+            print(songKey)
+
+        return filtered_list
+    
+    def get_mods(self, player: int, item_id_index):
+        """
+        Purpose: Mod stuff.
+        """
+        mod_data = extract_mod_data(player)
+
+        for players in mod_data:
+            for song in mod_data[players]:
+                song_name = song
+                self.song_items[song_name] = SongData(item_id_index, False, song_name)
+                item_id_index += 1
 
         self.item_names_to_id.update({name: data.code for name, data in self.song_items.items()})
 
@@ -71,13 +88,3 @@ class FunkinUtils:
             self.song_locations[f"{name}"] = location_id_index
             location_id_index += 1
         print(self.song_items)
-
-    def get_songs_map(self) -> List[str]:
-        """Literally just shoves the songs into a list."""
-        filtered_list = []
-
-        for songKey in self.song_items.keys():
-            filtered_list.append(songKey)
-            print(songKey)
-
-        return filtered_list

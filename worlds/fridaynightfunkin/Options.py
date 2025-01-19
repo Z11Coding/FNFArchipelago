@@ -22,7 +22,7 @@ class SongStarter(OptionSet):
     Any song will work. Or none at all if that's your thing.)"""
     display_name = "Starting Songs"
     valid_keys = [song for song in FNFBaseList.baseSongList]
-    default = "Bopeebo"
+    default = "nothing"
 
 
 class UnlockType(OptionSet):

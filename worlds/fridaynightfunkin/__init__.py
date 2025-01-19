@@ -54,7 +54,9 @@ class FunkinWorld(World):
     songList: List[str]
 
 
-    fnfUtil = FunkinUtils(self.player)
+
+
+    fnfUtil = FunkinUtils()
     filler_item_names = list(fnfUtil.filler_item_weights.keys())
     filler_item_weights = list(fnfUtil.filler_item_weights.values())
     item_name_to_id = {name: code for name, code in fnfUtil.item_names_to_id.items()}
@@ -62,6 +64,7 @@ class FunkinWorld(World):
 
     def __init__(self, multiworld: MultiWorld, player: int):
         super(FunkinWorld, self).__init__(multiworld, player)
+        self.fnfUtil.get_mods(self.player, self.fnfUtil.STARTING_CODE)
         self.mods_enabled = AllowMods.default
         self.starting_song = SongStarter.default
         self.unlock_type = UnlockType.default
@@ -194,27 +197,37 @@ class FunkinWorld(World):
             menu_region.locations.append(loc1)
 
     def create_song_pool(self, available_song_keys: List[str]):
-        startingSong = self.fnfUtil.get_songs_map()[self.random.randrange(0, len(self.fnfUtil.get_songs_map()))]
-        FNFBaseList.localSongList[self.player].remove(startingSong)
-        self.multiworld.push_precollected(self.create_item(startingSong))
+        for stuff in FNFBaseList.localSongList:
+            if stuff == self.player and self.starting_song == "":
+                startingSong = FNFBaseList.localSongList[stuff][self.random.randrange(0, len(FNFBaseList.localSongList[stuff]))]
+
+        for stuff in FNFBaseList.localSongList:
+            print("Stuff: " + str(stuff))
+
+
+        for thing in FNFBaseList.localSongList:
+            if self.player == thing:
+                self.starting_song = FNFBaseList.localSongList[thing][self.random.randrange(0, len(FNFBaseList.localSongList[thing]))]
+                FNFBaseList.localSongList[thing].remove(self.starting_song)
+                self.multiworld.push_precollected(self.create_item(self.starting_song))
 
         if self.options.starting_song.value != "":
             starting_song_count = 1
         else:
             starting_song_count = 0
         self.random.shuffle(available_song_keys)
-        song_count = len(self.fnfUtil.get_songs_map())
+        song_count = len(FNFBaseList.localSongList[self.player])
         # choose a random victory song from the available songs
         chosen_song = self.random.randrange(0, len(available_song_keys))
         if chosen_song < song_count:
-            self.victory_song_name = self.fnfUtil.get_songs_map()[chosen_song]
-            del self.fnfUtil.get_songs_map()[chosen_song]
+            self.victory_song_name = FNFBaseList.localSongList[self.player][chosen_song]
+            del FNFBaseList.localSongList[self.player][chosen_song]
         else:
-            self.victory_song_name = available_song_keys[chosen_song - song_count]
-            del available_song_keys[chosen_song - song_count]
+            self.victory_song_name = FNFBaseList.localSongList[self.player][chosen_song - song_count]
+            del FNFBaseList.localSongList[self.player][chosen_song - song_count]
 
         # Then attempt to fulfill any remaining songs for interim songs
-        if len(self.fnfUtil.get_songs_map()) < song_count:
+        if len(FNFBaseList.localSongList[self.player]) < song_count:
             for _ in range(0, len(self.fnfUtil.get_songs_map())):
                 if len(available_song_keys) <= 0:
                     break
