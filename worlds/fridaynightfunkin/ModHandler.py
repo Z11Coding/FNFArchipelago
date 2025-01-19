@@ -46,13 +46,13 @@ def extract_mod_data() -> Dict[int, List[str]]:
                                 curPlayer =+ 1
                                 songsList2ohboyherewego = item.split(':')
                                 falseSongList = str(songsList2ohboyherewego[1][2:-1])
-                                trueSongList = falseSongList.split(',')
+                                trueSongList.append(falseSongList)
+                                FNFBaseList.localSongList[curPlayer] = trueSongList
                                 print('Songs for player ' + str(curPlayer) + ": " + str(trueSongList))
 
 
     total = len(trueSongList)
     print(f"Found {total} songs")
-    FNFBaseList.localSongList[curPlayer] = trueSongList
     return FNFBaseList.localSongList
 
 def get_dict(mod_data, client):
