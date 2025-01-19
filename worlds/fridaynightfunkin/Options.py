@@ -6,8 +6,10 @@
 from dataclasses import dataclass
 from Options import Toggle, OptionSet, OptionList, Range, PerGameCommonOptions, OptionGroup, DeathLink
 from .Items import FNFBaseList
+
+
 class AllowMods(Toggle):
-    """Enables the ability to use mods for your run. 
+    """Enables the ability to use mods for your run.
     (Should be kept off if you don't have any mods.)
     """
     display_name = "Enable Mods"
@@ -16,11 +18,12 @@ class AllowMods(Toggle):
 
 class SongStarter(OptionSet):
     """The song you wish to start with.
-    (Tutorial is recommended, but not required. 
+    (Tutorial is recommended, but not required.
     Any song will work. Or none at all if that's your thing.)"""
     display_name = "Starting Songs"
-    valid_keys = [song for song in FNFBaseList.baseSongs]
-    default = "Tutorial"
+    valid_keys = [song for song in FNFBaseList.baseSongList]
+    default = "Bopeebo"
+
 
 class UnlockType(OptionSet):
     """The way you wish to unlock songs."""
@@ -32,70 +35,79 @@ class UnlockType(OptionSet):
 class UnlockMethod(OptionSet):
     """The way you wish to get checks."""
     display_name = "Check Method"
-    valid_keys = ["Note Checks", "Song Completion"]
+    valid_keys = ["Note Checks", "Song Completion", "Both"]
     default = "Note Checks"
+
 
 class songList(OptionList):
     """The list of songs that will be added to the game"""
     display_name = "Song List"
-    valid_keys = []
-    default = []
+    default = FNFBaseList.baseSongList.copy()
+
 
 class trapAmount(Range):
-    """The list of songs that will be added to the game"""
+    """The amount of traps that will be added to the game"""
     display_name = "Trap Weight"
     range_start = 0
-    range_end = 35
-    default = 15
+    range_end = 60
+    default = 10
+
 
 class bbcWeight(Range):
     """The amount of BBC (haha very funny yuta) in a run"""
     display_name = "Blue Balls Curse Trap Weight"
     range_start = 0
-    range_end = 35
-    default = 15
+    range_end = 10
+    default = 10
+
 
 class ghostChatWeight(Range):
     """The amount of Ghost Chat Traps in a run"""
     display_name = "Ghost Chat Trap Weight"
     range_start = 0
-    range_end = 35
-    default = 15
+    range_end = 10
+    default = 10
+
 
 class svcWeight(Range):
     """The amount of Ghost Chat Traps in a run"""
     display_name = "SvC Effect Trap Weight"
     range_start = 0
-    range_end = 35
-    default = 15
+    range_end = 10
+    default = 10
+
 
 class tutorialWeight(Range):
     """The amount of Tutorial Traps in a run"""
     display_name = "Tutorial Trap Weight"
     range_start = 0
-    range_end = 35
-    default = 15
+    range_end = 10
+    default = 10
+
 
 class fakeTransWeight(Range):
     """The amount of Fake Transition Traps in a run"""
     display_name = "Fake Transition Trap Weight"
     range_start = 0
-    range_end = 35
-    default = 15
+    range_end = 10
+    default = 10
+
 
 class shieldWeight(Range):
     """The amount of Shield in a run"""
     display_name = "Shield Item Weight"
     range_start = 0
-    range_end = 35
-    default = 15
+    range_end = 10
+    default = 10
+
 
 class MHPWeight(Range):
     """The amount of Shield in a run"""
     display_name = "Max HP Up Item Weight"
     range_start = 0
-    range_end = 35
-    default = 15
+    range_end = 10
+    default = 10
+
 
 class ChartModChangeChance(Range):
     """
@@ -103,8 +115,8 @@ class ChartModChangeChance(Range):
     """
     display_name = "Chart Modifier Trap Count"
     range_start = 0
-    range_end = 35
-    default = 15
+    range_end = 10
+    default = 10
 
 
 class TicketPercentage(Range):
@@ -125,6 +137,19 @@ class TicketWinPercentage(Range):
     default = 80
     display_name = "Tickets Needed to Win"
 
+class gradeNeeded(OptionList):
+    """The percentage of tickets in the item pool that are needed to unlock the winning song."""
+    valid_keys = ["Any", "MFC", "SFC", "GFC", "AFC", "FC", "SDCB"]
+    default = "Any"
+    display_name = "Grade Required"
+
+class accuracyNeeded(OptionList):
+    """The percentage of tickets in the item pool that are needed to unlock the winning song."""
+    valid_keys = ["Any", "P", "X", "X-", "SS+", "SS", "SS-", "S+", "S", "S-", "A+", "A", "A-", "B", "C", "D", "E",]
+    default = "Any"
+    display_name = "Grade Required"
+
+
 fnf_option_groups = [
     OptionGroup("Base Settings", [
         AllowMods,
@@ -134,7 +159,9 @@ fnf_option_groups = [
         songList,
         DeathLink,
         TicketPercentage,
-        TicketWinPercentage
+        TicketWinPercentage,
+        gradeNeeded,
+        accuracyNeeded
     ]),
     OptionGroup("Traps", [
         trapAmount,
@@ -152,7 +179,7 @@ fnf_option_groups = [
 
 @dataclass
 class FunkinOptions(PerGameCommonOptions):
-    allow_mods: AllowMods
+    mods_enabled: AllowMods
     starting_song: SongStarter
     chart_modifier_change_chance: ChartModChangeChance
     unlock_type: UnlockType
@@ -166,6 +193,8 @@ class FunkinOptions(PerGameCommonOptions):
     fakeTransWeight: fakeTransWeight
     shieldWeight: shieldWeight
     MHPWeight: MHPWeight
-    death_link: DeathLink
+    deathlink: DeathLink
     ticket_percentage: TicketPercentage
     ticket_win_percentage: TicketWinPercentage
+    graderequirement: gradeNeeded
+    accrequirement: accuracyNeeded

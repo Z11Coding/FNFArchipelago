@@ -1,7 +1,11 @@
 from collections import ChainMap
-from typing import Dict, List
-from .Items import FNFBaseList, SongData
-
+from typing import Dict, List, ClassVar, Type
+from .Items import SongData, FNFBaseList
+from .Options import *
+from .ModHandler import (
+    extract_mod_data,
+    curPlayer,
+)
 class FunkinUtils:
     STARTING_CODE = 6900000
 
@@ -11,6 +15,8 @@ class FunkinUtils:
     song_items: Dict[str, SongData] = {}
     song_locations: Dict[str, int] = {}
     loc_id_by_index: List[int] = []
+
+    songList: List[str] = []
 
     trap_items: Dict[str, int] = {
         "Blue Balls Curse": STARTING_CODE + 1,
@@ -38,16 +44,18 @@ class FunkinUtils:
         "Max HP Up": 3
     }
 
-    item_names_to_id: ChainMap = ChainMap({}, filler_items, trap_items)
-    location_names_to_id: ChainMap = ChainMap({}, song_locations)
-
+    item_names_to_id = ChainMap({SHOW_TICKET_NAME: SHOW_TICKET_CODE}, filler_items, trap_items, song_items)
+    location_names_to_id = ChainMap(song_locations)
     def __init__(self) -> None:
-        self.item_names_to_id[self.SHOW_TICKET_NAME] = self.SHOW_TICKET_CODE
+        item_id_index = self.STARTING_CODE + (len(FNFBaseList.localSongList.keys()) + 100)
+        self.item_names_to_id = ChainMap({self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, self.filler_items, self.trap_items, self.song_items)
+        self.location_names_to_id = ChainMap(self.song_locations)
 
-        item_id_index = self.STARTING_CODE + 50
-        for song in FNFBaseList.globalSongList:
+        mod_data = extract_mod_data()
+
+        for song in mod_data[curPlayer]:
             song_name = song
-            self.song_items[song_name] = SongData(item_id_index)
+            self.song_items[song_name] = SongData(item_id_index, False, song_name)
             item_id_index += 1
 
         self.item_names_to_id.update({name: data.code for name, data in self.song_items.items()})
@@ -55,20 +63,20 @@ class FunkinUtils:
         location_id_index = self.STARTING_CODE
         for name in self.song_items.keys():
             self.song_locations[f"{name}"] = location_id_index
-            self.loc_id_by_index.append(location_id_index)
             location_id_index += 1
 
         # It doesn't work without this?????? why?????
         for name in self.song_items.keys():
             self.song_locations[f"{name}"] = location_id_index
-            self.loc_id_by_index.append(location_id_index)
             location_id_index += 1
+        print(self.song_items)
 
     def get_songs_map(self) -> List[str]:
         """Literally just shoves the songs into a list."""
         filtered_list = []
 
-        for songKey in FNFBaseList.localSongList:
+        for songKey in self.song_items.keys():
             filtered_list.append(songKey)
+            print(songKey)
 
         return filtered_list

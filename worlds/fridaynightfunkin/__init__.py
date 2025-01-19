@@ -12,6 +12,9 @@ from .Items import FunkinItem, FunkinFixedItem
 from .Locations import FunkinLocation
 from .Options import *
 from .FunkinUtils import FunkinUtils
+from .ModHandler import (
+    curPlayer,
+)
 
 
 class FunkinWeb(WebWorld):
@@ -40,12 +43,6 @@ class FunkinWorld(World):
     game = "Friday Night Funkin"
     web = FunkinWeb()
 
-    fnfUtil = FunkinUtils()
-    filler_item_names = list(fnfUtil.filler_item_weights.keys())
-    filler_item_weights = list(fnfUtil.filler_item_weights.values())
-
-    item_name_to_id = {name: code for name, code in fnfUtil.item_names_to_id.items()}
-    location_name_to_id = {name: code for name, code in fnfUtil.location_names_to_id.items()}
     required_client_version = (0, 5, 0)
     topology_present = False
     options: FunkinOptions
@@ -56,13 +53,19 @@ class FunkinWorld(World):
     location_count: int
     songList: List[str]
 
+
+    fnfUtil = FunkinUtils()
+    filler_item_names = list(fnfUtil.filler_item_weights.keys())
+    filler_item_weights = list(fnfUtil.filler_item_weights.values())
+    item_name_to_id = {name: code for name, code in fnfUtil.item_names_to_id.items()}
+    location_name_to_id = {name: code for name, code in fnfUtil.location_names_to_id.items()}
+
     def __init__(self, multiworld: MultiWorld, player: int):
         super(FunkinWorld, self).__init__(multiworld, player)
-        self.allow_mods = AllowMods.default
+        self.mods_enabled = AllowMods.default
         self.starting_song = SongStarter.default
         self.unlock_type = UnlockType.default
         self.unlock_method = UnlockMethod.default
-        FNFBaseList.localSongList = songList.default
         self.trapAmount = trapAmount.default
         self.bbc_weight = bbcWeight.default
         self.ghost_chat_weight = ghostChatWeight.default
@@ -74,6 +77,33 @@ class FunkinWorld(World):
         self.chart_modifier_change_chance = ChartModChangeChance.default
         self.ticket_percentage = TicketPercentage.default
         self.ticket_win_percentage = TicketWinPercentage.default
+        self.graderequirement = gradeNeeded.default
+        self.accrequirement = accuracyNeeded.default
+        ModHandler.curPlayer = self.player
+
+    def generate_early(self):
+        # Basic Settings
+        self.mods_enabled = self.options.mods_enabled.value
+        self.starting_song = self.options.starting_song.value
+        self.unlock_type = self.options.unlock_type.value
+        self.unlock_method = self.options.unlock_method.value
+        # Trap Settings
+        self.trapAmount = self.options.trapAmount.value
+        self.bbc_weight = self.options.bbcWeight.value
+        self.ghost_chat_weight = self.options.ghostChatWeight.value
+        self.svc_effect_weight = self.options.svcWeight.value
+        self.tutorial_trap_weight = self.options.tutorialWeight.value
+        self.shield_weight = self.options.shieldWeight.value
+        self.max_hp_weight = self.options.MHPWeight.value
+        self.chart_modifier_change_chance = self.options.chart_modifier_change_chance.value
+        self.ticket_percentage = self.options.ticket_percentage.value
+        self.ticket_win_percentage = self.options.ticket_win_percentage.value
+        self.graderequirement = self.options.graderequirement.value
+        self.accrequirement = self.options.accrequirement.value
+        #self.e_weight = self.options.trapAmount.value later
+        #self.fnfUtil.initSongItems()
+        available_song_keys = self.fnfUtil.get_songs_map()
+        self.create_song_pool(available_song_keys)
 
     def create_item(self, name: str) -> Item:
         if name == self.fnfUtil.SHOW_TICKET_NAME:
@@ -149,38 +179,11 @@ class FunkinWorld(World):
                 traps.append(trapString[num])
         return traps
 
-    def generate_early(self):
-        # Basic Settings
-        self.allow_mods = self.options.allow_mods.value
-        self.starting_song = self.options.starting_song.value
-        self.unlock_type = self.options.unlock_type.value
-        self.unlock_method = self.options.unlock_method.value
-        FNFBaseList.localSongList = FNFBaseList.globalSongList.copy()
-        # Trap Settings
-        self.trapAmount = self.options.trapAmount.value
-        self.bbc_weight = self.options.bbcWeight.value
-        self.ghost_chat_weight = self.options.ghostChatWeight.value
-        self.svc_effect_weight = self.options.svcWeight.value
-        self.tutorial_trap_weight = self.options.tutorialWeight.value
-        self.shield_weight = self.options.shieldWeight.value
-        self.max_hp_weight = self.options.MHPWeight.value
-        self.chart_modifier_change_chance = self.options.chart_modifier_change_chance.value
-        self.ticket_percentage = self.options.ticket_percentage.value
-        self.ticket_win_percentage = self.options.ticket_win_percentage.value
-        #self.e_weight = self.options.trapAmount.value later
-        # The minimum amount of songs to make an ok rando would be Starting Songs + 10 interim songs + Goal song.
-        # - Interim songs being equal to max starting song count.
-        # Note: The worst settings still allow 25 songs (Streamer Mode + No DLC).
-        available_song_keys = FNFBaseList.localSongList
-        self.create_song_pool(available_song_keys)
-        for song in self.starting_song:
-            self.multiworld.push_precollected(self.create_item(song))
-
     def create_regions(self):
         menu_region = Region("Freeplay", self.player, self.multiworld)
         self.multiworld.regions += [menu_region]
 
-        all_selected_locations:List[str] = FNFBaseList.localSongList.copy()
+        all_selected_locations:List[str] = self.fnfUtil.get_songs_map().copy()
         self.random.shuffle(all_selected_locations)
 
         # Adds 1 item locations per song to the menu region.
@@ -191,43 +194,46 @@ class FunkinWorld(World):
             menu_region.locations.append(loc1)
 
     def create_song_pool(self, available_song_keys: List[str]):
+        startingSong = self.fnfUtil.get_songs_map()[self.random.randrange(0, len(self.fnfUtil.get_songs_map()))]
+        FNFBaseList.localSongList[self.player].remove(startingSong)
+        self.multiworld.push_precollected(self.create_item(startingSong))
+
         if self.options.starting_song.value != "":
             starting_song_count = 1
         else:
             starting_song_count = 0
         self.random.shuffle(available_song_keys)
-        song_count = len(FNFBaseList.localSongList)
+        song_count = len(self.fnfUtil.get_songs_map())
         # choose a random victory song from the available songs
         chosen_song = self.random.randrange(0, len(available_song_keys))
         if chosen_song < song_count:
-            self.victory_song_name = FNFBaseList.localSongList[chosen_song]
-            del FNFBaseList.localSongList[chosen_song]
+            self.victory_song_name = self.fnfUtil.get_songs_map()[chosen_song]
+            del self.fnfUtil.get_songs_map()[chosen_song]
         else:
             self.victory_song_name = available_song_keys[chosen_song - song_count]
             del available_song_keys[chosen_song - song_count]
 
         # Then attempt to fulfill any remaining songs for interim songs
-        if len(FNFBaseList.localSongList) < song_count:
-            for _ in range(0, len(FNFBaseList.localSongList)):
+        if len(self.fnfUtil.get_songs_map()) < song_count:
+            for _ in range(0, len(self.fnfUtil.get_songs_map())):
                 if len(available_song_keys) <= 0:
                     break
-                FNFBaseList.localSongList.append(available_song_keys.pop())
+                self.fnfUtil.get_songs_map().append(available_song_keys.pop())
 
-        self.location_count = len(FNFBaseList.globalSongList)
+        self.location_count = len(self.fnfUtil.get_songs_map())
 
     def create_items(self) -> None:
-        song_keys_in_pool = FNFBaseList.localSongList.copy()
+        song_keys_in_pool = self.fnfUtil.get_songs_map().copy()
         item_count = self.get_ticket_count()
 
-        '''
-        I'll figure this out eventually
+        #I'll figure this out eventually
         # First add all goal song tokens
-        for _ in range(0, item_count):
+        '''for _ in range(0, item_count):
             self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))'''
 
         # Then add 1 copy of every song
-        item_count += len(FNFBaseList.localSongList)
-        for song in FNFBaseList.localSongList:
+        item_count += len(self.fnfUtil.get_songs_map())
+        for song in self.fnfUtil.get_songs_map():
             self.multiworld.itempool.append(self.create_item(song))
 
         # Then add all traps, making sure we don't over fill
@@ -274,17 +280,19 @@ class FunkinWorld(World):
     def set_rules(self) -> None:
         '''self.multiworld.completion_condition[self.player] = lambda state: \
             state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())'''
+        '''self.multiworld.get_location(self.victory_song_name, self.player).access_rule = \
+            lambda state: state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())'''
         self.multiworld.completion_condition[self.player] = lambda state: \
-            state.has('2Hot', self.player, 1)
+            state.has(self.victory_song_name, self.player, 1)
 
     def get_trap_count(self) -> int:
         multiplier = self.options.trapAmount.value / 100.0
-        trap_count = len(FNFBaseList.localSongList)
+        trap_count = len(self.fnfUtil.get_songs_map())
         return max(0, floor(trap_count * multiplier))
 
     def get_ticket_count(self) -> int:
         multiplier = self.options.ticket_percentage.value / 100.0
-        song_count = len(FNFBaseList.localSongList)
+        song_count = len(self.fnfUtil.get_songs_map())
         return max(1, floor(song_count * multiplier))
 
     def get_ticket_win_count(self) -> int:
@@ -294,7 +302,10 @@ class FunkinWorld(World):
 
     def fill_slot_data(self):
         return {
-            "deathLink": self.options.death_link.value,
-            "fullSongCount": len(FNFBaseList.localSongList),
+            "deathLink": self.options.deathlink.value,
+            "fullSongCount": len(self.fnfUtil.get_songs_map()),
             "victoryLocation": self.victory_song_name,
+            "ticketWinCount": self.get_ticket_win_count(),
+            "gradeNeeded": self.options.graderequirement.value,
+            "accuracyNeeded": self.options.accrequirement.value,
         }
