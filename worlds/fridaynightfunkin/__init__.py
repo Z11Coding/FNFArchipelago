@@ -316,7 +316,7 @@ class FunkinWorld(World):
     def fill_slot_data(self):
         return {
             "deathLink": self.options.deathlink.value,
-            "fullSongCount": len(self.fnfUtil.get_songs_map()),
+            "fullSongCount": len(FNFBaseList.localSongList[self.player]),
             "victoryLocation": self.victory_song_name,
             "ticketWinCount": self.get_ticket_win_count(),
             "gradeNeeded": self.options.graderequirement.value,
