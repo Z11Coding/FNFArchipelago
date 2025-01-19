@@ -54,7 +54,7 @@ class FunkinWorld(World):
     songList: List[str]
 
 
-    fnfUtil = FunkinUtils()
+    fnfUtil = FunkinUtils(self.player)
     filler_item_names = list(fnfUtil.filler_item_weights.keys())
     filler_item_weights = list(fnfUtil.filler_item_weights.values())
     item_name_to_id = {name: code for name, code in fnfUtil.item_names_to_id.items()}

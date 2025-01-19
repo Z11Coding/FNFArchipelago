@@ -9,6 +9,7 @@ from .ModHandler import (
 class FunkinUtils:
     STARTING_CODE = 6900000
 
+
     SHOW_TICKET_NAME: str = "Ticket"
     SHOW_TICKET_CODE: int = STARTING_CODE
 
@@ -46,7 +47,7 @@ class FunkinUtils:
 
     item_names_to_id = ChainMap({SHOW_TICKET_NAME: SHOW_TICKET_CODE}, filler_items, trap_items, song_items)
     location_names_to_id = ChainMap(song_locations)
-    def __init__(self) -> None:
+    def __init__(self, player) -> None:
         item_id_index = self.STARTING_CODE + (len(FNFBaseList.localSongList.keys()) + 100)
         self.item_names_to_id = ChainMap({self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, self.filler_items, self.trap_items, self.song_items)
         self.location_names_to_id = ChainMap(self.song_locations)
