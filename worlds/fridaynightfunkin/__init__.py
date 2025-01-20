@@ -282,14 +282,15 @@ class FunkinWorld(World):
             state.has(self.victory_song_name, self.player, 1)
 
         for song in self.fnfUtil.get_songs_map():
-            if song not in self.songList:
+            if song not in self.options.songList.value:
+                self.excludedSongs = []
                 self.excludedSongs.append(song)
 
                 for location in self.location_name_to_id:
                     if location in self.excludedSongs:
-                     self.multiworld.exclude_locations.fromkeys(self.excludedSongs, location)
+                     self.multiworld.exclude_locations[location] = location
 
-        print(self.multiworkd.exclude_locations)
+        print(self.multiworld.exclude_locations)
 
 
     def get_trap_count(self) -> int:
