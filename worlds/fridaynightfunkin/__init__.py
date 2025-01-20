@@ -189,24 +189,10 @@ class FunkinWorld(World):
             loc1.access_rule = lambda state, place=name: state.has(place, self.player)
             menu_region.locations.append(loc1)
 
-        for location in self.location_name_to_id:
-            if location not in self.options.songList.value:
-                for item in self.multiworld.itempool:
-                    if item.name == location:
-                        self.get_location(location).place_locked_item(item)
-
-        # for i in range(0, 50):
-        #     name = "Filler" + str(i)
-        #     loc1 = FunkinLocation(self.player, name, len(self.fnfUtil.song_locations) + i, menu_region)
-        #     loc1.access_rule = lambda state, place=name: state.has(place, self.player)
-        #     menu_region.locations.append(loc1)
-
     def create_song_pool(self, available_song_keys: List[str]):
         startingSong = self.fnfUtil.get_songs_map()[self.random.randrange(0, len(self.fnfUtil.get_songs_map()))]
-        available_songs = [song for song in self.fnfUtil.get_songs_map() if song in self.options.songList.value]
-        if available_songs:
-            startingSong = self.random.choice(available_songs)
-            self.multiworld.push_precollected(self.create_item(startingSong))
+        FNFBaseList.localSongList.remove(startingSong)
+        self.multiworld.push_precollected(self.create_item(startingSong))
 
         if self.options.starting_song.value != "":
             starting_song_count = 1
@@ -297,19 +283,12 @@ class FunkinWorld(World):
 
         for song in self.fnfUtil.get_songs_map():
             if song not in self.options.songList.value:
-                self.multiworld.push_precollected(self.create_item(song))
-
-
-        for song in self.fnfUtil.get_songs_map():
-            if song not in self.options.songList.value:
                 self.excludedSongs = []
                 self.excludedSongs.append(song)
 
-
-
-        # for location in self.location_name_to_id:
-        #     if location in self.excludedSongs:
-        #         self.multiworld.get_location(location, self.player).access_rule = lambda state: self.multiworld.state.has(location, self.player) and location in self.options.songList.value
+                for location in self.location_name_to_id:
+                    if location in self.excludedSongs:
+                     self.multiworld.exclude_locations[location] = location
 
         print(self.multiworld.exclude_locations)
 
