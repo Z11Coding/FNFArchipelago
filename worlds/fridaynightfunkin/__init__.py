@@ -59,6 +59,7 @@ class FunkinWorld(World):
 
     def __init__(self, multiworld: MultiWorld, player: int):
         super(FunkinWorld, self).__init__(multiworld, player)
+        self.playable_songs = []
         self.mods_enabled = AllowMods.default
         self.starting_song = SongStarter.default
         self.unlock_type = UnlockType.default
@@ -114,8 +115,32 @@ class FunkinWorld(World):
         if trap:
             return FunkinFixedItem(name, ItemClassification.trap, trap, self.player)
 
+        print("Song list for " + self.player_name + " is " + str(self.options.songList.value))
+
         song = self.fnfUtil.song_items.get(name)
+
         return FunkinItem(name, self.player, song)
+
+    def create_items(self) -> None:
+        self.itemPool = self.multiworld.itempool
+        self.player_songs = self.options.songList.value
+        self.playable_songs = []
+        self.junk = []
+
+        for song in self.multiworld.itempool:
+            for songs in self.player_songs:
+                if song.name == songs:
+                    self.playable_songs.append(song)
+
+        if len(self.itemPool) > len(self.playable_songs):
+            for i, in range(len(self.itemPool) - len(self.playable_songs)):
+                self.junk.append(self.create_item(self.playable_songs[i]))
+
+
+        self.multiworld.itempool = self.playable_songs
+        for junk in self.junk:
+            self.multiworld.itempool.append(junk)
+
 
     def create_event(self, event: str) -> Item:
         return FunkinItem(event, ItemClassification.filler, None, self.player)
@@ -165,6 +190,9 @@ class FunkinWorld(World):
 
     def get_filler_item_name(self) -> str:
         return self.random.choices(self.filler_item_names, self.filler_item_weights)[0]
+
+    def create_filler_item(self) -> Item:
+        return FunkinFixedItem(self.get_filler_item_name(), ItemClassification.filler, None, self.player)
 
     def get_available_traps(self) -> List[str]:
         full_trap_list = self.fnfUtil.trap_items_but_as_an_array_because_python_thats_why.copy()
@@ -272,6 +300,18 @@ class FunkinWorld(World):
             item = self.create_item(song_keys_in_pool[i])
             item.classification = ItemClassification.useful
             self.multiworld.itempool.append(item)
+    #
+    # def pre_fill(self) -> None:
+    #
+    #
+    # def post_fill(self) -> None:
+    #
+    #
+    # def fill_hook(self,
+    #               progitempool: List["Item"],
+    #               usefulitempool: List["Item"],
+    #               filleritempool: List["Item"],
+    #               fill_locations: List["Location"]) -> None:
 
     def set_rules(self) -> None:
         '''self.multiworld.completion_condition[self.player] = lambda state: \
@@ -286,9 +326,10 @@ class FunkinWorld(World):
                 self.excludedSongs = []
                 self.excludedSongs.append(song)
 
-                for location in self.location_name_to_id:
-                    if location in self.excludedSongs:
-                     self.multiworld.exclude_locations[location] = location
+        for location in self.location_name_to_id:
+            for song in self.multiworld.itempool:
+                if location == song and not song.player == self.player:
+                     self.multiworld.itempool[location].classification = ItemClassification.filler
 
         print(self.multiworld.exclude_locations)
 
