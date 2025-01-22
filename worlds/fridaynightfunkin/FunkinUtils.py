@@ -6,6 +6,8 @@ from .ModHandler import (
     extract_mod_data,
 )
 
+from .Yutautil import YutaUtil
+
 class FunkinUtils:
     STARTING_CODE = 6900000
 
@@ -50,6 +52,7 @@ class FunkinUtils:
         item_id_index = self.STARTING_CODE + (len(FNFBaseList.localSongList) + 100)
         self.item_names_to_id = ChainMap({self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, self.filler_items, self.trap_items, self.song_items)
         self.location_names_to_id = ChainMap(self.song_locations)
+
 
         mod_data = extract_mod_data()
 
