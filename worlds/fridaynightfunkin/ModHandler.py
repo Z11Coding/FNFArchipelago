@@ -8,7 +8,7 @@ from .Items import SongData
 from . import FunkinUtils
 from .FunkinUtils import FNFBaseList
 
-def extract_mod_data() -> list[str]:
+def extract_mod_data() -> dict[str, Any]:
     """
     Extracts mod data from YAML files and converts it to a list of dictionaries.
     """
@@ -37,6 +37,7 @@ def extract_mod_data() -> list[str]:
     trueSongList = []
     uniqueSongList: List[str] = []
     dupeSongList: List[str] = []
+    catagorizedSongList: dict[str, list[str]] = {}
 
     for item in os.listdir(folder_path):
         item_path = os.path.join(folder_path, item)
@@ -70,6 +71,7 @@ def extract_mod_data() -> list[str]:
                                 players = player
                                 for song in uniqueSongList:
                                     trueSongList.append(song)
+                                    catagorizedSongList[name] = falseSongList.split(',')
                                 # print(trueSongList)
 
 
@@ -82,7 +84,7 @@ def extract_mod_data() -> list[str]:
 
     for song in trueSongList:
         FNFBaseList.localSongList.append(song)
-    return FNFBaseList.localSongList
+    return catagorizedSongList
 
 def get_dict(mod_data, client):
 

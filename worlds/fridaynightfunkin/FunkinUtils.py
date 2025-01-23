@@ -1,11 +1,12 @@
 from collections import ChainMap
 from typing import Dict, List, ClassVar, Type, Tuple
+
 from .Items import FNFBaseList, SongData
 from .Options import *
 from ..AutoWorld import World
 
 
-from .Yutautil import YutaUtil
+from .Yutautil import YutaUtil, yutautil_CatagorizedMap, yutautil_CollectionUtils, yutautil_ChanceSelector
 
 class FunkinUtils:
     STARTING_CODE = 6900000
@@ -13,9 +14,10 @@ class FunkinUtils:
     SHOW_TICKET_NAME: str = "Ticket"
     SHOW_TICKET_CODE: int = STARTING_CODE
 
-    song_items: Dict[str, SongData] = {}
+    song_items: dict[str, Dict[str, SongData]] = {}
     song_locations: Dict[str, int] = {}
     loc_id_by_index: List[int] = []
+
 
     songList: List[str] = []
 
@@ -52,15 +54,40 @@ class FunkinUtils:
         self.item_names_to_id = ChainMap({self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, self.filler_items, self.trap_items, self.song_items)
         self.location_names_to_id = ChainMap(self.song_locations)
 
+        self.mapthing = yutautil_CatagorizedMap()
+
+        self.haxeThing = YutaUtil.runHaxeFunction("""
+        trace(context);
+        function() { return context; }
+        """, self)
+
+        from . import extract_mod_data
 
         mod_data = extract_mod_data()
 
-        for song in mod_data:
-            song_name = song
-            self.song_items[song_name] = SongData(item_id_index, not song_name in FNFBaseList.baseSongList, song_name)
-            item_id_index += 1
+        # convert dict to CatagorizedMap.
+        for player in mod_data:
+            self.mapthing.add(player, mod_data[player])
+
+        print(self.mapthing.toString())
+
+        iterableMapping = self.mapthing.map.h
+
+        print(iterableMapping)
+
+        for player in iterableMapping:
+            # self.song_items[player] = []
+            for songs in iterableMapping[player]:
+                for song in songs:
+                    print("Player: " + str(player))
+                    print("Song: " + str(song))
+                    song_name = song
+                    self.song_items.update({player: {song_name: SongData(item_id_index, not song_name in FNFBaseList.baseSongList, song_name)}})
+                    item_id_index += 1
 
         self.item_names_to_id.update({name: data.code for name, data in self.song_items.items()})
+        print(self.item_names_to_id)
+        print(yutautil_CollectionUtils.toArray(self.mapthing))
 
         location_id_index = self.STARTING_CODE
         for name in self.song_items.keys():
