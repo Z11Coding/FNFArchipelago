@@ -3,8 +3,10 @@ import sys
 import ast
 import Utils
 from typing import Any, List
+from .Items import SongData
 
-from worlds.fridaynightfunkin import FNFBaseList
+from . import FunkinUtils
+from .FunkinUtils import FNFBaseList
 
 def extract_mod_data() -> list[str]:
     """
@@ -51,6 +53,9 @@ def extract_mod_data() -> list[str]:
                         tempSongList = file_content.split('\n')
 
                         for item in tempSongList:
+                            if "name" in item:
+                                name = item[6:]
+                                print(name)
                             if search_list in item:
                                 songsList2ohboyherewego = item.split(':')
                                 falseSongList = str(songsList2ohboyherewego[1][2:-1])
@@ -60,12 +65,12 @@ def extract_mod_data() -> list[str]:
                                         uniqueSongList.append(song)
                                     else:
                                         dupeSongList.append(song)
-                                        print(song)
+                                        # print(song)
                                 player = players + 1
                                 players = player
                                 for song in uniqueSongList:
                                     trueSongList.append(song)
-                                print(trueSongList)
+                                # print(trueSongList)
 
 
     for i, song in enumerate(trueSongList):
@@ -100,3 +105,24 @@ def get_dict(mod_data, client):
         data_dict = {}
 
     return data_dict
+
+def get_player_specific_ids(mod_data, song_items: dict[str, SongData]):
+
+    song_ids = []  # Initialize an empty list to store song IDs
+
+    if mod_data == "()":
+        return song_ids
+
+    trimmed_data = str(mod_data[1:-1])  # Slicing to remove first and last character
+    data_dict = ast.literal_eval(trimmed_data)
+    # print("trimmed list: " + str(data_dict))
+
+    for songs in data_dict:
+        song_id:str = songs
+        for name, data in song_items.items():
+            if name == song_id:
+                print(name)
+                song_ids.append(data.code)
+
+
+    return song_ids  # Return the list of song IDs
