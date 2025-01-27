@@ -85,21 +85,26 @@ class FunkinUtils:
                     self.song_items.update({player: {song_name: SongData(item_id_index, not song_name in FNFBaseList.baseSongList, song_name)}})
                     item_id_index += 1
 
-        self.item_names_to_id.update({name: data.code for name, data in self.song_items.items()})
+        for player, songs in self.song_items.items():
+            for song_name, data in songs.items():
+                self.item_names_to_id.update({song_name: data.code})
         print(self.item_names_to_id)
         print(yutautil_CollectionUtils.toArray(self.mapthing))
+        print("Done with getting songs")
 
         location_id_index = self.STARTING_CODE
-        for name in self.song_items.keys():
+        for name in self.song_items[player].keys():
             self.song_locations[f"{name}"] = location_id_index
             location_id_index += 1
 
         # It doesn't work without this?????? why?????
-        for name in self.song_items.keys():
+        for name in self.song_items[player].keys():
+            print("Player: " + str(player))
+            print("Song: " + str(name))
             self.song_locations[f"{name}"] = location_id_index
             location_id_index += 1
-        #print(self.song_items)
-
+        print(self.song_items)
+        print(self.song_locations)
     def get_songs_with_settings(self, mods: bool, mod_ids: List[int]) -> Tuple[List[str], List[int]]:
         """Gets a list of all songs that match the filter settings. Difficulty thresholds are inclusive."""
         filtered_list = []

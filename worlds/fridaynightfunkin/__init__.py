@@ -65,7 +65,9 @@ class FunkinWorld(World):
     location_name_to_id = {name: code for name, code in fnfUtil.location_names_to_id.items()}
 
     def __init__(self, multiworld: MultiWorld, player: int):
+        # print("Building FunkinWorld...")
         super(FunkinWorld, self).__init__(multiworld, player)
+        # print("Building FunkinWorld...")
         self.playable_songs = []
         self.mods_enabled = AllowMods.default
         self.starting_song = SongStarter.default
@@ -273,8 +275,15 @@ class FunkinWorld(World):
         menu_region = Region("Freeplay", self.player, self.multiworld)
         self.multiworld.regions += [menu_region]
 
-        all_selected_locations:List[str] = self.songList.copy()
+        print("Preparing for new locations from Song Lists...")
+
+        all_selected_locations:List[str]
+        all_selected_locations = []
+        for song_dict in self.fnfUtil.song_items[self.player_name].values():
+            for song in song_dict:
+                all_selected_locations.append(song)
         self.random.shuffle(all_selected_locations)
+        print(all_selected_locations)
 
         # Adds 1 item locations per song to the menu region.
         for i in range(0, (len(all_selected_locations))):
