@@ -72,11 +72,15 @@ def extract_mod_data() -> dict[str, Any]:
                                 players = player
                                 for song in uniqueSongList:
                                     trueSongList.append(song)
-                                    processedSongList = [song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']') for song in falseSongList.split(',')]
-                                    catagorizedSongList[name] = processedSongList
-                                    # print(trueSongList)
-        for i, song in enumerate(trueSongList):
-            trueSongList[i] = song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']')
+                                    catagorizedSongList[name] = falseSongList.split(',')
+                                for name in catagorizedSongList:
+                                    print(f"Listing Songs for {name}\n{catagorizedSongList[name]}")
+                                    for song in catagorizedSongList[name]:
+                                        song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']')
+                                        print(song + " is apart of " + name + "'s game!")
+                                # print(trueSongList)
+    for i, song in enumerate(trueSongList):
+        trueSongList[i] = song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']')
 
     total = len(trueSongList)
     print(f"Found {total} songs for {players} players.")
