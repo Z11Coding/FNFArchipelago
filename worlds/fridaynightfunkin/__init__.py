@@ -58,7 +58,7 @@ class FunkinWorld(World):
     songList: List[str]
     excludedSongs: List[str]
 
-    fnfUtil = FunkinUtils(extract_mod_data)
+    fnfUtil = FunkinUtils()
     filler_item_names = list(fnfUtil.filler_item_weights.keys())
     filler_item_weights = list(fnfUtil.filler_item_weights.values())
     item_name_to_id = {name: code for name, code in fnfUtil.item_names_to_id.items()}
@@ -109,9 +109,10 @@ class FunkinWorld(World):
         #self.e_weight = self.options.trapAmount.value imma do this later
         while True:
             # In most cases this should only need to run once
-            available_song_keys, song_ids = self.fnfUtil.get_songs_with_settings(self.options.mods_enabled.value, get_player_specific_ids(self.options.songList.value, self.fnfUtil.song_items))
+            available_song_keys, song_ids = get_player_specific_ids(self.player_name, self.fnfUtil.song_items)
+            print(available_song_keys)
 
-            print(get_player_specific_ids(self.options.songList.value, self.fnfUtil.song_items))
+            # print(get_player_specific_ids(self.options.songList.value, self.fnfUtil.song_items))
             # Choose victory song from current available keys, so we can access the song id
             chosen_song_index = random.randrange(0, len(available_song_keys))
             self.victory_song_name = available_song_keys[chosen_song_index]
@@ -123,7 +124,7 @@ class FunkinWorld(World):
             if len(available_song_keys) + 1 >= count_needed_for_start + 11:
                 final_song_list = available_song_keys
                 break
-
+        # print(final_song_list)
         self.create_song_pool(final_song_list)
 
     def create_item(self, name: str) -> Item:
@@ -142,7 +143,7 @@ class FunkinWorld(World):
         # print("Song list for " + self.player_name + " is " + str(self.options.songList.value))
 
         song = self.fnfUtil.song_items.get(name)
-        print(str(self.player_name) + ": " + str(song.songName))
+        # print(str(self.player_name) + ": " + str(song.songName))
         return FunkinItem(name, self.player, song)
 
     '''def create_items(self) -> None:
@@ -279,11 +280,14 @@ class FunkinWorld(World):
 
         all_selected_locations:List[str]
         all_selected_locations = []
-        for song_dict in self.fnfUtil.song_items[self.player_name].values():
-            for song in song_dict:
-                all_selected_locations.append(song)
+        for song_name, song_data in self.fnfUtil.song_items.items():
+            if song_data.playerListBelongsTo == self.player_name or not song_data.modded:
+                all_selected_locations.append(song_name)
+                print('Sucessfully gave ' + song_name + ' to ' + self.player_name + ' who is also ' + song_data.playerListBelongsTo)
+            else:
+                print("This song doesn't belong to this player! Skipping it!\n Error: " + song_data.songName + " Belongs to " + song_data.playerListBelongsTo + " and was attempted to be given to " + self.player_name)
         self.random.shuffle(all_selected_locations)
-        print(all_selected_locations)
+        # print(all_selected_locations)
 
         # Adds 1 item locations per song to the menu region.
         for i in range(0, (len(all_selected_locations))):
@@ -291,10 +295,11 @@ class FunkinWorld(World):
             loc1 = FunkinLocation(self.player, name, self.fnfUtil.song_locations[name], menu_region)
             loc1.access_rule = lambda state, place=name: state.has(place, self.player)
             menu_region.locations.append(loc1)
+        self.location_count = len(menu_region.locations)
 
     def create_song_pool(self, available_song_keys: List[str]):
-        startingSong = self.fnfUtil.get_songs_map()[self.random.randrange(0, len(self.fnfUtil.get_songs_map()))]
-        FNFBaseList.localSongList.remove(startingSong)
+        startingSong = available_song_keys[self.random.randrange(0, len(available_song_keys))]
+        available_song_keys.remove(startingSong)
         self.multiworld.push_precollected(self.create_item(startingSong))
         self.songList = available_song_keys
 
@@ -320,19 +325,23 @@ class FunkinWorld(World):
                     break
                 self.songList.append(available_song_keys.pop())
 
-        self.location_count = len(self.songList)
-
     def create_items(self) -> None:
+        song_keys_in_pool = self.fnfUtil.get_songs_map(self.player_name).copy()
         item_count = self.get_ticket_count()
 
         #I'll figure this out eventually
         # First add all goal song tokens
-        for _ in range(0, item_count):
-            self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))
+        '''for _ in range(3):
+            self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))'''
+
+        # I'll figure this out eventually
+        # First add all goal song tokens
+        '''for _ in range(0, item_count):
+            self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))'''
 
         # Then add 1 copy of every song
-        item_count += len(self.songList)
-        for song in self.songList:
+        item_count += len(self.fnfUtil.get_songs_map(self.player_name))
+        for song in self.fnfUtil.get_songs_map(self.player_name):
             self.multiworld.itempool.append(self.create_item(song))
 
         # Then add all traps, making sure we don't over fill
@@ -355,27 +364,26 @@ class FunkinWorld(World):
         filler_count = floor(0.5 * items_left)
         items_left -= filler_count
 
+        for _ in range(0, filler_count):
+            self.multiworld.itempool.append(self.create_item(self.get_filler_item_name()))
+
         # All remaining spots are filled with duplicate songs. Duplicates are set to useful instead of progression
         # to cut down on the number of progression items that Muse Dash puts into the pool.
 
         # This is for the extraordinary case of needing to fill a lot of items.
-        while items_left > len(self.songList):
-            for key in self.songList:
+        while items_left > len(song_keys_in_pool):
+            for key in song_keys_in_pool:
                 item = self.create_item(key)
                 item.classification = ItemClassification.useful
                 self.multiworld.itempool.append(item)
             items_left -= 1
 
         # Otherwise add a random assortment of songs
-        self.random.shuffle(self.songList)
-        for i in range(0, len(self.songList)):
-            item = self.create_item(self.songList[i])
+        self.random.shuffle(song_keys_in_pool)
+        for i in range(0, len(song_keys_in_pool)):
+            item = self.create_item(song_keys_in_pool[i])
             item.classification = ItemClassification.useful
             self.multiworld.itempool.append(item)
-
-        items_left2 = self.location_count - items_left
-        for _ in range(0, items_left2):
-            self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))
     #
     # def pre_fill(self) -> None:
     #
@@ -397,7 +405,7 @@ class FunkinWorld(World):
         self.multiworld.completion_condition[self.player] = lambda state: \
             state.has(self.victory_song_name, self.player, 1)
 
-        for song in self.fnfUtil.get_songs_map():
+        for song in self.fnfUtil.get_songs_map(self.player_name):
             if song not in self.options.songList.value:
                 self.excludedSongs = []
                 self.excludedSongs.append(song)
@@ -412,12 +420,12 @@ class FunkinWorld(World):
 
     def get_trap_count(self) -> int:
         multiplier = self.options.trapAmount.value / 100.0
-        trap_count = len(self.fnfUtil.get_songs_map())
+        trap_count = len(self.fnfUtil.get_songs_map(self.player_name))
         return max(0, floor(trap_count * multiplier))
 
     def get_ticket_count(self) -> int:
         multiplier = self.options.ticket_percentage.value / 100.0
-        song_count = len(self.fnfUtil.get_songs_map())
+        song_count = len(self.fnfUtil.get_songs_map(self.player_name))
         return max(1, floor(song_count * multiplier))
 
     def get_ticket_win_count(self) -> int:
@@ -428,7 +436,7 @@ class FunkinWorld(World):
     def fill_slot_data(self):
         return {
             "deathLink": self.options.deathlink.value,
-            "fullSongCount": len(self.fnfUtil.get_songs_map()),
+            "fullSongCount": len(self.fnfUtil.get_songs_map(self.player_name)),
             "victoryLocation": self.victory_song_name,
             "victoryID": self.victory_song_id,
             "ticketWinCount": self.get_ticket_win_count(),

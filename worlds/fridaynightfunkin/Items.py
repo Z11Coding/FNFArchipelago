@@ -5,6 +5,7 @@ class SongData(NamedTuple):
     code: Optional[int]
     modded: bool
     songName: str
+    playerListBelongsTo: str
 
 class FNFBaseList:
     items: List[str] = [

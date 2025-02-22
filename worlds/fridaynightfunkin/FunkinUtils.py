@@ -1,5 +1,6 @@
 from collections import ChainMap
 from typing import Dict, List, ClassVar, Type, Tuple
+from .SymbolFixer import fix_song_name
 
 from .Items import FNFBaseList, SongData
 from .Options import *
@@ -14,7 +15,8 @@ class FunkinUtils:
     SHOW_TICKET_NAME: str = "Ticket"
     SHOW_TICKET_CODE: int = STARTING_CODE
 
-    song_items: dict[str, Dict[str, SongData]] = {}
+    song_items: Dict[str, SongData] = {}
+    song_things: Dict[str, Dict[str, SongData]] = {}
     song_locations: Dict[str, int] = {}
     loc_id_by_index: List[int] = []
 
@@ -47,49 +49,76 @@ class FunkinUtils:
         "Max HP Up": 3
     }
 
-    item_names_to_id = ChainMap({SHOW_TICKET_NAME: SHOW_TICKET_CODE}, filler_items, trap_items, song_items)
-    location_names_to_id = ChainMap(song_locations)
-    def __init__(self, current_mod_data) -> None:
+    mapthing:Dict[str, List[str]] = {}
+    mod_data: Dict[str, List[str]] = {}
+    playerNames:List[str] = []
+
+    def __init__(self) -> None:
         item_id_index = self.STARTING_CODE + (len(FNFBaseList.localSongList) + 100)
         self.item_names_to_id = ChainMap({self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, self.filler_items, self.trap_items, self.song_items)
         self.location_names_to_id = ChainMap(self.song_locations)
 
-        self.mapthing = yutautil_CatagorizedMap()
-
-        self.haxeThing = YutaUtil.runHaxeFunction("""
-        trace(context);
-        function() { return context; }
-        """, self)
-
         from . import extract_mod_data
-
         mod_data = extract_mod_data()
+        playerNames = []
+        cursonglist: List[str] = []
+        e:int = -1
 
-        # convert dict to CatagorizedMap.
-        for player in mod_data:
-            self.mapthing.add(player, mod_data[player])
+        if mod_data:
+            # print(mod_data)
+            for name in mod_data.keys():
+                playerNames.append(name)
+            for name, list in mod_data.items():
+                print("Listing Songs for " + name + "\n" + str(list))
+                for song in list:
+                    cur_song_name = song
+                    item_id = item_id_index
+                    isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+                    self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, name)
+                    item_id_index += 1
+                    print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
+                '''for songs in data_dict:
+                    if songs in playerNames:
+                        print("This is a name not a song! Skipping!\n"+songs)
+                        e = e+1
+                    else:
+                        print("Listing Songs for " + playerNames[e])
+                        for song in songs:
+                            # print(song + " is apart of " + playerNames[-1] + "'s game!")
+                            cur_song_name = song
+                            item_id = item_id_index
+                            isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+                            self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, playerNames[e])
+                            item_id_index += 1
+                            print(self.song_items[cur_song_name] + " is Modded: " + str(isModded))'''
 
-        print(self.mapthing.toString())
+        self.item_names_to_id.update({name: data.code for name, data in self.song_items.items()})
 
-        iterableMapping = self.mapthing.map.h
+        for song_name, song_data in self.song_items.items():
+            self.song_locations[f"{song_name}"] = (song_data.code + 1000)
 
-        print(iterableMapping)
+        '''for player in mod_data:
+            self.mapthing[player] = mod_data[player]
+
+        iterableMapping = self.mapthing
+
+        # print(iterableMapping)
 
         for player in iterableMapping:
-            # self.song_items[player] = []
             for songs in iterableMapping[player]:
                 for song in songs:
-                    print("Player: " + str(player))
-                    print("Song: " + str(song))
+                    # print("Player: " + str(player))
+                    # print("Song: " + str(song))
                     song_name = song
-                    self.song_items.update({player: {song_name: SongData(item_id_index, not song_name in FNFBaseList.baseSongList, song_name)}})
+                    self.song_things.update({player: {song_name: SongData(item_id_index, not song_name in FNFBaseList.baseSongList, song_name)}})
+                    self.song_items[song_name] = SongData(item_id_index, not song_name in FNFBaseList.baseSongList, song_name)
                     item_id_index += 1
 
         for player, songs in self.song_items.items():
             for song_name, data in songs.items():
                 self.item_names_to_id.update({song_name: data.code})
-        print(self.item_names_to_id)
-        print(yutautil_CollectionUtils.toArray(self.mapthing))
+        # print(self.item_names_to_id)
+        # print(yutautil_CollectionUtils.toArray(self.mapthing))
         print("Done with getting songs")
 
         location_id_index = self.STARTING_CODE
@@ -99,12 +128,14 @@ class FunkinUtils:
 
         # It doesn't work without this?????? why?????
         for name in self.song_items[player].keys():
-            print("Player: " + str(player))
-            print("Song: " + str(name))
+            # print("Player: " + str(player))
+            # print("Song: " + str(name))
             self.song_locations[f"{name}"] = location_id_index
             location_id_index += 1
-        print(self.song_items)
-        print(self.song_locations)
+        # print(self.song_items)
+        # print(self.song_locations)'''
+
+
     def get_songs_with_settings(self, mods: bool, mod_ids: List[int]) -> Tuple[List[str], List[int]]:
         """Gets a list of all songs that match the filter settings. Difficulty thresholds are inclusive."""
         filtered_list = []
@@ -136,12 +167,13 @@ class FunkinUtils:
 
         return filtered_list, id_list
 
-    def get_songs_map(self) -> List[str]:
+    def get_songs_map(self, player_name:str) -> List[str]:
         """Literally just shoves the songs into a list."""
         filtered_list = []
 
-        for songKey in self.song_items.keys():
-            filtered_list.append(songKey)
-            #print(songKey)
+        for songKey, songData in self.song_items.items():
+            if songData.playerListBelongsTo == player_name or not songData.modded: #Make sure the right player gets the right songs
+                filtered_list.append(songKey)
+                #print(songKey)
 
         return filtered_list

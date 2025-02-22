@@ -15,7 +15,7 @@ def extract_mod_data() -> dict[str, Any]:
     players: int = 0
 
     user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
-    folder_path = sys.argv[sys.argv.index("--player_files_path") + 1] if "--player_files_path" in sys.argv else user_path
+    folder_path = sys.argv[sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
 
     print(f"Checking YAMLs for songList at {folder_path}")
 
@@ -38,8 +38,9 @@ def extract_mod_data() -> dict[str, Any]:
     uniqueSongList: List[str] = []
     dupeSongList: List[str] = []
     catagorizedSongList: dict[str, list[str]] = {}
+    name:str = ''
 
-    for item in os.listdir(folder_path):
+    for item in os.listdir(folder_path)[::-1]:
         item_path = os.path.join(folder_path, item)
 
         if os.path.isfile(item_path):
@@ -56,7 +57,7 @@ def extract_mod_data() -> dict[str, Any]:
                         for item in tempSongList:
                             if "name" in item:
                                 name = item[6:]
-                                print(name)
+                                # print(name)
                             if search_list in item:
                                 songsList2ohboyherewego = item.split(':')
                                 falseSongList = str(songsList2ohboyherewego[1][2:-1])
@@ -73,8 +74,6 @@ def extract_mod_data() -> dict[str, Any]:
                                     trueSongList.append(song)
                                     catagorizedSongList[name] = falseSongList.split(',')
                                 # print(trueSongList)
-
-
     for i, song in enumerate(trueSongList):
         trueSongList[i] = song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']')
 
@@ -84,6 +83,8 @@ def extract_mod_data() -> dict[str, Any]:
 
     for song in trueSongList:
         FNFBaseList.localSongList.append(song)
+        # print(song + " from player " + name)
+
     return catagorizedSongList
 
 def get_dict(mod_data, client):
@@ -108,23 +109,17 @@ def get_dict(mod_data, client):
 
     return data_dict
 
-def get_player_specific_ids(mod_data, song_items: dict[str, SongData]):
+def get_player_specific_ids(player_name: str, song_items: dict[str, SongData]):
 
     song_ids = []  # Initialize an empty list to store song IDs
+    song_names = []  # Initialize an empty list to store song names
 
-    if mod_data == "()":
-        return song_ids
-
-    trimmed_data = str(mod_data[1:-1])  # Slicing to remove first and last character
-    data_dict = ast.literal_eval(trimmed_data)
-    # print("trimmed list: " + str(data_dict))
-
-    for songs in data_dict:
-        song_id:str = songs
-        for name, data in song_items.items():
-            if name == song_id:
-                print(name)
-                song_ids.append(data.code)
+    print(song_items.items())
+    print(player_name)
+    for song, data in song_items.items():
+        if data.playerListBelongsTo == player_name:
+            song_ids.append(data.code)
+            song_names.append(song)
 
 
-    return song_ids  # Return the list of song IDs
+    return song_names, song_ids   # Return the list of song IDs
