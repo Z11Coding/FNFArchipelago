@@ -72,7 +72,7 @@ def extract_mod_data() -> dict[str, Any]:
                                 players = player
                                 for song in uniqueSongList:
                                     trueSongList.append(song)
-                                    catagorizedSongList[name] = falseSongList.split(',')
+                                    catagorizedSongList[name] = [song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']') for song in falseSongList.split(',')]
                                 # print(trueSongList)
     for i, song in enumerate(trueSongList):
         trueSongList[i] = song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']')
