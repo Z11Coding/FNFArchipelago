@@ -5,7 +5,8 @@ class SongData(NamedTuple):
     code: Optional[int]
     modded: bool
     songName: str
-    playerListBelongsTo: str
+    playerSongBelongsTo: str
+    playerList: Optional[List[str]]
 
 class FNFBaseList:
     items: List[str] = [
@@ -40,7 +41,7 @@ class FNFBaseList:
         'Ugh Erect',
         'Bopeebo (Pico mix)', 'Fresh (Pico mix)', 'Dad Battle (Pico mix)',
         'Spookeez (Pico mix)', 'South (Pico mix)',
-        'Pico (Pico mix)', 'Philly Nice (Pico mix)', 'Blammed (Pico mix)',
+        'Pico (Pico mix)', 'Philly Nice (Pico mix)', 'Blammed (Pico Mix)',
         'Eggnog (Pico mix)',
         'Ugh (Pico mix)', 'Guns (Pico mix)',
         'Small Argument',

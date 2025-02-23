@@ -146,71 +146,6 @@ class FunkinWorld(World):
         # print(str(self.player_name) + ": " + str(song.songName))
         return FunkinItem(name, self.player, song)
 
-    '''def create_items(self) -> None:
-        self.itemPool = self.multiworld.itempool
-        self.player_songs = self.options.songList.value
-        self.playable_songs = []
-        self.junk = []
-        item_count = self.get_ticket_count()
-
-
-        for song in self.multiworld.itempool:
-            for songs in self.player_songs:
-                if song.name == songs:
-                    self.playable_songs.append(song)
-
-        if len(self.itemPool) > len(self.playable_songs):
-            for i, in range(len(self.itemPool) - len(self.playable_songs)):
-                self.junk.append(self.create_item(self.playable_songs[i]))
-
-
-        self.multiworld.itempool += self.playable_songs
-        for junk in self.junk:
-            self.multiworld.itempool.append(junk)
-
-        item_count += len(self.songList)
-        # Then add all traps, making sure we don't over fill
-        trap_count = min(self.location_count - item_count, self.get_trap_count())
-        trap_list = self.get_available_traps()
-        if len(trap_list) > 0 and trap_count > 0:
-            for _ in range(0, trap_count):
-                index = self.random.randrange(0, len(trap_list))
-                self.multiworld.itempool.append(self.create_item(trap_list[index]))
-
-            item_count += trap_count
-
-        items_left = self.location_count - item_count
-        if items_left <= 0:
-            return
-
-        # When it comes to filling remaining spaces, we have 2 options. A useless filler or additional songs.
-        # First fill 50% with the filler. The rest is to be duplicate songs.
-        filler_count = floor(0.5 * items_left)
-        items_left -= filler_count
-
-        for _ in range(0, filler_count):
-            self.multiworld.itempool.append(self.create_item(self.get_filler_item_name()))
-
-        # All remaining spots are filled with duplicate songs. Duplicates are set to useful instead of progression
-        # to cut down on the number of progression items that Muse Dash puts into the pool.
-
-        # This is for the extraordinary case of needing to fill a lot of items.
-        while items_left > len(song_keys_in_pool):
-            for key in song_keys_in_pool:
-                item = self.create_item(key)
-                item.classification = ItemClassification.useful
-                self.multiworld.itempool.append(item)
-            items_left -= 1
-
-        # Otherwise add a random assortment of songs
-        self.random.shuffle(song_keys_in_pool)
-        for i in range(0, len(song_keys_in_pool)):
-            item = self.create_item(song_keys_in_pool[i])
-            item.classification = ItemClassification.useful
-            self.multiworld.itempool.append(item)'''
-
-
-
     def create_event(self, event: str) -> Item:
         return FunkinItem(event, ItemClassification.filler, None, self.player)
 
@@ -238,24 +173,24 @@ class FunkinWorld(World):
         return trap_return
 
     def _create_traps_string(self): # god this sucks
-        trap_return = ["", "", "", "", "", ""]
+        trap_return:List[str]
 
         for i in range(self.trapAmount):
             draw = self.multiworld.random.randrange(0, self.trapAmount)
             if draw < self.bbc_weight:
-                trap_return[0] += "Blue Balls Curse"
+                self.trap_return[0] += "Blue Balls Curse"
             elif draw < self.ghost_chat_weight:
-                trap_return[1] += "Ghost Chat"
+                self.trap_return[1] += "Ghost Chat"
             elif draw < self.svc_effect_weight:
-                trap_return[2] += "SvC Effect"
+                self.trap_return[2] += "SvC Effect"
             elif draw < self.tutorial_trap_weight:
-                trap_return[3] += "Tutorial Trap"
+                self.trap_return[3] += "Tutorial Trap"
             elif draw < self.fake_transition_weight:
-                trap_return[4] += "Fake Transition"
+                self.trap_return[4] += "Fake Transition"
             '''elif draw < self.e_weight: # soon
                 trap_return[5] += "E"'''
 
-        return trap_return
+        return self.trap_return
 
     def get_filler_item_name(self) -> str:
         return self.random.choices(self.filler_item_names, self.filler_item_weights)[0]
@@ -281,21 +216,21 @@ class FunkinWorld(World):
         all_selected_locations:List[str]
         all_selected_locations = []
         for song_name, song_data in self.fnfUtil.song_items.items():
-            if song_data.playerListBelongsTo == self.player_name or not song_data.modded:
+            if song_data.playerSongBelongsTo == self.player_name or self.player_name in song_data.playerList or not song_data.modded:
                 all_selected_locations.append(song_name)
-                print('Sucessfully gave ' + song_name + ' to ' + self.player_name + ' who is also ' + song_data.playerListBelongsTo)
+                print('Sucessfully gave ' + song_name + ' to ' + self.player_name + ' who is also ' + song_data.playerSongBelongsTo)
             else:
-                print("This song doesn't belong to this player! Skipping it!\n Error: " + song_data.songName + " Belongs to " + song_data.playerListBelongsTo + " and was attempted to be given to " + self.player_name)
+                print("This song doesn't belong to this player! Skipping it!\n Error: " + song_data.songName + " Belongs to " + song_data.playerSongBelongsTo + " and was attempted to be given to " + self.player_name)
         self.random.shuffle(all_selected_locations)
         # print(all_selected_locations)
 
         # Adds 1 item locations per song to the menu region.
-        for i in range(0, (len(all_selected_locations))):
+        for i in range(len(all_selected_locations)):
             name = all_selected_locations[i]
             loc1 = FunkinLocation(self.player, name, self.fnfUtil.song_locations[name], menu_region)
             loc1.access_rule = lambda state, place=name: state.has(place, self.player)
             menu_region.locations.append(loc1)
-        self.location_count = len(menu_region.locations)
+        self.location_count = len(all_selected_locations)
 
     def create_song_pool(self, available_song_keys: List[str]):
         startingSong = available_song_keys[self.random.randrange(0, len(available_song_keys))]
@@ -329,11 +264,6 @@ class FunkinWorld(World):
         song_keys_in_pool = self.fnfUtil.get_songs_map(self.player_name).copy()
         item_count = self.get_ticket_count()
 
-        #I'll figure this out eventually
-        # First add all goal song tokens
-        '''for _ in range(3):
-            self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))'''
-
         # I'll figure this out eventually
         # First add all goal song tokens
         '''for _ in range(0, item_count):
@@ -344,7 +274,7 @@ class FunkinWorld(World):
         for song in self.fnfUtil.get_songs_map(self.player_name):
             self.multiworld.itempool.append(self.create_item(song))
 
-        # Then add all traps, making sure we don't over fill
+        '''# Then add all traps, making sure we don't over fill
         trap_count = min(self.location_count - item_count, self.get_trap_count())
         trap_list = self.get_available_traps()
         if len(trap_list) > 0 and trap_count > 0:
@@ -352,38 +282,39 @@ class FunkinWorld(World):
                 index = self.random.randrange(0, len(trap_list))
                 self.multiworld.itempool.append(self.create_item(trap_list[index]))
 
-            item_count += trap_count
+            item_count += trap_count'''
 
         # At this point, if a player is using traps, it's possible that they have filled all locations
         items_left = self.location_count - item_count
         if items_left <= 0:
             return
 
-        # When it comes to filling remaining spaces, we have 2 options. A useless filler or additional songs.
-        # First fill 50% with the filler. The rest is to be duplicate songs.
-        filler_count = floor(0.5 * items_left)
-        items_left -= filler_count
-
-        for _ in range(0, filler_count):
-            self.multiworld.itempool.append(self.create_item(self.get_filler_item_name()))
-
-        # All remaining spots are filled with duplicate songs. Duplicates are set to useful instead of progression
-        # to cut down on the number of progression items that Muse Dash puts into the pool.
+        # Fill given percentage of remaining slots as Useful/non-progression dupes.
+        dupe_count = floor(items_left * (20 / 100))
+        items_left -= dupe_count
 
         # This is for the extraordinary case of needing to fill a lot of items.
-        while items_left > len(song_keys_in_pool):
+        while dupe_count > len(song_keys_in_pool):
             for key in song_keys_in_pool:
                 item = self.create_item(key)
                 item.classification = ItemClassification.useful
                 self.multiworld.itempool.append(item)
-            items_left -= 1
 
-        # Otherwise add a random assortment of songs
+            dupe_count -= len(song_keys_in_pool)
+            continue
+
         self.random.shuffle(song_keys_in_pool)
-        for i in range(0, len(song_keys_in_pool)):
+        for i in range(0, dupe_count):
             item = self.create_item(song_keys_in_pool[i])
             item.classification = ItemClassification.useful
             self.multiworld.itempool.append(item)
+
+        filler_count = items_left
+        items_left -= filler_count
+
+        for _ in range(0, filler_count):
+            filler_item = self.create_item(self.random.choices(self.filler_item_names, self.filler_item_weights)[0])
+            self.multiworld.itempool.append(filler_item)
     #
     # def pre_fill(self) -> None:
     #

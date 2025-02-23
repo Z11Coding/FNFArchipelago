@@ -74,9 +74,13 @@ class FunkinUtils:
                     cur_song_name = song
                     item_id = item_id_index
                     isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
-                    self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, name)
-                    item_id_index += 1
-                    print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
+                    if cur_song_name in self.song_items.keys():
+                        self.song_items[cur_song_name].playerList.append(name)
+                    else:
+                        self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, name, [])
+                        self.song_items[cur_song_name].playerList.append(name)
+                        item_id_index += 1
+                        print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
                 '''for songs in data_dict:
                     if songs in playerNames:
                         print("This is a name not a song! Skipping!\n"+songs)
@@ -172,7 +176,7 @@ class FunkinUtils:
         filtered_list = []
 
         for songKey, songData in self.song_items.items():
-            if songData.playerListBelongsTo == player_name or not songData.modded: #Make sure the right player gets the right songs
+            if songData.playerSongBelongsTo == player_name or player_name in songData.playerList or not songData.modded: #Make sure the right player gets the right songs
                 filtered_list.append(songKey)
                 #print(songKey)
 
