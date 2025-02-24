@@ -86,6 +86,7 @@ class FunkinWorld(World):
         self.ticket_win_percentage = TicketWinPercentage.default
         self.graderequirement = gradeNeeded.default
         self.accrequirement = accuracyNeeded.default
+        self.checksPerSong = CheckCount.default
 
     def generate_early(self):
         # Basic Settings
@@ -106,6 +107,7 @@ class FunkinWorld(World):
         self.ticket_win_percentage = self.options.ticket_win_percentage.value
         self.graderequirement = self.options.graderequirement.value
         self.accrequirement = self.options.accrequirement.value
+        self.checksPerSong = self.options.check_count.value
         #self.e_weight = self.options.trapAmount.value imma do this later
         while True:
             # In most cases this should only need to run once
@@ -213,24 +215,25 @@ class FunkinWorld(World):
 
         print("Preparing for new locations from Song Lists...")
 
-        all_selected_locations:List[str]
-        all_selected_locations = []
+        all_selected_locations: List[str] = []
         for song_name, song_data in self.fnfUtil.song_items.items():
             if song_data.playerSongBelongsTo == self.player_name or self.player_name in song_data.playerList or not song_data.modded:
                 all_selected_locations.append(song_name)
-                print('Sucessfully gave ' + song_name + ' to ' + self.player_name + ' who is also ' + song_data.playerSongBelongsTo)
+                print('Successfully gave ' + song_name + ' to ' + self.player_name + ' who is also ' + song_data.playerSongBelongsTo)
             else:
                 print("This song doesn't belong to this player! Skipping it!\n Error: " + song_data.songName + " Belongs to " + song_data.playerSongBelongsTo + " and was attempted to be given to " + self.player_name)
         self.random.shuffle(all_selected_locations)
         # print(all_selected_locations)
 
-        # Adds 1 item locations per song to the menu region.
+        # Adds item locations per song to the menu region.
         for i in range(len(all_selected_locations)):
             name = all_selected_locations[i]
-            loc1 = FunkinLocation(self.player, name, self.fnfUtil.song_locations[name], menu_region)
-            loc1.access_rule = lambda state, place=name: state.has(place, self.player)
-            menu_region.locations.append(loc1)
-        self.location_count = len(all_selected_locations)
+            for j in range(self.checksPerSong):
+                loc_name = f"{name}-{j}" if self.checksPerSong > 1 else name
+                loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[name], menu_region)
+                loc.access_rule = lambda state, place=name: state.has(place, self.player)
+                menu_region.locations.append(loc)
+        self.location_count = len(all_selected_locations) * self.checksPerSong
 
     def create_song_pool(self, available_song_keys: List[str]):
         startingSong = available_song_keys[self.random.randrange(0, len(available_song_keys))]

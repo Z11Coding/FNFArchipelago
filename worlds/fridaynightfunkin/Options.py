@@ -38,6 +38,12 @@ class UnlockMethod(OptionSet):
     valid_keys = ["Note Checks", "Song Completion", "Both"]
     default = "Note Checks"
 
+class CheckCount(Range):
+    """How many checks a song contains."""
+    display_name = "Checks Per Song"
+    range_start = 1
+    range_end = 3
+    default = 2
 
 class songList(OptionList):
     """The list of songs that will be added to the game"""
@@ -185,6 +191,7 @@ class FunkinOptions(PerGameCommonOptions):
     unlock_type: UnlockType
     unlock_method: UnlockMethod
     songList: songList
+    check_count: CheckCount
     trapAmount: trapAmount
     bbcWeight: bbcWeight
     ghostChatWeight: ghostChatWeight
