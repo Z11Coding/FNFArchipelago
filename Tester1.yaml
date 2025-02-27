@@ -6,8 +6,8 @@ Friday Night Funkin:
   ticket_win_percentage: 50
   shieldWeight: 0
   accrequirement: Any
-  mods_enabled: true
-  songList: [Pegging Arent I Hilarious (FNF BOSS RUSH WEIRD FUNNY GAMES),Eggnog,High,Lifeless (FNF WEEKLY PART 7 <sOpen>FLASH_FRENZY<sClose>),Lit Up,Off the Cuff (FNF WEEKLY PART 5 <sOpen>RHYTHM RALLY<sClose>),Philly Mice (FNF WEEKLY PART 4 <sOpen>MOD TITANS<sClose>),Thorns Erect,Pico,Blazin,Ugh (Pico mix),Blammed (Pico mix),Eggnog Erect,Undead (FNF BOSS RUSH BAD GUYS),Philly Nice (Pico mix),High Erect,Guns (Pico mix),Crimson Fog (FNF WEEKLY PART 3 <sOpen>CHECK NEWGROUNDS<sClose>),Pico Erect,Fresh,HOME (DDTO Bad Ending Psych Engine Port),Winter Horrorland,Bopeebo,Good Will (FNF WEEKLY PART 6 <sOpen>TWEAK 666<sClose>),Zeventeen (ZevenTeen),Dustloop (FNF BOSS RUSH BAD GUYS),Joink (FNF BOSS RUSH WEIRD FUNNY GAMES),Guns,Parched (FNF WEEKLY PART 4 <sOpen>MOD TITANS<sClose>),Spookeez (Pico mix),Stress,fnfgf (S3X Mod),bozobozo (aleksa07's Modcharts),Mental Temple (FNF WEEKLY PART 3 <sOpen>CHECK NEWGROUNDS<sClose>),Darnell (BF Mix),Philly Nice,FNF2 (FNF 2),Doodlequest (FNF WEEKLY PART 7 <sOpen>FLASH_FRENZY<sClose>),ghastvoices (aleksa07's Modcharts),FNF3 (FNF 2),Haystack (FNF WEEKLY PART 4 <sOpen>MOD TITANS<sClose>),Fresh Erect,selecciona_personaje (FNF Playable Pico Update Android Bugfix v2),Bopeebo Erect,KB5K (FNF WEEKLY PART 7 <sOpen>FLASH_FRENZY<sClose>),Love Groove (FNF WEEKLY PART 5 <sOpen>RHYTHM RALLY<sClose>),Luminary Clock (FNF BOSS RUSH BAD GUYS),Pico (Pico mix),7OF8 (FNF WEEKLY PART 6 <sOpen>TWEAK 666<sClose>),Senpai,april (S3X Mod),Philly Nice Erect,Koopa Karnage (FNF BOSS RUSH BAD GUYS),bopeebo-rumble (BopeeboRumble),ihatemylife (burgerpantz),Plectrum (FNF WEEKLY PART 4 <sOpen>MOD TITANS<sClose>),Eggnog (Pico mix),17hopeless (17hopeless_48a7d),Beat Battle,Transient Tribulation (FNF WEEKLY PART 5 <sOpen>RHYTHM RALLY<sClose>),Roses,MARKOV (DDTO Bad Ending Psych Engine Port),Chorale (FNF WEEKLY PART 5 <sOpen>RHYTHM RALLY<sClose>),too slow (S3X Mod),Senpai Erect,unstoppable (S3X Mod),testing (S3X Mod),Evolution (FNF WEEKLY PART 7 <sOpen>FLASH_FRENZY<sClose>),Cocoa,gman (S3X Mod),Satin Panties,Spaceblasterz (FNF WEEKLY PART 3 <sOpen>CHECK NEWGROUNDS<sClose>),Darnell,CAN YOU HEAR ME (FNF WEEKLY PART 6 <sOpen>TWEAK 666<sClose>),Brilliance (FNF WEEKLY PART 7 <sOpen>FLASH_FRENZY<sClose>),Spookeez,Roses Erect,South,Devil's Ditty (FNF WEEKLY PART 6 <sOpen>TWEAK 666<sClose>),fnfgf-old (S3X Mod),Dad Battle (Pico mix),Bopeebo (Pico mix),STAGNANT (DDTO Bad Ending Psych Engine Port),Dad Battle,Fresh (Pico mix),Cocoa Erect,Pirate Indie Games (FNF BOSS RUSH BAD GUYS),South (Pico mix),Funky Flow (FNF WEEKLY PART 5 <sOpen>RHYTHM RALLY<sClose>),Beat Battle 2,Satin Panties Erect,Champions Ring (FNF WEEKLY PART 4 <sOpen>MOD TITANS<sClose>),Johnny Round (FNF BOSS RUSH WEIRD FUNNY GAMES),Chef Blasting (FNF BOSS RUSH WEIRD FUNNY GAMES),jeff the kill you (FNF WEEKLY PART 6 <sOpen>TWEAK 666<sClose>),Spookeez Erect,Fruity (FNF BOSS RUSH WEIRD FUNNY GAMES),fnfdd (S3X Mod),Small Argument,South Erect,Ugh,Milf,Blammed,mekatsune (S3X Mod),Termina (FNF BOSS RUSH BAD GUYS),BOX24 (FNF WEEKLY PART 6 <sOpen>TWEAK 666<sClose>),fnfbf (S3X Mod),Dad Battle Erect,Monster,Legend (FNF WEEKLY PART 7 <sOpen>FLASH_FRENZY<sClose>),2Hot,Thorns,Mischief (FNF WEEKLY PART 4 <sOpen>MOD TITANS<sClose>),Ugh Erect,Blammed Erect,pokemoan (S3X Mod)]
+  mods_enabled: false
+  songList: [Eggnog,Beat Battle,High,Lit Up,Roses,Thorns Erect,Senpai Erect,Pico,Blazin,Cocoa,Ugh (Pico mix),Blammed (Pico mix),Eggnog Erect,Philly Nice (Pico mix),High Erect,Satin Panties,Darnell,Spookeez,Guns (Pico mix),Roses Erect,South,Pico Erect,Fresh,Dad Battle (Pico mix),Bopeebo (Pico mix),Bopeebo,Winter Horrorland,Dad Battle,Fresh (Pico mix),Cocoa Erect,South (Pico mix),Guns,Beat Battle 2,Spookeez (Pico mix),Satin Panties Erect,Stress,Philly Nice,Darnell (BF Mix),Spookeez Erect,Small Argument,Blammed,Milf,Ugh,South Erect,Fresh Erect,Bopeebo Erect,Monster,Dad Battle Erect,Pico (Pico mix),2Hot,Senpai,Thorns,Philly Nice Erect,Eggnog (Pico mix),Ugh Erect,Blammed Erect]
   progression_balancing: normal
   unlock_type: Per Song
   trapAmount: 0
@@ -15,11 +15,11 @@ Friday Night Funkin:
   svcWeight: 0
   fakeTransWeight: 0
   bbcWeight: 0
-  unlock_method: Both
+  unlock_method: Song Completion
   chart_modifier_change_chance: 0
   graderequirement: Any
   MHPWeight: 0
   ticket_percentage: 10
   accessibility: full
-  deathlink: true
+  deathlink: false
   ghostChatWeight: 0

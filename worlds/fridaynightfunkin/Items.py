@@ -49,6 +49,11 @@ class FNFBaseList:
         'Beat Battle 2'
     ]
 
+    # Because it's not allowed to be empty ig
+    emptySongList: List[str] = [
+        "Test",
+    ]
+
     # This is gonna drive me insane
     localSongList: List[str] = []
 

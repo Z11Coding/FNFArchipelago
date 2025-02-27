@@ -116,8 +116,13 @@ def get_player_specific_ids(player_name: str, song_items: dict[str, SongData]):
     song_names = []  # Initialize an empty list to store song names
 
     print(song_items.items())
-    print(player_name)
+    # print(player_name)
     for song, data in song_items.items():
+        if song == "Test":
+            print('No Players Detected!')
+            song_ids.append(data.code)
+            song_names.append(song)
+            data.playerList.append(player_name)
         if data.playerSongBelongsTo == player_name or player_name in data.playerList or not data.modded:
             song_ids.append(data.code)
             song_names.append(song)
