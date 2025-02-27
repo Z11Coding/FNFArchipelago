@@ -327,9 +327,9 @@ class FunkinWorld(World):
             state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())'''
         '''self.multiworld.get_location(self.victory_song_name, self.player).access_rule = \
             lambda state: state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())'''
-        if not self.victory_song_name == "":
-            self.multiworld.completion_condition[self.player] = lambda state: \
-                state.has(self.victory_song_name, self.player, 1)
+        print('Victory Song: ' + self.victory_song_name)
+        self.multiworld.completion_condition[self.player] = lambda state: \
+            state.has(self.victory_song_name, self.player, 1)
 
         '''for location in self.location_name_to_id:
             for song in self.multiworld.itempool:

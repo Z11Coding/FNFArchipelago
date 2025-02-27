@@ -52,6 +52,7 @@ class FNFBaseList:
     # Because it's not allowed to be empty ig
     emptySongList: List[str] = [
         "Test",
+        "Tutorial",
     ]
 
     # This is gonna drive me insane
