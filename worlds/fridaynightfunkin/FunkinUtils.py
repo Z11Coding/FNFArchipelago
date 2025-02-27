@@ -125,8 +125,8 @@ class FunkinUtils:
         self.item_names_to_id.update({name: data.code for name, data in self.song_items.items()})
 
         for song_name, song_data in self.song_items.items():
-            for j in range(2):
-                self.song_locations[f"{song_name}-{j}"] = (song_data.code + 1000 + j)
+            for j in range(1):
+                self.song_locations[f"{song_name}"] = (song_data.code + 1000)
 
         '''for player in mod_data:
             self.mapthing[player] = mod_data[player]

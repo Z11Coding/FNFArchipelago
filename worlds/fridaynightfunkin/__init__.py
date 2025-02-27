@@ -244,6 +244,7 @@ class FunkinWorld(World):
 
         print("Preparing for new locations from Song Lists...")
 
+
         all_selected_locations: List[str] = []
         for song_name, song_data in self.fnfUtil.song_items.items():
             if song_data.playerSongBelongsTo == self.player_name or self.player_name in song_data.playerList or not song_data.modded:
@@ -257,11 +258,11 @@ class FunkinWorld(World):
         # Adds item locations per song to the menu region.
         for i in range(len(all_selected_locations)):
             name = all_selected_locations[i]
-            for j in range(self.checksPerSong):
-                loc_name = f"{name}-{j}" if self.checksPerSong > 1 else name
-                loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
-                loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
-                menu_region.locations.append(loc)
+            # for j in range(self.checksPerSong):
+            loc_name = f"{name}-{j}" if self.checksPerSong > 1 else name
+            loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
+            loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
+            menu_region.locations.append(loc)
         self.location_count = len(all_selected_locations)
 
     def create_items(self) -> None:

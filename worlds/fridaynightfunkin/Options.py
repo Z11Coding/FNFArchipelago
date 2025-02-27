@@ -43,7 +43,7 @@ class CheckCount(Range):
     display_name = "Checks Per Song"
     range_start = 1
     range_end = 3
-    default = 2
+    default = 1
 
 class songList(OptionList):
     """The list of songs that will be added to the game"""
