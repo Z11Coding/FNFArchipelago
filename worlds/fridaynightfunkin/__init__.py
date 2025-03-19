@@ -31,7 +31,7 @@ class FunkinWeb(WebWorld):
     )]
     theme = "partyTime"
     bug_report_page = "https://github.com/Z11Coding/Mixtape-Engine/issues"
-    option_groups = fnf_option_groups
+    option_groups = fnf_option_groups   
 
 
 class FunkinWorld(World):
@@ -79,8 +79,6 @@ class FunkinWorld(World):
         self.svc_effect_weight = svcWeight.default
         self.tutorial_trap_weight = tutorialWeight.default
         self.fake_transition_weight = fakeTransWeight.default
-        self.shield_weight = shieldWeight.default
-        self.max_hp_weight = MHPWeight.default
         self.chart_modifier_change_chance = ChartModChangeChance.default
         self.ticket_percentage = TicketPercentage.default
         self.ticket_win_percentage = TicketWinPercentage.default
@@ -96,12 +94,13 @@ class FunkinWorld(World):
         self.unlock_method = self.options.unlock_method.value
         # Trap Settings
         self.trapAmount = self.options.trapAmount.value
-        self.bbc_weight = self.options.bbcWeight.value
-        self.ghost_chat_weight = self.options.ghostChatWeight.value
-        self.svc_effect_weight = self.options.svcWeight.value
-        self.tutorial_trap_weight = self.options.tutorialWeight.value
-        self.shield_weight = self.options.shieldWeight.value
-        self.max_hp_weight = self.options.MHPWeight.value
+        self.fnfUtil.trap_items_weights['Blue Balls Curse'] = self.options.bbcWeight.value
+        self.fnfUtil.trap_items_weights['Ghost Chat'] = self.options.ghostChatWeight.value
+        self.fnfUtil.trap_items_weights['SvC Effect'] = self.options.svcWeight.value
+        self.fnfUtil.trap_items_weights['Tutorial Trap'] = self.options.tutorialWeight.value
+        self.fnfUtil.trap_items_weights['Fake Transition'] = self.options.fakeTransWeight.value
+        self.fnfUtil.filler_item_weights['Shield'] = self.options.shieldWeight.value
+        self.fnfUtil.filler_item_weights['Max HP Up'] = self.options.MHPWeight.value
         self.chart_modifier_change_chance = self.options.chart_modifier_change_chance.value
         self.ticket_percentage = self.options.ticket_percentage.value
         self.ticket_win_percentage = self.options.ticket_win_percentage.value
@@ -131,8 +130,7 @@ class FunkinWorld(World):
 
     def create_item(self, name: str) -> Item:
         if name == self.fnfUtil.SHOW_TICKET_NAME:
-            return FunkinFixedItem(name, ItemClassification.progression_skip_balancing,
-                                     self.fnfUtil.SHOW_TICKET_CODE, self.player)
+            return FunkinFixedItem(name, ItemClassification.progression_skip_balancing, self.fnfUtil.SHOW_TICKET_CODE, self.player)
 
         filler = self.fnfUtil.filler_items.get(name)
         if filler:
@@ -154,60 +152,19 @@ class FunkinWorld(World):
     def _create_item_in_quantities(self, name: str, qty: int) -> [Item]:
         return [self.create_item(name) for _ in range(0, qty)]
 
-    def _create_traps(self):
-        trap_return = [0, 0, 0, 0, 0]
-
-        for i in range(self.trapAmount):
-            draw = self.multiworld.random.randrange(0, self.trapAmount)
-            if draw < self.bbc_weight:
-                trap_return[0] += 1
-            elif draw < self.ghost_chat_weight:
-                trap_return[1] += 1
-            elif draw < self.svc_effect_weight:
-                trap_return[2] += 1
-            elif draw < self.tutorial_trap_weight:
-                trap_return[3] += 1
-            elif draw < self.fake_transition_weight:
-                trap_return[4] += 1
-            '''elif draw < self.e_weight: soon
-                trap_return[5] += 1'''
-
-        return trap_return
-
-    def _create_traps_string(self): # god this sucks
-        trap_return:List[str]
-
-        for i in range(self.trapAmount):
-            draw = self.multiworld.random.randrange(0, self.trapAmount)
-            if draw < self.bbc_weight:
-                self.trap_return[0] += "Blue Balls Curse"
-            elif draw < self.ghost_chat_weight:
-                self.trap_return[1] += "Ghost Chat"
-            elif draw < self.svc_effect_weight:
-                self.trap_return[2] += "SvC Effect"
-            elif draw < self.tutorial_trap_weight:
-                self.trap_return[3] += "Tutorial Trap"
-            elif draw < self.fake_transition_weight:
-                self.trap_return[4] += "Fake Transition"
-            '''elif draw < self.e_weight: # soon
-                trap_return[5] += "E"'''
-
-        return self.trap_return
-
     def get_filler_item_name(self) -> str:
-        return self.random.choices(self.filler_item_names, self.filler_item_weights)[0]
+        return self.random.choices(self.filler_item_names, self.fnfUtil.filler_item_weights)[0]
 
     def create_filler_item(self) -> Item:
         return FunkinFixedItem(self.get_filler_item_name(), ItemClassification.filler, None, self.player)
 
     def get_available_traps(self) -> List[str]:
-        full_trap_list = self.fnfUtil.trap_items_but_as_an_array_because_python_thats_why.copy()
-        trapString = self._create_traps_string()
-        traps: List[str] = []
-        for num in range(0, len(full_trap_list)):
-            if trapString != "":
-                traps.append(trapString[num])
-        return traps
+        full_trap_list = self.fnfUtil.trap_items.keys()
+        return [trap for trap in full_trap_list if self.options.trapAmount.value > 0 and self.check_trap_weight(trap) > 0]
+
+    def check_trap_weight(self, theTrap:str):
+        if self.fnfUtil.trap_items_weights.keys().__contains__(theTrap):
+            return self.fnfUtil.trap_items_weights[theTrap]
 
     def create_song_pool(self, available_song_keys: List[str]):
         if len(available_song_keys) > 0:
@@ -249,9 +206,9 @@ class FunkinWorld(World):
         for song_name, song_data in self.fnfUtil.song_items.items():
             if song_data.playerSongBelongsTo == self.player_name or self.player_name in song_data.playerList or not song_data.modded:
                 all_selected_locations.append(song_name)
-                print('Successfully gave ' + song_name + ' to ' + self.player_name + ' who is also ' + song_data.playerSongBelongsTo)
+                '''print('Successfully gave ' + song_name + ' to ' + self.player_name + ' who is also ' + song_data.playerSongBelongsTo)
             else:
-                print("This song doesn't belong to this player! Skipping it!\n Error: " + song_data.songName + " Belongs to " + song_data.playerSongBelongsTo + " and was attempted to be given to " + self.player_name)
+                print("This song doesn't belong to this player! Skipping it!\n Error: " + song_data.songName + " Belongs to " + song_data.playerSongBelongsTo + " and was attempted to be given to " + self.player_name)'''
         self.random.shuffle(all_selected_locations)
         # print(all_selected_locations)
 
@@ -259,11 +216,12 @@ class FunkinWorld(World):
         for i in range(len(all_selected_locations)):
             name = all_selected_locations[i]
             # for j in range(self.checksPerSong):
-            loc_name = f"{name}-{j}" if self.checksPerSong > 1 else name
-            loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
-            loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
-            menu_region.locations.append(loc)
-        self.location_count = len(all_selected_locations)
+            for j in range(2):
+                loc_name = f"{name}"
+                loc = FunkinLocation(self.player, loc_name + f"-{j}", self.fnfUtil.song_locations[loc_name + f"-{j}"], menu_region)
+                loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
+                menu_region.locations.append(loc)
+        self.location_count = 2 * len(all_selected_locations)
 
     def create_items(self) -> None:
         song_keys_in_pool = self.fnfUtil.get_songs_map(self.player_name).copy()
@@ -272,23 +230,23 @@ class FunkinWorld(World):
 
             # I'll figure this out eventually
             # First add all goal song tokens
-            '''for _ in range(0, item_count):
-                self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))'''
+            for _ in range(0, item_count):
+                self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))
 
             # Then add 1 copy of every song
             item_count += len(song_keys_in_pool)
             for song in song_keys_in_pool:
                 self.multiworld.itempool.append(self.create_item(song))
 
-            '''# Then add all traps, making sure we don't over fill
+            # Then add all traps, making sure we don't over fill
             trap_count = min(self.location_count - item_count, self.get_trap_count())
             trap_list = self.get_available_traps()
             if len(trap_list) > 0 and trap_count > 0:
                 for _ in range(0, trap_count):
                     index = self.random.randrange(0, len(trap_list))
                     self.multiworld.itempool.append(self.create_item(trap_list[index]))
-    
-                item_count += trap_count'''
+
+                item_count += trap_count
 
             # At this point, if a player is using traps, it's possible that they have filled all locations
             items_left = self.location_count - item_count
@@ -309,7 +267,7 @@ class FunkinWorld(World):
                 dupe_count -= len(song_keys_in_pool)
                 continue
     
-            '''self.random.shuffle(song_keys_in_pool)
+            self.random.shuffle(song_keys_in_pool)
             for i in range(0, dupe_count):
                 item = self.create_item(song_keys_in_pool[i])
                 item.classification = ItemClassification.useful
@@ -319,25 +277,14 @@ class FunkinWorld(World):
             items_left -= filler_count
     
             for _ in range(0, filler_count):
-                filler_item = self.create_item(self.random.choices(self.filler_item_names, self.filler_item_weights)[0])
-                self.multiworld.itempool.append(filler_item)'''
+                filler_item = self.create_item(self.random.choices(self.filler_item_names, self.fnfUtil.filler_item_weights)[0])
+                self.multiworld.itempool.append(filler_item)
 
     def set_rules(self) -> None:
+        self.multiworld.completion_condition[self.player] = \
+            lambda state: state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())
         '''self.multiworld.completion_condition[self.player] = lambda state: \
-            state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())'''
-        '''self.multiworld.get_location(self.victory_song_name, self.player).access_rule = \
-            lambda state: state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())'''
-        print('Victory Song: ' + self.victory_song_name)
-        self.multiworld.completion_condition[self.player] = lambda state: \
-            state.has(self.victory_song_name, self.player, 1)
-
-        '''for location in self.location_name_to_id:
-            for song in self.multiworld.itempool:
-                if location == song and not song.player == self.player:
-                     self.multiworld.itempool[location].classification = ItemClassification.filler'''
-
-        # print(self.multiworld.exclude_locations)
-
+            state.has(self.victory_song_name, self.player, 1)'''
 
     def get_trap_count(self) -> int:
         multiplier = self.options.trapAmount.value / 100.0
@@ -361,6 +308,7 @@ class FunkinWorld(World):
                 "fullSongCount": len(self.fnfUtil.get_songs_map(self.player_name)),
                 "victoryLocation": self.victory_song_name,
                 "victoryID": self.victory_song_id,
+                "ticketCount": self.get_ticket_count(),
                 "ticketWinCount": self.get_ticket_win_count(),
                 "gradeNeeded": self.options.graderequirement.value,
                 "accuracyNeeded": self.options.accrequirement.value,
