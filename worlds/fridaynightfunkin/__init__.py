@@ -3,12 +3,10 @@
 # This software is released under the MIT License.
 # https://opensource.org/licenses/MIT
 from BaseClasses import Region, Item, MultiWorld, Tutorial, ItemClassification
-from typing import List, ClassVar, Type, Tuple
+from typing import Dict, List, ClassVar, Type, Tuple
 from worlds.AutoWorld import World, WebWorld
 from math import floor
-from Options import PerGameCommonOptions
 import random
-import re
 
 from .ModHandler import (
     get_player_specific_ids,
@@ -59,10 +57,11 @@ class FunkinWorld(World):
     excludedSongs: List[str]
 
     fnfUtil = FunkinUtils()
-    filler_item_names = list(fnfUtil.filler_item_weights.keys())
+    filler_item_names = list(fnfUtil.filler_items.keys())
     filler_item_weights = list(fnfUtil.filler_item_weights.values())
     item_name_to_id = {name: code for name, code in fnfUtil.item_names_to_id.items()}
     location_name_to_id = {name: code for name, code in fnfUtil.location_names_to_id.items()}
+    trap_items_weights: Dict[str, int] = {}
 
     def __init__(self, multiworld: MultiWorld, player: int):
         # print("Building FunkinWorld...")
@@ -79,7 +78,7 @@ class FunkinWorld(World):
         self.svc_effect_weight = svcWeight.default
         self.tutorial_trap_weight = tutorialWeight.default
         self.fake_transition_weight = fakeTransWeight.default
-        self.chart_modifier_change_chance = ChartModChangeChance.default
+        self.chart_modifier_change_chance = chartModWeight.default
         self.ticket_percentage = TicketPercentage.default
         self.ticket_win_percentage = TicketWinPercentage.default
         self.graderequirement = gradeNeeded.default
@@ -94,14 +93,12 @@ class FunkinWorld(World):
         self.unlock_method = self.options.unlock_method.value
         # Trap Settings
         self.trapAmount = self.options.trapAmount.value
-        self.fnfUtil.trap_items_weights['Blue Balls Curse'] = self.options.bbcWeight.value
-        self.fnfUtil.trap_items_weights['Ghost Chat'] = self.options.ghostChatWeight.value
-        self.fnfUtil.trap_items_weights['SvC Effect'] = self.options.svcWeight.value
-        self.fnfUtil.trap_items_weights['Tutorial Trap'] = self.options.tutorialWeight.value
-        self.fnfUtil.trap_items_weights['Fake Transition'] = self.options.fakeTransWeight.value
-        self.fnfUtil.filler_item_weights['Shield'] = self.options.shieldWeight.value
-        self.fnfUtil.filler_item_weights['Max HP Up'] = self.options.MHPWeight.value
-        self.chart_modifier_change_chance = self.options.chart_modifier_change_chance.value
+        self.trap_items_weights['Blue Balls Curse'] = self.options.bbcWeight.value
+        self.trap_items_weights['Ghost Chat'] = self.options.ghostChatWeight.value
+        self.trap_items_weights['SvC Effect'] = self.options.svcWeight.value
+        self.trap_items_weights['Tutorial Trap'] = self.options.tutorialWeight.value
+        self.trap_items_weights['Fake Transition'] = self.options.fakeTransWeight.value
+        self.trap_items_weights['Chart Modifier Trap'] = self.options.chart_modifier_change_chance.value
         self.ticket_percentage = self.options.ticket_percentage.value
         self.ticket_win_percentage = self.options.ticket_win_percentage.value
         self.graderequirement = self.options.graderequirement.value
@@ -111,7 +108,7 @@ class FunkinWorld(World):
         while True:
             # In most cases this should only need to run once
             available_song_keys, song_ids = get_player_specific_ids(self.player_name, self.fnfUtil.song_items)
-            print(available_song_keys)
+            # print(available_song_keys)
 
             # print(get_player_specific_ids(self.options.songList.value, self.fnfUtil.song_items))
             # Choose victory song from current available keys, so we can access the song id
@@ -153,7 +150,7 @@ class FunkinWorld(World):
         return [self.create_item(name) for _ in range(0, qty)]
 
     def get_filler_item_name(self) -> str:
-        return self.random.choices(self.filler_item_names, self.fnfUtil.filler_item_weights)[0]
+        return self.random.choices(self.filler_item_names, self.filler_item_weights)[0]
 
     def create_filler_item(self) -> Item:
         return FunkinFixedItem(self.get_filler_item_name(), ItemClassification.filler, None, self.player)
@@ -163,8 +160,8 @@ class FunkinWorld(World):
         return [trap for trap in full_trap_list if self.options.trapAmount.value > 0 and self.check_trap_weight(trap) > 0]
 
     def check_trap_weight(self, theTrap:str):
-        if self.fnfUtil.trap_items_weights.keys().__contains__(theTrap):
-            return self.fnfUtil.trap_items_weights[theTrap]
+        if self.trap_items_weights.keys().__contains__(theTrap):
+            return self.trap_items_weights[theTrap]
 
     def create_song_pool(self, available_song_keys: List[str]):
         if len(available_song_keys) > 0:
@@ -199,7 +196,7 @@ class FunkinWorld(World):
         menu_region = Region("Freeplay", self.player, self.multiworld)
         self.multiworld.regions += [menu_region]
 
-        print("Preparing for new locations from Song Lists...")
+        # print("Preparing for new locations from Song Lists...")
 
 
         all_selected_locations: List[str] = []
@@ -277,8 +274,7 @@ class FunkinWorld(World):
             items_left -= filler_count
     
             for _ in range(0, filler_count):
-                filler_item = self.create_item(self.random.choices(self.filler_item_names, self.fnfUtil.filler_item_weights)[0])
-                self.multiworld.itempool.append(filler_item)
+                self.multiworld.itempool.append(self.create_item(self.get_filler_item_name()))
 
     def set_rules(self) -> None:
         self.multiworld.completion_condition[self.player] = \
@@ -308,8 +304,7 @@ class FunkinWorld(World):
                 "fullSongCount": len(self.fnfUtil.get_songs_map(self.player_name)),
                 "victoryLocation": self.victory_song_name,
                 "victoryID": self.victory_song_id,
-                "ticketCount": self.get_ticket_count(),
                 "ticketWinCount": self.get_ticket_win_count(),
                 "gradeNeeded": self.options.graderequirement.value,
-                "accuracyNeeded": self.options.accrequirement.value,
+                "accuracyNeeded": self.options.accrequirement.value
             }

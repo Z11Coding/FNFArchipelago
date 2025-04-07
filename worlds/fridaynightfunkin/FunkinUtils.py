@@ -29,14 +29,7 @@ class FunkinUtils:
         "SvC Effect": STARTING_CODE + 3,
         "Tutorial Trap": STARTING_CODE + 4,
         "Fake Transition": STARTING_CODE + 5,
-    }
-
-    trap_items_weights: Dict[str, int] = {
-        "Blue Balls Curse": 10,
-        "Ghost Chat": 10,
-        "SvC Effect": 10,
-        "Tutorial Trap": 10,
-        "Fake Transition": 10,
+        "Chart Modifier Trap": STARTING_CODE + 6,
     }
 
     filler_items: Dict[str, int] = {

@@ -98,6 +98,13 @@ class fakeTransWeight(Range):
     range_end = 10
     default = 10
 
+class chartModWeight(Range):
+    """The amount of Chart Modifier Traps in a run"""
+    display_name = "Chart Modifier Trap Weight"
+    range_start = 0
+    range_end = 10
+    default = 10
+
 
 class shieldWeight(Range):
     """The amount of Shield in a run"""
@@ -110,16 +117,6 @@ class shieldWeight(Range):
 class MHPWeight(Range):
     """The amount of Shield in a run"""
     display_name = "Max HP Up Item Weight"
-    range_start = 0
-    range_end = 10
-    default = 10
-
-
-class ChartModChangeChance(Range):
-    """
-        The amount of times you'll get a Chart Modifier Trap.
-    """
-    display_name = "Chart Modifier Trap Count"
     range_start = 0
     range_end = 10
     default = 10
@@ -178,7 +175,7 @@ fnf_option_groups = [
         fakeTransWeight,
         shieldWeight,
         MHPWeight,
-        ChartModChangeChance
+        chartModWeight
     ]),
 ]
 
@@ -187,7 +184,7 @@ fnf_option_groups = [
 class FunkinOptions(PerGameCommonOptions):
     mods_enabled: AllowMods
     starting_song: SongStarter
-    chart_modifier_change_chance: ChartModChangeChance
+    chart_modifier_change_chance: chartModWeight
     unlock_type: UnlockType
     unlock_method: UnlockMethod
     songList: songList
