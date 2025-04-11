@@ -8,7 +8,8 @@ from .Items import SongData
 from . import FunkinUtils
 from .FunkinUtils import FNFBaseList
 
-def extract_mod_data() -> dict[str, Any]:
+
+def extract_mod_data(self) -> dict[str, Any]:
     """
     Extracts mod data from YAML files and converts it to a list of dictionaries.
     """
@@ -87,6 +88,40 @@ def extract_mod_data() -> dict[str, Any]:
         # print(song + " from player " + name)
 
     return catagorizedSongList
+
+def check_methods(self) -> dict[str, Any]:
+    """
+    This needs to be seperate because otherwise there's no way of getting the info properly
+    """
+    user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
+    folder_path = sys.argv[sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
+
+    print(f"Checking YAMLs for Unlock Types at {folder_path}")
+
+    if not os.path.isdir(folder_path):
+        raise ValueError(f"The path {folder_path} is not a valid directory.")
+
+    # Search text for the specific game
+    search_text = "Friday Night Funkin"
+
+    # Search text for the specific list
+    search_list = "unlock_type"
+
+    checkMethods: dict[str, str] = {}
+
+    for item in os.listdir(folder_path)[::-1]:
+        item_path = os.path.join(folder_path, item)
+
+        if os.path.isfile(item_path):
+            with (open(item_path, 'r', encoding='utf-8') as file):  # Open the file in read mode
+                file_content = file.read()
+
+                # Check if the search text (game title) is found in the file
+                if search_text in file_content:
+                    if search_list in file_content:
+                        setandval = file_content.split(':')
+                        checkMethods[setandval[0]] = setandval[1]
+                        return
 
 def get_dict(mod_data, client):
 

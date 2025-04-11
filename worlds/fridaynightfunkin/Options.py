@@ -36,7 +36,7 @@ class UnlockMethod(OptionSet):
     """The way you wish to get checks."""
     display_name = "Check Method"
     valid_keys = ["Note Checks", "Song Completion", "Both"]
-    default = "Song Completion"
+    default = "Note Checks"
 
 class CheckCount(Range):
     """How many checks a song contains."""

@@ -56,6 +56,9 @@ class FunkinWorld(World):
     songList: List[str]
     excludedSongs: List[str]
 
+    unlock_type:str
+    unlock_method:str
+
     fnfUtil = FunkinUtils()
     filler_item_names = list(fnfUtil.filler_items.keys())
     filler_item_weights = list(fnfUtil.filler_item_weights.values())
@@ -89,8 +92,8 @@ class FunkinWorld(World):
         # Basic Settings
         self.mods_enabled = self.options.mods_enabled.value
         self.starting_song = self.options.starting_song.value
-        self.unlock_type = self.options.unlock_type.value
-        self.unlock_method = self.options.unlock_method.value
+        self.unlock_type = self.options.unlock_type.value.pop()
+        self.unlock_method = self.options.unlock_method.value.pop()
         # Trap Settings
         self.trapAmount = self.options.trapAmount.value
         self.trap_items_weights['Blue Balls Curse'] = self.options.bbcWeight.value
@@ -212,25 +215,21 @@ class FunkinWorld(World):
         # Adds item locations per song to the menu region based on unlock method.
         for i in range(len(all_selected_locations)):
             name = all_selected_locations[i]
-            print(str(self.unlock_method))
-            unlock: str = str(self.options.unlock_method.value).strip('"').strip("'").strip("{").strip("}").strip("[").strip("]").strip(",").strip(" ").strip("'")
-            print(unlock)
-            unlock = "Note Checks"
-            if unlock == "Song Completion":
+            # for j in range(self.checksPerSong):
+            if self.unlock_method == "Song Completion":
                 for j in range(2):
-                    print('Song')
                     loc_name = f"{name}"
                     loc = FunkinLocation(self.player, loc_name + f"-{j}", self.fnfUtil.song_locations[loc_name + f"-{j}"], menu_region)
                     loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
                     menu_region.locations.append(loc)
-            elif unlock == "Note Checks":
+            elif self.unlock_method == "Note Checks":
                 for j in range(3):
                     print("Note.")
                     loc_name = f"Note {j}: {name}"
                     loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
                     loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
                     menu_region.locations.append(loc)
-            elif unlock == "Both":
+            elif self.unlock_method == "Both":
                 for j in range(2):
                     print("SONG")
                     loc_name = f"{name}"
