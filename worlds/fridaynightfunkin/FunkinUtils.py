@@ -52,7 +52,7 @@ class FunkinUtils:
         self.location_names_to_id = ChainMap(self.song_locations)
 
         from . import extract_mod_data
-        mod_data = extract_mod_data()
+        mod_data = extract_mod_data(self)
         playerNames = []
 
         if mod_data:

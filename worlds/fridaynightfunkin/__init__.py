@@ -3,7 +3,7 @@
 # This software is released under the MIT License.
 # https://opensource.org/licenses/MIT
 from BaseClasses import Region, Item, MultiWorld, Tutorial, ItemClassification
-from typing import Dict, List, ClassVar, Type, Tuple
+from typing import Dict, List, ClassVar, Type, Tuple, TextIO
 from worlds.AutoWorld import World, WebWorld
 from math import floor
 import random
@@ -220,27 +220,31 @@ class FunkinWorld(World):
                 for j in range(2):
                     loc_name = f"{name}"
                     loc = FunkinLocation(self.player, loc_name + f"-{j}", self.fnfUtil.song_locations[loc_name + f"-{j}"], menu_region)
-                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
+                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player) and \
+                        (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
                     menu_region.locations.append(loc)
             elif self.unlock_method == "Note Checks":
                 for j in range(3):
                     print("Note.")
                     loc_name = f"Note {j}: {name}"
                     loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
-                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
+                    loc.access_rule = lambda state, place=f"{name}": state.has(place, self.player) and \
+                        (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
                     menu_region.locations.append(loc)
             elif self.unlock_method == "Both":
                 for j in range(2):
                     print("SONG")
                     loc_name = f"{name}"
                     loc = FunkinLocation(self.player, loc_name + f"-{j}", self.fnfUtil.song_locations[loc_name + f"-{j}"], menu_region)
-                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
+                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player) and \
+                        (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
                     menu_region.locations.append(loc)
                 for j in range(3):
                     print("NOTE.")
                     loc_name = f"Note {j}: {name}"
                     loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
-                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
+                    loc.access_rule = lambda state, place=f"{name}": state.has(place, self.player) and \
+                        (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
                     menu_region.locations.append(loc)
             self.location_count = len(menu_region.locations)
 
@@ -304,7 +308,8 @@ class FunkinWorld(World):
 
     def set_rules(self) -> None:
         self.multiworld.completion_condition[self.player] = \
-            lambda state: state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())
+            lambda state: state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()) and \
+                  state.has(self.victory_song_name, self.player, 1)
         '''self.multiworld.completion_condition[self.player] = lambda state: \
             state.has(self.victory_song_name, self.player, 1)'''
 
@@ -323,6 +328,14 @@ class FunkinWorld(World):
         ticket_count = self.get_ticket_count()
         return max(1, floor(ticket_count * multiplier))
 
+
+    def write_spoiler(self, spoiler_handle: TextIO) -> None:
+        spoiler_handle.write("\n\n")
+        spoiler_handle.write(f"Victory Song: {self.victory_song_name}\n")
+        spoiler_handle.write(f"Ticket Win Count: {self.get_ticket_win_count()}\n")
+        spoiler_handle.write(f"Total Ticket Count: {self.get_ticket_count()}\n")
+    
+
     def fill_slot_data(self):
         if not self.victory_song_name == "":
             return {
@@ -332,5 +345,6 @@ class FunkinWorld(World):
                 "victoryID": self.victory_song_id,
                 "ticketWinCount": self.get_ticket_win_count(),
                 "gradeNeeded": self.options.graderequirement.value,
-                "accuracyNeeded": self.options.accrequirement.value
+                "accuracyNeeded": self.options.accrequirement.value,
+                "locationType": self.unlock_method
             }
