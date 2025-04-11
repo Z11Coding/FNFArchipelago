@@ -209,16 +209,43 @@ class FunkinWorld(World):
         self.random.shuffle(all_selected_locations)
         # print(all_selected_locations)
 
-        # Adds item locations per song to the menu region.
+        # Adds item locations per song to the menu region based on unlock method.
         for i in range(len(all_selected_locations)):
             name = all_selected_locations[i]
-            # for j in range(self.checksPerSong):
-            for j in range(2):
-                loc_name = f"{name}"
-                loc = FunkinLocation(self.player, loc_name + f"-{j}", self.fnfUtil.song_locations[loc_name + f"-{j}"], menu_region)
-                loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
-                menu_region.locations.append(loc)
-        self.location_count = 2 * len(all_selected_locations)
+            print(str(self.unlock_method))
+            unlock: str = str(self.options.unlock_method.value).strip('"').strip("'").strip("{").strip("}").strip("[").strip("]").strip(",").strip(" ").strip("'")
+            print(unlock)
+            unlock = "Note Checks"
+            if unlock == "Song Completion":
+                for j in range(2):
+                    print('Song')
+                    loc_name = f"{name}"
+                    loc = FunkinLocation(self.player, loc_name + f"-{j}", self.fnfUtil.song_locations[loc_name + f"-{j}"], menu_region)
+                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
+                    menu_region.locations.append(loc)
+            elif unlock == "Note Checks":
+                for j in range(3):
+                    print("Note.")
+                    loc_name = f"Note {j}: {name}"
+                    loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
+                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
+                    menu_region.locations.append(loc)
+            elif unlock == "Both":
+                for j in range(2):
+                    print("SONG")
+                    loc_name = f"{name}"
+                    loc = FunkinLocation(self.player, loc_name + f"-{j}", self.fnfUtil.song_locations[loc_name + f"-{j}"], menu_region)
+                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
+                    menu_region.locations.append(loc)
+                for j in range(3):
+                    print("NOTE.")
+                    loc_name = f"Note {j}: {name}"
+                    loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
+                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player)
+                    menu_region.locations.append(loc)
+            self.location_count = len(menu_region.locations)
+
+            # print(self.fnfUtil.song_locations)
 
     def create_items(self) -> None:
         song_keys_in_pool = self.fnfUtil.get_songs_map(self.player_name).copy()

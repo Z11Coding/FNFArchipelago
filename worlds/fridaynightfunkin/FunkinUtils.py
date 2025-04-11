@@ -92,6 +92,8 @@ class FunkinUtils:
         for song_name, song_data in self.song_items.items():
             for j in range(2):
                 self.song_locations[f"{song_name}-{j}"] = (song_data.code + 1000 * j)
+            for j in range(3):
+                self.song_locations[f"Note {j}: {song_name}"] = (song_data.code + 1000 * j + 10000)
 
 
     def get_songs_with_settings(self, mods: bool, mod_ids: List[int]) -> Tuple[List[str], List[int]]:
