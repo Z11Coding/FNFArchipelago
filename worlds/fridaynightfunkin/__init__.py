@@ -225,7 +225,7 @@ class FunkinWorld(World):
                     menu_region.locations.append(loc)
             elif self.unlock_method == "Note Checks":
                 for j in range(3):
-                    print("Note.")
+                    # print("Note.")
                     loc_name = f"Note {j}: {name}"
                     loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
                     loc.access_rule = lambda state, place=f"{name}": state.has(place, self.player) and \
@@ -233,14 +233,14 @@ class FunkinWorld(World):
                     menu_region.locations.append(loc)
             elif self.unlock_method == "Both":
                 for j in range(2):
-                    print("SONG")
+                    # print("SONG")
                     loc_name = f"{name}"
                     loc = FunkinLocation(self.player, loc_name + f"-{j}", self.fnfUtil.song_locations[loc_name + f"-{j}"], menu_region)
                     loc.access_rule = lambda state, place=loc_name: state.has(place, self.player) and \
                         (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
                     menu_region.locations.append(loc)
                 for j in range(3):
-                    print("NOTE.")
+                    # print("NOTE.")
                     loc_name = f"Note {j}: {name}"
                     loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
                     loc.access_rule = lambda state, place=f"{name}": state.has(place, self.player) and \
@@ -249,6 +249,8 @@ class FunkinWorld(World):
             self.location_count = len(menu_region.locations)
 
             # print(self.fnfUtil.song_locations)
+        print('-- FNF LOCATION GEN FINISHED --')
+
 
     def create_items(self) -> None:
         song_keys_in_pool = self.fnfUtil.get_songs_map(self.player_name).copy()

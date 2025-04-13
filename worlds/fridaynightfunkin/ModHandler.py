@@ -18,7 +18,7 @@ def extract_mod_data(self) -> dict[str, Any]:
     user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
     folder_path = sys.argv[sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
 
-    print(f"Checking YAMLs for songList at {folder_path}")
+    # print(f"Checking YAMLs for songList at {folder_path}")
 
     if not os.path.isdir(folder_path):
         raise ValueError(f"The path {folder_path} is not a valid directory.")
@@ -80,8 +80,9 @@ def extract_mod_data(self) -> dict[str, Any]:
         trueSongList[i] = song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']')
 
     total = len(trueSongList)
+    print("-- FNF PREFILL --")
     print(f"Found {total} songs for {players} players.")
-    print(f"Found {len(dupeSongList)} duplicate songs.")
+    # print(f"Found {len(dupeSongList)} duplicate songs.")
 
     for song in trueSongList:
         FNFBaseList.localSongList.append(song)
@@ -150,7 +151,7 @@ def get_player_specific_ids(player_name: str, song_items: dict[str, SongData]):
     song_ids = []  # Initialize an empty list to store song IDs
     song_names = []  # Initialize an empty list to store song names
 
-    print(song_items.items())
+    # print(song_items.items())
     # print(player_name)
     for song, data in song_items.items():
         if song == "Test":

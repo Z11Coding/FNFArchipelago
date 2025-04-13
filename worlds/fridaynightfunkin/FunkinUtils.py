@@ -56,11 +56,11 @@ class FunkinUtils:
         playerNames = []
 
         if mod_data:
-            print('Players Detected')
+            print('-- DOING FNF SONG FILL --')
             for name in mod_data.keys():
                 playerNames.append(name)
             for name, list in mod_data.items():
-                print("Listing Songs for " + name + "\n" + str(list))
+                # print("Listing Songs for " + name + "\n" + str(list))
                 for song in list:
                     cur_song_name = song
                     item_id = item_id_index
@@ -71,11 +71,11 @@ class FunkinUtils:
                         self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, name, [])
                         self.song_items[cur_song_name].playerList.append(name)
                         item_id_index += 1
-                        print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
+                        # print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
         else:
             playerNames.append("blank")
             for song in FNFBaseList.emptySongList:
-                print("No one's playing FNF! Placing Test!")
+                # print("No one's playing FNF! Placing Test!")
                 cur_song_name = song
                 item_id = item_id_index
                 isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
@@ -85,7 +85,7 @@ class FunkinUtils:
                     self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, 'blank', [])
                     self.song_items[cur_song_name].playerList.append('blank')
                     item_id_index += 1
-                    print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
+                    # print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
 
         self.item_names_to_id.update({name: data.code for name, data in self.song_items.items()})
 

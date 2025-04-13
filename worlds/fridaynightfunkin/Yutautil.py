@@ -2515,11 +2515,11 @@ class YutaUtil:
 
     @staticmethod
     def main():
-        haxe_Log.trace("Hello, world!",_hx_AnonObject({'fileName': "src/YutaUtil.hx", 'lineNumber': 24, 'className': "YutaUtil", 'methodName': "main"}))
-        chance = yutautil_CatagorizedMap(["a", "b", "c"],True)
-        SomeWeirdShit = yutautil_save_MixSaveWrapper.newMix()
-        code = "function() {\n\treturn 1 + 2;\n}"
-        haxe_Log.trace(code,_hx_AnonObject({'fileName': "src/YutaUtil.hx", 'lineNumber': 31, 'className': "YutaUtil", 'methodName': "main"}))
+        # haxe_Log.trace("Hello, world!",_hx_AnonObject({'fileName': "src/YutaUtil.hx", 'lineNumber': 24, 'className': "YutaUtil", 'methodName': "main"}))
+        # chance = yutautil_CatagorizedMap(["a", "b", "c"],True)
+        # SomeWeirdShit = yutautil_save_MixSaveWrapper.newMix()
+        # code = "function() {\n\treturn 1 + 2;\n}"
+        # haxe_Log.trace(code,_hx_AnonObject({'fileName': "src/YutaUtil.hx", 'lineNumber': 31, 'className': "YutaUtil", 'methodName': "main"}))
         YutaUtil.services.add("Var",backend_modules_Variable)
         YutaUtil.services.add("HaxeFunc",yutautil_save_FuncEmbed)
         YutaUtil.services.add("Class",Type.getClass(Dynamic))
@@ -2533,7 +2533,7 @@ class YutaUtil:
         YutaUtil.services.add("Table",Table)
         YutaUtil.services.add("Table",DTable)
         YutaUtil.services.add("Table",HTable)
-        haxe_Log.trace(yutautil_save_FuncEmbed.runFunctionFromString(code,_hx_AnonObject({}),True),_hx_AnonObject({'fileName': "src/YutaUtil.hx", 'lineNumber': 60, 'className': "YutaUtil", 'methodName': "main"}))
+        # haxe_Log.trace(yutautil_save_FuncEmbed.runFunctionFromString(code,_hx_AnonObject({}),True),_hx_AnonObject({'fileName': "src/YutaUtil.hx", 'lineNumber': 60, 'className': "YutaUtil", 'methodName': "main"}))
 
     @staticmethod
     def getServices():
@@ -12085,7 +12085,7 @@ sys_thread__Thread_HxThread.mainThread.events = sys_thread_EventLoop()
 python_Lib.lineEnd = ("\r\n" if ((Sys.systemName() == "Windows")) else "\n")
 python_Boot.keywords = set(["and", "del", "from", "not", "with", "as", "elif", "global", "or", "yield", "assert", "else", "if", "pass", "None", "break", "except", "import", "raise", "True", "class", "exec", "in", "return", "False", "continue", "finally", "is", "try", "def", "for", "lambda", "while"])
 python_Boot.prefixLength = len("_hx_")
-YutaUtil.date = yutautil_ExtendedDate.newDate()
+# YutaUtil.date = yutautil_ExtendedDate.newDate()
 YutaUtil.services = yutautil_CatagorizedMap(["Var", "Func", "Class", "Thread", "Date", "Map", "Save", "Chance"],True)
 backend_Threader.specialThreads = []
 backend_Threader.quietThreads = []
