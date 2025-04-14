@@ -333,9 +333,16 @@ class FunkinWorld(World):
 
     def write_spoiler(self, spoiler_handle: TextIO) -> None:
         spoiler_handle.write("\n\n")
+        spoiler_handle.write(f"--- FNF SPOILER INFO FOR {self.player_name} ---\n")
         spoiler_handle.write(f"Victory Song: {self.victory_song_name}\n")
         spoiler_handle.write(f"Ticket Win Count: {self.get_ticket_win_count()}\n")
         spoiler_handle.write(f"Total Ticket Count: {self.get_ticket_count()}\n")
+        
+    # def extend_hint_information(self, hint_data):
+    #     return super().extend_hint_information(hint_data)
+    
+    # def collect(self, state, item):
+    #     return super().collect(state, item)
     
 
     def fill_slot_data(self):
