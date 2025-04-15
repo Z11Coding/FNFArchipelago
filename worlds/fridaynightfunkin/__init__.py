@@ -355,5 +355,6 @@ class FunkinWorld(World):
                 "ticketWinCount": self.get_ticket_win_count(),
                 "gradeNeeded": self.options.graderequirement.value,
                 "accuracyNeeded": self.options.accrequirement.value,
-                "locationType": self.unlock_method
+                "locationType": self.unlock_method, "yeah idk either"
+                "locationMethod": self.unlock_type
             }
