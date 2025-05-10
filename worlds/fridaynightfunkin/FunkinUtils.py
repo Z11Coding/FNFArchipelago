@@ -32,14 +32,17 @@ class FunkinUtils:
         "Chart Modifier Trap": STARTING_CODE + 6,
     }
 
-    filler_items: Dict[str, int] = {
+    normal_items: Dict[str, int] = {
         "Shield": STARTING_CODE + 30,
         "Max HP Up": STARTING_CODE + 31
     }
 
+    filler_items: Dict[str, int] = {
+        "Nothing": STARTING_CODE + 50
+    }
+
     filler_item_weights: Dict[str, int] = {
-        "Shield": 10,
-        "Max HP Up": 3
+        "Nothing": 10
     }
 
     mapthing:Dict[str, List[str]] = {}

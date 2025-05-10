@@ -62,9 +62,11 @@ class FunkinWorld(World):
     fnfUtil = FunkinUtils()
     filler_item_names = list(fnfUtil.filler_items.keys())
     filler_item_weights = list(fnfUtil.filler_item_weights.values())
+    items_in_general: dict[str, int] = {}
     item_name_to_id = {name: code for name, code in fnfUtil.item_names_to_id.items()}
     location_name_to_id = {name: code for name, code in fnfUtil.location_names_to_id.items()}
-    trap_items_weights: Dict[str, int] = {}
+    trap_items_weights: dict[str, int] = {}
+    items_weights: dict[str, int] = {}
 
     def __init__(self, multiworld: MultiWorld, player: int):
         # print("Building FunkinWorld...")
@@ -102,6 +104,8 @@ class FunkinWorld(World):
         self.trap_items_weights['Tutorial Trap'] = self.options.tutorialWeight.value
         self.trap_items_weights['Fake Transition'] = self.options.fakeTransWeight.value
         self.trap_items_weights['Chart Modifier Trap'] = self.options.chart_modifier_change_chance.value
+        self.items_in_general['Shield'] = self.options.shieldWeight.value
+        self.items_in_general['Max HP Up'] = self.options.MHPWeight.value
         self.ticket_percentage = self.options.ticket_percentage.value
         self.ticket_win_percentage = self.options.ticket_win_percentage.value
         self.graderequirement = self.options.graderequirement.value
@@ -136,6 +140,11 @@ class FunkinWorld(World):
         if filler:
             return FunkinFixedItem(name, ItemClassification.filler, filler, self.player)
 
+        item = self.fnfUtil.normal_items.get(name)
+        if item:
+            print('Found Item: ' + name)
+            return FunkinFixedItem(name, ItemClassification.useful, item, self.player)
+
         trap = self.fnfUtil.trap_items.get(name)
         if trap:
             return FunkinFixedItem(name, ItemClassification.trap, trap, self.player)
@@ -162,9 +171,17 @@ class FunkinWorld(World):
         full_trap_list = self.fnfUtil.trap_items.keys()
         return [trap for trap in full_trap_list if self.options.trapAmount.value > 0 and self.check_trap_weight(trap) > 0]
 
+    def get_available_items(self) -> List[str]:
+        full_item_list = self.fnfUtil.normal_items.keys()
+        return [item for item in full_item_list if self.check_item_weight(item) > 0]
+
     def check_trap_weight(self, theTrap:str):
         if self.trap_items_weights.keys().__contains__(theTrap):
             return self.trap_items_weights[theTrap]
+
+    def check_item_weight(self, theItem:str):
+        if self.items_in_general.keys().__contains__(theItem):
+            return self.items_in_general[theItem]
 
     def create_song_pool(self, available_song_keys: List[str]):
         if len(available_song_keys) > 0:
@@ -277,8 +294,17 @@ class FunkinWorld(World):
 
                 item_count += trap_count
 
-            # At this point, if a player is using traps, it's possible that they have filled all locations
+            #Next, add all of their items
             items_left = self.location_count - item_count
+            item_count = min(items_left, self.get_item_count())
+            item_list = self.get_available_items()
+            if len(item_list) > 0 and item_count > 0:
+                for _ in range(0, item_count):
+                    index = self.random.randrange(0, len(item_list))
+                    self.multiworld.itempool.append(self.create_item(item_list[index]))
+
+
+            # At this point, if a player is using traps, it's possible that they have filled all locations
             if items_left <= 0:
                 return
     
@@ -312,13 +338,12 @@ class FunkinWorld(World):
         self.multiworld.completion_condition[self.player] = \
             lambda state: state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()) and \
                   state.has(self.victory_song_name, self.player, 1)
-        '''self.multiworld.completion_condition[self.player] = lambda state: \
-            state.has(self.victory_song_name, self.player, 1)'''
 
     def get_trap_count(self) -> int:
-        multiplier = self.options.trapAmount.value / 100.0
-        trap_count = len(self.fnfUtil.get_songs_map(self.player_name))
-        return max(0, floor(trap_count * multiplier))
+        return self.options.trapAmount.value
+
+    def get_item_count(self) -> int:
+        return self.items_in_general['Shield'] + self.items_in_general['Max HP Up']
 
     def get_ticket_count(self) -> int:
         multiplier = self.options.ticket_percentage.value / 100.0
