@@ -142,7 +142,6 @@ class FunkinWorld(World):
 
         item = self.fnfUtil.normal_items.get(name)
         if item:
-            print('Found Item: ' + name)
             return FunkinFixedItem(name, ItemClassification.useful, item, self.player)
 
         trap = self.fnfUtil.trap_items.get(name)

@@ -51,7 +51,7 @@ class FunkinUtils:
 
     def __init__(self) -> None:
         item_id_index = self.STARTING_CODE + (len(FNFBaseList.localSongList) + 100)
-        self.item_names_to_id = ChainMap({self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, self.filler_items, self.trap_items, self.song_items)
+        self.item_names_to_id = ChainMap({self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, self.filler_items, self.normal_items, self.trap_items, self.song_items)
         self.location_names_to_id = ChainMap(self.song_locations)
 
         from . import extract_mod_data
