@@ -40,12 +40,12 @@ class FNFBaseList:
         'Senpai Erect', 'Roses Erect', 'Thorns Erect',
         'Ugh Erect',
         'Darnell Erect',
-        'Bopeebo (Pico mix)', 'Fresh (Pico mix)', 'Dad Battle (Pico mix)',
-        'Spookeez (Pico mix)', 'South (Pico mix)',
-        'Pico (Pico mix)', 'Philly Nice (Pico mix)', 'Blammed (Pico mix)',
-        'Eggnog (Pico mix)', 'Cocoa (Pico mix)',
-        'Senpai (Pico mix)', 'Roses (Pico mix)'
-        'Ugh (Pico mix)', 'Guns (Pico mix)', 'Stress (Pico mix)',
+		'Bopeebo (Pico Mix)', 'Fresh (Pico mix)', 'Dad Battle (Pico mix)',
+		'Spookeez (Pico mix)', 'South (Pico mix)',
+		'Pico (Pico mix)', 'Philly Nice (Pico mix)', 'Blammed (Pico mix)',
+		'Eggnog (Pico Mix)', 'Cocoa (Pico Mix)',
+		'Senpai (Pico mix)', 'Roses (Pico mix)',
+		'Ugh (Pico mix)', 'Guns (Pico mix)', 'Stress (Pico Mix)'
         'Small Argument',
         'Beat Battle',
         'Beat Battle 2'
@@ -53,7 +53,7 @@ class FNFBaseList:
 
     # Because it's not allowed to be empty ig
     emptySongList: List[str] = [
-        "Test",
+        "nosongsavalible",
         "Tutorial",
     ]
 

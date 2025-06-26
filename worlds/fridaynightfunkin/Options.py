@@ -4,7 +4,7 @@
 # https://opensource.org/licenses/MIT
 
 from dataclasses import dataclass
-from Options import Toggle, OptionSet, OptionList, Range, PerGameCommonOptions, OptionGroup, DeathLink
+from Options import Toggle, OptionSet, OptionList, Range, PerGameCommonOptions, OptionGroup, DeathLink, FreeText
 from .Items import FNFBaseList
 
 
@@ -16,13 +16,10 @@ class AllowMods(Toggle):
     default = False
 
 
-class SongStarter(OptionSet):
-    """The song you wish to start with.
-    (Tutorial is recommended, but not required.
-    Any song will work. Or none at all if that's your thing.)"""
+class SongStarter(FreeText):
+    """The song you wish to start with."""
     display_name = "Starting Songs"
-    valid_keys = [song for song in FNFBaseList.baseSongList]
-    default = "Bopeebo"
+    default = ""
 
 
 class UnlockType(OptionSet):
@@ -36,7 +33,7 @@ class UnlockMethod(OptionSet):
     """The way you wish to get checks."""
     display_name = "Check Method"
     valid_keys = ["Note Checks", "Song Completion", "Both"]
-    default = "Note Checks"
+    default = "Song Completion"
 
 class CheckCount(Range):
     """How many checks a song contains."""
@@ -64,7 +61,7 @@ class bbcWeight(Range):
     display_name = "Blue Balls Curse Trap Weight"
     range_start = 0
     range_end = 10
-    default = 10
+    default = 5
 
 
 class ghostChatWeight(Range):
@@ -72,7 +69,7 @@ class ghostChatWeight(Range):
     display_name = "Ghost Chat Trap Weight"
     range_start = 0
     range_end = 10
-    default = 10
+    default = 5
 
 
 class svcWeight(Range):
@@ -80,7 +77,7 @@ class svcWeight(Range):
     display_name = "SvC Effect Trap Weight"
     range_start = 0
     range_end = 10
-    default = 10
+    default = 5
 
 
 class tutorialWeight(Range):
@@ -88,7 +85,7 @@ class tutorialWeight(Range):
     display_name = "Tutorial Trap Weight"
     range_start = 0
     range_end = 10
-    default = 10
+    default = 5
 
 
 class fakeTransWeight(Range):
@@ -96,14 +93,14 @@ class fakeTransWeight(Range):
     display_name = "Fake Transition Trap Weight"
     range_start = 0
     range_end = 10
-    default = 10
+    default = 5
 
 class chartModWeight(Range):
     """The amount of Chart Modifier Traps in a run"""
     display_name = "Chart Modifier Trap Weight"
     range_start = 0
     range_end = 10
-    default = 10
+    default = 5
 
 
 class shieldWeight(Range):
@@ -111,7 +108,7 @@ class shieldWeight(Range):
     display_name = "Shield Item Weight"
     range_start = 0
     range_end = 10
-    default = 10
+    default = 5
 
 
 class MHPWeight(Range):
@@ -119,7 +116,7 @@ class MHPWeight(Range):
     display_name = "Max HP Up Item Weight"
     range_start = 0
     range_end = 10
-    default = 10
+    default = 5
 
 
 class TicketPercentage(Range):
@@ -152,11 +149,19 @@ class accuracyNeeded(OptionList):
     default = "Any"
     display_name = "Grade Required"
 
+class songLimit(Range):
+    """The percentage of songs in the item pool."""
+    range_start = 3
+    range_end = 6000000  # This is only this high because there's no way to actually check how many songs there are before the songList is generated.
+    default = 16
+    display_name = "Song Limit"
+
 
 fnf_option_groups = [
     OptionGroup("Base Settings", [
         AllowMods,
         SongStarter,
+        songLimit,
         UnlockType,
         UnlockMethod,
         songList,
@@ -184,6 +189,7 @@ fnf_option_groups = [
 class FunkinOptions(PerGameCommonOptions):
     mods_enabled: AllowMods
     starting_song: SongStarter
+    song_limit: songLimit
     chart_modifier_change_chance: chartModWeight
     unlock_type: UnlockType
     unlock_method: UnlockMethod

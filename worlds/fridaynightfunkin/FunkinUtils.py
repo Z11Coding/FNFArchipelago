@@ -4,6 +4,7 @@ from .SymbolFixer import fix_song_name
 
 from .Items import FNFBaseList, SongData
 from .Options import *
+import random
 from ..AutoWorld import World
 
 
@@ -48,6 +49,7 @@ class FunkinUtils:
     mapthing:Dict[str, List[str]] = {}
     mod_data: Dict[str, List[str]] = {}
     playerNames:List[str] = []
+    songLimit:int = 0
 
     def __init__(self) -> None:
         item_id_index = self.STARTING_CODE + (len(FNFBaseList.localSongList) + 100)
@@ -59,22 +61,32 @@ class FunkinUtils:
         playerNames = []
 
         if mod_data:
-            print('-- DOING FNF SONG FILL --')
+            # print('-- DOING FNF SONG FILL --')
             for name in mod_data.keys():
-                playerNames.append(name)
+                if name == "song_limit":
+                    self.songLimit = int(mod_data.get('song_limit')[0])
+                    # print("SONG LIMIT: " + str(self.songLimit))
+                else:
+                    playerNames.append(name)
+
             for name, list in mod_data.items():
                 # print("Listing Songs for " + name + "\n" + str(list))
                 for song in list:
-                    cur_song_name = song
-                    item_id = item_id_index
-                    isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
-                    if cur_song_name in self.song_items.keys():
-                        self.song_items[cur_song_name].playerList.append(name)
+                    if len(self.song_items.keys()) <= self.songLimit:
+                        if song == str(self.songLimit):
+                            continue
+                        cur_song_name = song
+                        item_id = item_id_index
+                        isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+                        if cur_song_name in self.song_items.keys():
+                            self.song_items[cur_song_name].playerList.append(name)
+                        else:
+                            self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, name, [])
+                            self.song_items[cur_song_name].playerList.append(name)
+                            item_id_index += 1
+                            # print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
                     else:
-                        self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, name, [])
-                        self.song_items[cur_song_name].playerList.append(name)
-                        item_id_index += 1
-                        # print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
+                        break
         else:
             playerNames.append("blank")
             for song in FNFBaseList.emptySongList:

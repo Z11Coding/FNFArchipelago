@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import ast
 import Utils
@@ -29,6 +30,9 @@ def extract_mod_data(self) -> dict[str, Any]:
     # Search text for the specific list
     search_list = "songList"
 
+    # Search text for the specific setting
+    song_limit = "song_limit"
+
     # Regex pattern to capture the outermost braces content
     trueSongList: List[str]
 
@@ -50,6 +54,14 @@ def extract_mod_data(self) -> dict[str, Any]:
 
                 # Check if the search text (game title) is found in the file
                 if search_text in file_content:
+                    if song_limit in file_content:
+                        tempvar: List[str] = []
+                        tempvar = file_content.split('\n')
+
+                        for limit in tempvar:
+                            if song_limit in limit:
+                                catagorizedSongList['song_limit'] = [limit.replace(' ', '').replace('song_limit:', '')]
+
                     if search_list in file_content:
                         # Search for all occurrences of 'songList:' and the block within []
                         tempSongList: List[str]
@@ -63,7 +75,10 @@ def extract_mod_data(self) -> dict[str, Any]:
                                 songsList2ohboyherewego = item.split(':')
                                 falseSongList = str(songsList2ohboyherewego[1][2:-1])
 
-                                for song in falseSongList.split(','):
+                                altfalseSongList = falseSongList.split(',')
+                                random.shuffle(altfalseSongList)
+                                # print(altfalseSongList)
+                                for song in altfalseSongList:
                                     if song.strip() not in uniqueSongList:
                                         uniqueSongList.append(song)
                                     else:
@@ -73,15 +88,18 @@ def extract_mod_data(self) -> dict[str, Any]:
                                 players = player
                                 for song in uniqueSongList:
                                     trueSongList.append(song)
-                                    catagorizedSongList[name] = falseSongList.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']').split(',')
+
+                                for song in altfalseSongList:
+                                    song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']')
+                                catagorizedSongList[name] = altfalseSongList
                                     # print(song + " from player " + name)
                                 # print(trueSongList)
     for i, song in enumerate(trueSongList):
         trueSongList[i] = song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']')
 
     total = len(trueSongList)
-    print("-- FNF PREFILL --")
-    print(f"Found {total} songs for {players} players.")
+    # print("-- FNF PREFILL --")
+    # print(f"Found {total} songs for {players} players.")
     # print(f"Found {len(dupeSongList)} duplicate songs.")
 
     for song in trueSongList:

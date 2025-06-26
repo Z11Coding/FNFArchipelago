@@ -67,6 +67,7 @@ class FunkinWorld(World):
     location_name_to_id = {name: code for name, code in fnfUtil.location_names_to_id.items()}
     trap_items_weights: dict[str, int] = {}
     items_weights: dict[str, int] = {}
+    songLimit:int
 
     def __init__(self, multiworld: MultiWorld, player: int):
         # print("Building FunkinWorld...")
@@ -111,6 +112,7 @@ class FunkinWorld(World):
         self.graderequirement = self.options.graderequirement.value
         self.accrequirement = self.options.accrequirement.value
         self.checksPerSong = self.options.check_count.value
+        self.songLimit = self.options.song_limit.value
         #self.e_weight = self.options.trapAmount.value imma do this later
         while True:
             # In most cases this should only need to run once
@@ -265,7 +267,7 @@ class FunkinWorld(World):
             self.location_count = len(menu_region.locations)
 
             # print(self.fnfUtil.song_locations)
-        print('-- FNF LOCATION GEN FINISHED --')
+        # print('-- FNF LOCATION GEN FINISHED --')
 
 
     def create_items(self) -> None:
@@ -326,7 +328,9 @@ class FunkinWorld(World):
                 item = self.create_item(song_keys_in_pool[i])
                 item.classification = ItemClassification.useful
                 self.multiworld.itempool.append(item)
-    
+
+            # subtracting this by 10 fixed the items larger than locations problem
+            # istg imma explode
             filler_count = items_left
             items_left -= filler_count
     
