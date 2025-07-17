@@ -12115,9 +12115,6 @@ class yutautil_APYaml:
         self.game = None
         jsonContent = self.convertYamlToJson(yamlContent)
         parsedData = haxe_format_JsonParser(jsonContent).doParse()
-        self.game = parsedData.main.game
-        self.name = parsedData.main.name
-        self.description = parsedData.main.description
         self.settings = Reflect.field(parsedData,"Friday Night Funkin")
         print(parsedData)
 
@@ -12143,6 +12140,12 @@ class yutautil_APYaml:
                 if (len(keyValue) == 2):
                     key = StringTools.trim((keyValue[0] if 0 < len(keyValue) else None))
                     value = StringTools.trim((keyValue[1] if 1 < len(keyValue) else None))
+                    if (key == "game"):
+                        self.game = StringTools.trim(value)
+                    elif (key == "name"):
+                        self.name = StringTools.trim(value)
+                    elif (key == "description"):
+                        self.description = StringTools.trim(value)
                     if (value.startswith("[") and value.endswith("]")):
                         value = HxString.substr(value,1,(len(value) - 2))
                         def _hx_local_1(item):
