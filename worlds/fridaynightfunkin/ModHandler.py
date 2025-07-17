@@ -8,6 +8,7 @@ from .Items import SongData
 
 from . import FunkinUtils
 from .FunkinUtils import FNFBaseList
+from .Yutautil import yutautil_APYaml
 
 
 def extract_mod_data(self) -> dict[str, Any]:
@@ -44,6 +45,7 @@ def extract_mod_data(self) -> dict[str, Any]:
     dupeSongList: List[str] = []
     catagorizedSongList: dict[str, list[str]] = {}
     name:str = ''
+    YUtil:yutautil_APYaml
 
     for item in os.listdir(folder_path)[::-1]:
         item_path = os.path.join(folder_path, item)
@@ -51,6 +53,11 @@ def extract_mod_data(self) -> dict[str, Any]:
         if os.path.isfile(item_path):
             with open(item_path, 'r', encoding='utf-8') as file:  # Open the file in read mode
                 file_content = file.read()
+
+                YUtil = yutautil_APYaml(file_content)
+
+                print(YUtil.getSongList())
+                print(YUtil.settings.song_limit)
 
                 # Check if the search text (game title) is found in the file
                 if search_text in file_content:
@@ -87,11 +94,10 @@ def extract_mod_data(self) -> dict[str, Any]:
                                 player = players + 1
                                 players = player
                                 for song in uniqueSongList:
+                                    song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']')
                                     trueSongList.append(song)
 
-                                for song in altfalseSongList:
-                                    song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']')
-                                catagorizedSongList[name] = altfalseSongList
+                                catagorizedSongList[name] = uniqueSongList
                                     # print(song + " from player " + name)
                                 # print(trueSongList)
     for i, song in enumerate(trueSongList):

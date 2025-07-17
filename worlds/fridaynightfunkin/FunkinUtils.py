@@ -1,12 +1,15 @@
 from collections import ChainMap
-from typing import Dict, List, ClassVar, Type, Tuple
+from typing import Dict, List, ClassVar, Type, Tuple, Any
 from .SymbolFixer import fix_song_name
-
+import os
 from .Items import FNFBaseList, SongData
 from .Options import *
 import random
 from ..AutoWorld import World
-
+from .Yutautil import yutautil_APYaml
+import sys
+import ast
+import Utils
 
 from .Yutautil import YutaUtil, yutautil_CatagorizedMap, yutautil_CollectionUtils, yutautil_ChanceSelector
 
@@ -49,32 +52,44 @@ class FunkinUtils:
     mapthing:Dict[str, List[str]] = {}
     mod_data: Dict[str, List[str]] = {}
     playerNames:List[str] = []
-    songLimit:int = 0
+    songLimits:dict[str, int] = {}
+
+    user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
+    folder_path = sys.argv[sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
+
+    def extract_song_list(self) -> dict[str, Any]:
+        YUtil: yutautil_APYaml
+        songlistings: dict[str, list[str]] = {}
+
+        for item in os.listdir(self.folder_path)[::-1]:
+            item_path = os.path.join(self.folder_path, item)
+
+            if os.path.isfile(item_path):
+                with open(item_path, 'r', encoding='utf-8') as file:  # Open the file in read mode
+                    file_content = file.read()
+
+                    YUtil = yutautil_APYaml(file_content)
+
+                    print(YUtil.name)
+                    songlistings[YUtil.name] = YUtil.getSongList()
+                    self.songLimits[YUtil.name] = YUtil.settings.song_limit
+
+        return songlistings
 
     def __init__(self) -> None:
         item_id_index = self.STARTING_CODE + (len(FNFBaseList.localSongList) + 100)
         self.item_names_to_id = ChainMap({self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, self.filler_items, self.normal_items, self.trap_items, self.song_items)
         self.location_names_to_id = ChainMap(self.song_locations)
 
-        from . import extract_mod_data
-        mod_data = extract_mod_data(self)
-        playerNames = []
-
+        mod_data = self.extract_song_list()
+        sloopcount:int = 0
+        print('LIMIT:' + str(self.songLimits.items()))
         if mod_data:
             # print('-- DOING FNF SONG FILL --')
-            for name in mod_data.keys():
-                if name == "song_limit":
-                    self.songLimit = int(mod_data.get('song_limit')[0])
-                    # print("SONG LIMIT: " + str(self.songLimit))
-                else:
-                    playerNames.append(name)
-
             for name, list in mod_data.items():
                 # print("Listing Songs for " + name + "\n" + str(list))
                 for song in list:
-                    if len(self.song_items.keys()) <= self.songLimit:
-                        if song == str(self.songLimit):
-                            continue
+                    if sloopcount <= int():
                         cur_song_name = song
                         item_id = item_id_index
                         isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
@@ -84,11 +99,9 @@ class FunkinUtils:
                             self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, name, [])
                             self.song_items[cur_song_name].playerList.append(name)
                             item_id_index += 1
-                            # print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
-                    else:
-                        break
+                            sloopcount+=1
+                        # print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
         else:
-            playerNames.append("blank")
             for song in FNFBaseList.emptySongList:
                 # print("No one's playing FNF! Placing Test!")
                 cur_song_name = song

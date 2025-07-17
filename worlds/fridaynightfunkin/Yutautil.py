@@ -12101,3 +12101,679 @@ hscript_Parser.tokenMax = 0
 
 YutaUtil.main()
 sys_thread__Thread_Thread_Impl_.processEvents()
+
+class yutautil_APYaml:
+    _hx_class_name = "yutautil.APYaml"
+    __slots__ = ("game", "name", "description", "settings")
+    _hx_fields = ["game", "name", "description", "settings"]
+    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled"]
+
+    def __init__(self,yamlContent):
+        self.settings = None
+        self.description = None
+        self.name = None
+        self.game = None
+        jsonContent = self.convertYamlToJson(yamlContent)
+        parsedData = haxe_format_JsonParser(jsonContent).doParse()
+        self.game = parsedData.game
+        self.name = parsedData.name
+        self.description = parsedData.description
+        self.settings = Reflect.field(parsedData,"Friday Night Funkin")
+        print(parsedData)
+
+    def convertYamlToJson(self,yamlContent):
+        lines = yamlContent.split("\n")
+        jsonObject = haxe_ds_StringMap()
+        currentSection = None
+        sectionData = haxe_ds_StringMap()
+        _g = 0
+        while (_g < len(lines)):
+            line = (lines[_g] if _g >= 0 and _g < len(lines) else None)
+            _g = (_g + 1)
+            line = StringTools.trim(line)
+            if ((line == "") or line.startswith("#")):
+                continue
+            if line.endswith(":"):
+                if (currentSection is not None):
+                    jsonObject.h[currentSection] = sectionData
+                currentSection = HxString.substr(line,0,(len(line) - 1))
+                sectionData = haxe_ds_StringMap()
+            else:
+                keyValue = line.split(":")
+                if (len(keyValue) == 2):
+                    key = StringTools.trim((keyValue[0] if 0 < len(keyValue) else None))
+                    value = StringTools.trim((keyValue[1] if 1 < len(keyValue) else None))
+                    if (value.startswith("[") and value.endswith("]")):
+                        value = HxString.substr(value,1,(len(value) - 2))
+                        def _hx_local_1(item):
+                            return StringTools.trim(item)
+                        value1 = list(map(_hx_local_1,value.split(",")))
+                        sectionData.h[key] = value1
+                    elif ((value == "true") or ((value == "false"))):
+                        sectionData.h[key] = (value == "true")
+                    else:
+                        def _hx_local_3():
+                            _hx_local_2 = Std.parseFloat(value)
+                            if (Std.isOfType(_hx_local_2,Float) or ((_hx_local_2 is None))):
+                                _hx_local_2
+                            else:
+                                raise "Class cast error"
+                            return _hx_local_2
+                        if ((_hx_local_3() is not None) or python_lib_Math.isnan(Std.parseFloat(value))):
+                            value2 = Std.parseFloat(value)
+                            sectionData.h[key] = value2
+                        else:
+                            sectionData.h[key] = value
+        if (currentSection is not None):
+            jsonObject.h[currentSection] = sectionData
+        return haxe_format_JsonPrinter.print(jsonObject,None,None)
+
+    def getSongList(self):
+        return Reflect.field(self.settings,"songList")
+
+    def getTicketWinPercentage(self):
+        return Std.parseFloat(Reflect.field(self.settings,"ticket_win_percentage"))
+
+    def isModsEnabled(self):
+        return Reflect.field(self.settings,"mods_enabled")
+
+    @staticmethod
+    def _hx_empty_init(_hx_o):
+        _hx_o.game = None
+        _hx_o.name = None
+        _hx_o.description = None
+        _hx_o.settings = None
+yutautil_APYaml._hx_class = yutautil_APYaml
+_hx_classes["yutautil.APYaml"] = yutautil_APYaml
+
+class haxe_format_JsonParser:
+    _hx_class_name = "haxe.format.JsonParser"
+    __slots__ = ("str", "pos")
+    _hx_fields = ["str", "pos"]
+    _hx_methods = ["doParse", "parseRec", "parseString", "invalidChar", "invalidNumber"]
+
+    def __init__(self,_hx_str):
+        self.str = _hx_str
+        self.pos = 0
+
+    def doParse(self):
+        result = self.parseRec()
+        c = None
+        while True:
+            s = self.str
+            index = self.pos
+            self.pos = (self.pos + 1)
+            c = (-1 if ((index >= len(s))) else ord(s[index]))
+            if (not ((c != -1))):
+                break
+            c1 = c
+            if ((((c1 == 32) or ((c1 == 13))) or ((c1 == 10))) or ((c1 == 9))):
+                pass
+            else:
+                self.invalidChar()
+        return result
+
+    def parseRec(self):
+        while True:
+            s = self.str
+            index = self.pos
+            self.pos = (self.pos + 1)
+            c = (-1 if ((index >= len(s))) else ord(s[index]))
+            c1 = c
+            if ((((c1 == 32) or ((c1 == 13))) or ((c1 == 10))) or ((c1 == 9))):
+                pass
+            elif (c1 == 34):
+                return self.parseString()
+            elif (((((((((((c1 == 57) or ((c1 == 56))) or ((c1 == 55))) or ((c1 == 54))) or ((c1 == 53))) or ((c1 == 52))) or ((c1 == 51))) or ((c1 == 50))) or ((c1 == 49))) or ((c1 == 48))) or ((c1 == 45))):
+                c2 = c
+                start = (self.pos - 1)
+                minus = (c2 == 45)
+                digit = (not minus)
+                zero = (c2 == 48)
+                point = False
+                e = False
+                pm = False
+                end = False
+                while True:
+                    s1 = self.str
+                    index1 = self.pos
+                    self.pos = (self.pos + 1)
+                    c2 = (-1 if ((index1 >= len(s1))) else ord(s1[index1]))
+                    c3 = c2
+                    if ((c3 == 45) or ((c3 == 43))):
+                        if ((not e) or pm):
+                            self.invalidNumber(start)
+                        digit = False
+                        pm = True
+                    elif (c3 == 46):
+                        if ((minus or point) or e):
+                            self.invalidNumber(start)
+                        digit = False
+                        point = True
+                    elif (c3 == 48):
+                        if (zero and (not point)):
+                            self.invalidNumber(start)
+                        if minus:
+                            minus = False
+                            zero = True
+                        digit = True
+                    elif (((((((((c3 == 57) or ((c3 == 56))) or ((c3 == 55))) or ((c3 == 54))) or ((c3 == 53))) or ((c3 == 52))) or ((c3 == 51))) or ((c3 == 50))) or ((c3 == 49))):
+                        if (zero and (not point)):
+                            self.invalidNumber(start)
+                        if minus:
+                            minus = False
+                        digit = True
+                        zero = False
+                    elif ((c3 == 101) or ((c3 == 69))):
+                        if ((minus or zero) or e):
+                            self.invalidNumber(start)
+                        digit = False
+                        e = True
+                    else:
+                        if (not digit):
+                            self.invalidNumber(start)
+                        _hx_local_0 = self
+                        _hx_local_1 = _hx_local_0.pos
+                        _hx_local_0.pos = (_hx_local_1 - 1)
+                        _hx_local_1
+                        end = True
+                    if (not ((not end))):
+                        break
+                f = Std.parseFloat(HxString.substr(self.str,start,(self.pos - start)))
+                if point:
+                    return f
+                else:
+                    i = None
+                    try:
+                        i = int(f)
+                    except BaseException as _g:
+                        None
+                        i = None
+                    i1 = i
+                    if (i1 == f):
+                        return i1
+                    else:
+                        return f
+            elif (c1 == 91):
+                arr = []
+                comma = None
+                while True:
+                    s2 = self.str
+                    index2 = self.pos
+                    self.pos = (self.pos + 1)
+                    c4 = (-1 if ((index2 >= len(s2))) else ord(s2[index2]))
+                    c5 = c4
+                    if ((((c5 == 32) or ((c5 == 13))) or ((c5 == 10))) or ((c5 == 9))):
+                        pass
+                    elif (c5 == 44):
+                        if comma:
+                            comma = False
+                        else:
+                            self.invalidChar()
+                    elif (c5 == 93):
+                        if (comma == False):
+                            self.invalidChar()
+                        return arr
+                    else:
+                        if comma:
+                            self.invalidChar()
+                        _hx_local_2 = self
+                        _hx_local_3 = _hx_local_2.pos
+                        _hx_local_2.pos = (_hx_local_3 - 1)
+                        _hx_local_3
+                        x = self.parseRec()
+                        arr.append(x)
+                        comma = True
+            elif (c1 == 102):
+                save = self.pos
+                tmp = None
+                tmp1 = None
+                tmp2 = None
+                s3 = self.str
+                index3 = self.pos
+                self.pos = (self.pos + 1)
+                if (((-1 if ((index3 >= len(s3))) else ord(s3[index3]))) == 97):
+                    s4 = self.str
+                    index4 = self.pos
+                    self.pos = (self.pos + 1)
+                    tmp2 = (((-1 if ((index4 >= len(s4))) else ord(s4[index4]))) != 108)
+                else:
+                    tmp2 = True
+                if (not tmp2):
+                    s5 = self.str
+                    index5 = self.pos
+                    self.pos = (self.pos + 1)
+                    tmp1 = (((-1 if ((index5 >= len(s5))) else ord(s5[index5]))) != 115)
+                else:
+                    tmp1 = True
+                if (not tmp1):
+                    s6 = self.str
+                    index6 = self.pos
+                    self.pos = (self.pos + 1)
+                    tmp = (((-1 if ((index6 >= len(s6))) else ord(s6[index6]))) != 101)
+                else:
+                    tmp = True
+                if tmp:
+                    self.pos = save
+                    self.invalidChar()
+                return False
+            elif (c1 == 110):
+                save1 = self.pos
+                tmp3 = None
+                tmp4 = None
+                s7 = self.str
+                index7 = self.pos
+                self.pos = (self.pos + 1)
+                if (((-1 if ((index7 >= len(s7))) else ord(s7[index7]))) == 117):
+                    s8 = self.str
+                    index8 = self.pos
+                    self.pos = (self.pos + 1)
+                    tmp4 = (((-1 if ((index8 >= len(s8))) else ord(s8[index8]))) != 108)
+                else:
+                    tmp4 = True
+                if (not tmp4):
+                    s9 = self.str
+                    index9 = self.pos
+                    self.pos = (self.pos + 1)
+                    tmp3 = (((-1 if ((index9 >= len(s9))) else ord(s9[index9]))) != 108)
+                else:
+                    tmp3 = True
+                if tmp3:
+                    self.pos = save1
+                    self.invalidChar()
+                return None
+            elif (c1 == 116):
+                save2 = self.pos
+                tmp5 = None
+                tmp6 = None
+                s10 = self.str
+                index10 = self.pos
+                self.pos = (self.pos + 1)
+                if (((-1 if ((index10 >= len(s10))) else ord(s10[index10]))) == 114):
+                    s11 = self.str
+                    index11 = self.pos
+                    self.pos = (self.pos + 1)
+                    tmp6 = (((-1 if ((index11 >= len(s11))) else ord(s11[index11]))) != 117)
+                else:
+                    tmp6 = True
+                if (not tmp6):
+                    s12 = self.str
+                    index12 = self.pos
+                    self.pos = (self.pos + 1)
+                    tmp5 = (((-1 if ((index12 >= len(s12))) else ord(s12[index12]))) != 101)
+                else:
+                    tmp5 = True
+                if tmp5:
+                    self.pos = save2
+                    self.invalidChar()
+                return True
+            elif (c1 == 123):
+                obj = _hx_AnonObject({})
+                field = None
+                comma1 = None
+                while True:
+                    s13 = self.str
+                    index13 = self.pos
+                    self.pos = (self.pos + 1)
+                    c6 = (-1 if ((index13 >= len(s13))) else ord(s13[index13]))
+                    c7 = c6
+                    if ((((c7 == 32) or ((c7 == 13))) or ((c7 == 10))) or ((c7 == 9))):
+                        pass
+                    elif (c7 == 34):
+                        if ((field is not None) or comma1):
+                            self.invalidChar()
+                        field = self.parseString()
+                    elif (c7 == 44):
+                        if comma1:
+                            comma1 = False
+                        else:
+                            self.invalidChar()
+                    elif (c7 == 58):
+                        if (field is None):
+                            self.invalidChar()
+                        value = self.parseRec()
+                        setattr(obj,(("_hx_" + field) if ((field in python_Boot.keywords)) else (("_hx_" + field) if (((((len(field) > 2) and ((ord(field[0]) == 95))) and ((ord(field[1]) == 95))) and ((ord(field[(len(field) - 1)]) != 95)))) else field)),value)
+                        field = None
+                        comma1 = True
+                    elif (c7 == 125):
+                        if ((field is not None) or ((comma1 == False))):
+                            self.invalidChar()
+                        return obj
+                    else:
+                        self.invalidChar()
+            else:
+                self.invalidChar()
+
+    def parseString(self):
+        start = self.pos
+        buf = None
+        prev = -1
+        while True:
+            s = self.str
+            index = self.pos
+            self.pos = (self.pos + 1)
+            c = (-1 if ((index >= len(s))) else ord(s[index]))
+            if (c == 34):
+                break
+            if (c == 92):
+                if (buf is None):
+                    buf = StringBuf()
+                s1 = self.str
+                _hx_len = ((self.pos - start) - 1)
+                s2 = (HxString.substr(s1,start,None) if ((_hx_len is None)) else HxString.substr(s1,start,_hx_len))
+                buf.b.write(s2)
+                s3 = self.str
+                index1 = self.pos
+                self.pos = (self.pos + 1)
+                c = (-1 if ((index1 >= len(s3))) else ord(s3[index1]))
+                if ((c != 117) and ((prev != -1))):
+                    s4 = "".join(map(chr,[65533]))
+                    buf.b.write(s4)
+                    prev = -1
+                c1 = c
+                if (((c1 == 92) or ((c1 == 47))) or ((c1 == 34))):
+                    s5 = "".join(map(chr,[c]))
+                    buf.b.write(s5)
+                elif (c1 == 98):
+                    s6 = "".join(map(chr,[8]))
+                    buf.b.write(s6)
+                elif (c1 == 102):
+                    s7 = "".join(map(chr,[12]))
+                    buf.b.write(s7)
+                elif (c1 == 110):
+                    s8 = "".join(map(chr,[10]))
+                    buf.b.write(s8)
+                elif (c1 == 114):
+                    s9 = "".join(map(chr,[13]))
+                    buf.b.write(s9)
+                elif (c1 == 116):
+                    s10 = "".join(map(chr,[9]))
+                    buf.b.write(s10)
+                elif (c1 == 117):
+                    uc = Std.parseInt(("0x" + HxOverrides.stringOrNull(HxString.substr(self.str,self.pos,4))))
+                    _hx_local_0 = self
+                    _hx_local_1 = _hx_local_0.pos
+                    _hx_local_0.pos = (_hx_local_1 + 4)
+                    _hx_local_0.pos
+                    if (prev != -1):
+                        if ((uc < 56320) or ((uc > 57343))):
+                            s11 = "".join(map(chr,[65533]))
+                            buf.b.write(s11)
+                            prev = -1
+                        else:
+                            s12 = "".join(map(chr,[(((((prev - 55296) << 10)) + ((uc - 56320))) + 65536)]))
+                            buf.b.write(s12)
+                            prev = -1
+                    elif ((uc >= 55296) and ((uc <= 56319))):
+                        prev = uc
+                    else:
+                        s13 = "".join(map(chr,[uc]))
+                        buf.b.write(s13)
+                else:
+                    raise haxe_Exception.thrown(((("Invalid escape sequence \\" + HxOverrides.stringOrNull("".join(map(chr,[c])))) + " at position ") + Std.string(((self.pos - 1)))))
+                start = self.pos
+            elif (c == -1):
+                raise haxe_Exception.thrown("Unclosed string")
+        if (prev != -1):
+            s = "".join(map(chr,[65533]))
+            buf.b.write(s)
+            prev = -1
+        if (buf is None):
+            return HxString.substr(self.str,start,((self.pos - start) - 1))
+        else:
+            s = self.str
+            _hx_len = ((self.pos - start) - 1)
+            s1 = (HxString.substr(s,start,None) if ((_hx_len is None)) else HxString.substr(s,start,_hx_len))
+            buf.b.write(s1)
+            return buf.b.getvalue()
+
+    def invalidChar(self):
+        _hx_local_0 = self
+        _hx_local_1 = _hx_local_0.pos
+        _hx_local_0.pos = (_hx_local_1 - 1)
+        _hx_local_1
+        s = self.str
+        index = self.pos
+        raise haxe_Exception.thrown(((("Invalid char " + Std.string(((-1 if ((index >= len(s))) else ord(s[index]))))) + " at position ") + Std.string(self.pos)))
+
+    def invalidNumber(self,start):
+        raise haxe_Exception.thrown(((("Invalid number at position " + Std.string(start)) + ": ") + HxOverrides.stringOrNull(HxString.substr(self.str,start,(self.pos - start)))))
+
+    @staticmethod
+    def _hx_empty_init(_hx_o):
+        _hx_o.str = None
+        _hx_o.pos = None
+haxe_format_JsonParser._hx_class = haxe_format_JsonParser
+_hx_classes["haxe.format.JsonParser"] = haxe_format_JsonParser
+
+
+class haxe_format_JsonPrinter:
+    _hx_class_name = "haxe.format.JsonPrinter"
+    __slots__ = ("buf", "replacer", "indent", "pretty", "nind")
+    _hx_fields = ["buf", "replacer", "indent", "pretty", "nind"]
+    _hx_methods = ["write", "classString", "fieldsString", "quote"]
+    _hx_statics = ["print"]
+
+    def __init__(self,replacer,space):
+        self.replacer = replacer
+        self.indent = space
+        self.pretty = (space is not None)
+        self.nind = 0
+        self.buf = StringBuf()
+
+    def write(self,k,v):
+        if (self.replacer is not None):
+            v = self.replacer(k,v)
+        _g = Type.typeof(v)
+        tmp = _g.index
+        if (tmp == 0):
+            self.buf.b.write("null")
+        elif (tmp == 1):
+            _this = self.buf
+            s = Std.string(v)
+            _this.b.write(s)
+        elif (tmp == 2):
+            f = v
+            v1 = (Std.string(v) if ((((f != Math.POSITIVE_INFINITY) and ((f != Math.NEGATIVE_INFINITY))) and (not python_lib_Math.isnan(f)))) else "null")
+            _this = self.buf
+            s = Std.string(v1)
+            _this.b.write(s)
+        elif (tmp == 3):
+            _this = self.buf
+            s = Std.string(v)
+            _this.b.write(s)
+        elif (tmp == 4):
+            self.fieldsString(v,python_Boot.fields(v))
+        elif (tmp == 5):
+            self.buf.b.write("\"<fun>\"")
+        elif (tmp == 6):
+            c = _g.params[0]
+            if (c == str):
+                self.quote(v)
+            elif (c == list):
+                v1 = v
+                _this = self.buf
+                s = "".join(map(chr,[91]))
+                _this.b.write(s)
+                _hx_len = len(v1)
+                last = (_hx_len - 1)
+                _g1 = 0
+                _g2 = _hx_len
+                while (_g1 < _g2):
+                    i = _g1
+                    _g1 = (_g1 + 1)
+                    if (i > 0):
+                        _this = self.buf
+                        s = "".join(map(chr,[44]))
+                        _this.b.write(s)
+                    else:
+                        _hx_local_0 = self
+                        _hx_local_1 = _hx_local_0.nind
+                        _hx_local_0.nind = (_hx_local_1 + 1)
+                        _hx_local_1
+                    if self.pretty:
+                        _this1 = self.buf
+                        s1 = "".join(map(chr,[10]))
+                        _this1.b.write(s1)
+                    if self.pretty:
+                        v2 = StringTools.lpad("",self.indent,(self.nind * len(self.indent)))
+                        _this2 = self.buf
+                        s2 = Std.string(v2)
+                        _this2.b.write(s2)
+                    self.write(i,(v1[i] if i >= 0 and i < len(v1) else None))
+                    if (i == last):
+                        _hx_local_2 = self
+                        _hx_local_3 = _hx_local_2.nind
+                        _hx_local_2.nind = (_hx_local_3 - 1)
+                        _hx_local_3
+                        if self.pretty:
+                            _this3 = self.buf
+                            s3 = "".join(map(chr,[10]))
+                            _this3.b.write(s3)
+                        if self.pretty:
+                            v3 = StringTools.lpad("",self.indent,(self.nind * len(self.indent)))
+                            _this4 = self.buf
+                            s4 = Std.string(v3)
+                            _this4.b.write(s4)
+                _this = self.buf
+                s = "".join(map(chr,[93]))
+                _this.b.write(s)
+            elif (c == haxe_ds_StringMap):
+                v1 = v
+                o = _hx_AnonObject({})
+                k = v1.keys()
+                while k.hasNext():
+                    k1 = k.next()
+                    value = v1.h.get(k1,None)
+                    setattr(o,(("_hx_" + k1) if ((k1 in python_Boot.keywords)) else (("_hx_" + k1) if (((((len(k1) > 2) and ((ord(k1[0]) == 95))) and ((ord(k1[1]) == 95))) and ((ord(k1[(len(k1) - 1)]) != 95)))) else k1)),value)
+                v1 = o
+                self.fieldsString(v1,python_Boot.fields(v1))
+            elif (c == Date):
+                v1 = v
+                self.quote(v1.toString())
+            else:
+                self.classString(v)
+        elif (tmp == 7):
+            _g1 = _g.params[0]
+            i = v.index
+            v = Std.string(i)
+            _this = self.buf
+            s = Std.string(v)
+            _this.b.write(s)
+        elif (tmp == 8):
+            self.buf.b.write("\"???\"")
+        else:
+            pass
+
+    def classString(self,v):
+        self.fieldsString(v,python_Boot.getInstanceFields(Type.getClass(v)))
+
+    def fieldsString(self,v,fields):
+        _this = self.buf
+        s = "".join(map(chr,[123]))
+        _this.b.write(s)
+        _hx_len = len(fields)
+        empty = True
+        _g = 0
+        _g1 = _hx_len
+        while (_g < _g1):
+            i = _g
+            _g = (_g + 1)
+            f = (fields[i] if i >= 0 and i < len(fields) else None)
+            value = Reflect.field(v,f)
+            if Reflect.isFunction(value):
+                continue
+            if empty:
+                _hx_local_0 = self
+                _hx_local_1 = _hx_local_0.nind
+                _hx_local_0.nind = (_hx_local_1 + 1)
+                _hx_local_1
+                empty = False
+            else:
+                _this = self.buf
+                s = "".join(map(chr,[44]))
+                _this.b.write(s)
+            if self.pretty:
+                _this1 = self.buf
+                s1 = "".join(map(chr,[10]))
+                _this1.b.write(s1)
+            if self.pretty:
+                v1 = StringTools.lpad("",self.indent,(self.nind * len(self.indent)))
+                _this2 = self.buf
+                s2 = Std.string(v1)
+                _this2.b.write(s2)
+            self.quote(f)
+            _this3 = self.buf
+            s3 = "".join(map(chr,[58]))
+            _this3.b.write(s3)
+            if self.pretty:
+                _this4 = self.buf
+                s4 = "".join(map(chr,[32]))
+                _this4.b.write(s4)
+            self.write(f,value)
+        if (not empty):
+            _hx_local_2 = self
+            _hx_local_3 = _hx_local_2.nind
+            _hx_local_2.nind = (_hx_local_3 - 1)
+            _hx_local_3
+            if self.pretty:
+                _this = self.buf
+                s = "".join(map(chr,[10]))
+                _this.b.write(s)
+            if self.pretty:
+                v = StringTools.lpad("",self.indent,(self.nind * len(self.indent)))
+                _this = self.buf
+                s = Std.string(v)
+                _this.b.write(s)
+        _this = self.buf
+        s = "".join(map(chr,[125]))
+        _this.b.write(s)
+
+    def quote(self,s):
+        _this = self.buf
+        s1 = "".join(map(chr,[34]))
+        _this.b.write(s1)
+        i = 0
+        length = len(s)
+        while (i < length):
+            index = i
+            i = (i + 1)
+            c = ord(s[index])
+            c1 = c
+            if (c1 == 8):
+                self.buf.b.write("\\b")
+            elif (c1 == 9):
+                self.buf.b.write("\\t")
+            elif (c1 == 10):
+                self.buf.b.write("\\n")
+            elif (c1 == 12):
+                self.buf.b.write("\\f")
+            elif (c1 == 13):
+                self.buf.b.write("\\r")
+            elif (c1 == 34):
+                self.buf.b.write("\\\"")
+            elif (c1 == 92):
+                self.buf.b.write("\\\\")
+            else:
+                _this = self.buf
+                s1 = "".join(map(chr,[c]))
+                _this.b.write(s1)
+        _this = self.buf
+        s = "".join(map(chr,[34]))
+        _this.b.write(s)
+
+    @staticmethod
+    def print(o,replacer = None,space = None):
+        printer = haxe_format_JsonPrinter(replacer,space)
+        printer.write("",o)
+        return printer.buf.b.getvalue()
+
+    @staticmethod
+    def _hx_empty_init(_hx_o):
+        _hx_o.buf = None
+        _hx_o.replacer = None
+        _hx_o.indent = None
+        _hx_o.pretty = None
+        _hx_o.nind = None
+haxe_format_JsonPrinter._hx_class = haxe_format_JsonPrinter
+_hx_classes["haxe.format.JsonPrinter"] = haxe_format_JsonPrinter
