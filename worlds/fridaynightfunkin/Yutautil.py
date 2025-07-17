@@ -12115,16 +12115,16 @@ class yutautil_APYaml:
         self.game = None
         jsonContent = self.convertYamlToJson(yamlContent)
         parsedData = haxe_format_JsonParser(jsonContent).doParse()
-        self.game = parsedData.game
-        self.name = parsedData.name
-        self.description = parsedData.description
+        self.game = parsedData.main.game
+        self.name = parsedData.main.name
+        self.description = parsedData.main.description
         self.settings = Reflect.field(parsedData,"Friday Night Funkin")
         print(parsedData)
 
     def convertYamlToJson(self,yamlContent):
         lines = yamlContent.split("\n")
         jsonObject = haxe_ds_StringMap()
-        currentSection = None
+        currentSection = "main"
         sectionData = haxe_ds_StringMap()
         _g = 0
         while (_g < len(lines)):
