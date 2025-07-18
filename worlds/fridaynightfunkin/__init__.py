@@ -97,6 +97,7 @@ class FunkinWorld(World):
                         apYAMLList.append(yaml)
 
 
+
         if not apYAMLList:
             raise ValueError(f"No valid YAML files found in the directory {folder_path}.")
 
@@ -106,6 +107,8 @@ class FunkinWorld(World):
         if not instance.thisYaml:
             raise ValueError(f"No YAML file found for player {player_name} in the directory {folder_path}.")
         # print(instance.thisYaml)
+
+        return instance
 
     def __init__(self, multiworld: MultiWorld, player: int):
         # print("Building FunkinWorld...")
