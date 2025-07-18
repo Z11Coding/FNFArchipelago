@@ -64,9 +64,9 @@ class FunkinWorld(World):
     filler_item_names = list(fnfUtil.filler_items.keys())
     filler_item_weights = list(fnfUtil.filler_item_weights.values())
     items_in_general: dict[str, int] = {}
-    item_name_to_id = {name: code for name, code in fnfUtil.item_names_to_id.items()}
-    location_name_to_id = {name: code for name, code in fnfUtil.location_names_to_id.items()}
     trap_items_weights: dict[str, int] = {}
+    item_name_to_id = {}
+    location_name_to_id = {}
     items_weights: dict[str, int] = {}
     songLimit:int
     
@@ -77,6 +77,8 @@ class FunkinWorld(World):
         import sys
         import os
         instance = super(FunkinWorld, cls).__new__(cls)
+        instance.item_name_to_id = {}
+        instance.location_name_to_id = {}
         player_name = multiworld.player_name[1]
         apYAMLList : List[yutautil_APYaml]
         user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])

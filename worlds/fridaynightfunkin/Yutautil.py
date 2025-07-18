@@ -12104,7 +12104,7 @@ sys_thread__Thread_Thread_Impl_.processEvents()
 
 class yutautil_APYaml:
     _hx_class_name = "yutautil.APYaml"
-    __slots__ = ("game", "name", "description", "settings")
+    __slots__ = ("game", "name", "description", "settings", "song_to_id")
     _hx_fields = ["game", "name", "description", "settings"]
     _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled"]
 
@@ -12116,7 +12116,16 @@ class yutautil_APYaml:
         jsonContent = self.convertYamlToJson(yamlContent)
         parsedData = haxe_format_JsonParser(jsonContent).doParse()
         self.settings = Reflect.field(parsedData,"Friday Night Funkin")
+
+        self.settings.songList = [song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']') for song in self.settings.songList]
         print(parsedData)
+        startingCode = 69000
+        self.song_to_id:dict[str, int]
+        curID = startingCode
+        for song in self.getSongList():
+            # add and increment.
+            self.song_to_id[song] = curID
+            curID = curID + 1
 
     def __repr__(self):
         name = f"YAML of {self.name}"
