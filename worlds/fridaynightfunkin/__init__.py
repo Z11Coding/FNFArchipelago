@@ -8,6 +8,8 @@ from Utils import user_path
 from worlds.AutoWorld import World, WebWorld
 from math import floor
 import random
+from collections import ChainMap
+from .Items import FNFBaseList, SongData
 
 from .ModHandler import (
     get_player_specific_ids,
@@ -63,13 +65,18 @@ class FunkinWorld(World):
     fnfUtil = FunkinUtils()
     filler_item_names = list(fnfUtil.filler_items.keys())
     filler_item_weights = list(fnfUtil.filler_item_weights.values())
+    song_items: Dict[str, SongData] = {}
     items_in_general: dict[str, int] = {}
     trap_items_weights: dict[str, int] = {}
     item_name_to_id = {}
     location_name_to_id = {}
     items_weights: dict[str, int] = {}
     songLimit:int
-    
+    item_name_to_id = {name: code for name, code in fnfUtil.item_names_to_id.items()}
+    location_name_to_id = {name: code for name, code in fnfUtil.location_names_to_id.items()}
+    song_locations: Dict[str, int] = {}
+    item_id_index:int = 0
+    songlistforthe83rdtime: list[str] = []
     
     def __new__(cls, multiworld: MultiWorld, player: int):
         import Utils
@@ -79,7 +86,7 @@ class FunkinWorld(World):
         instance = super(FunkinWorld, cls).__new__(cls)
         instance.item_name_to_id = {}
         instance.location_name_to_id = {}
-        player_name = multiworld.player_name[1]
+        player_name = multiworld.player_name[player]
         apYAMLList : List[yutautil_APYaml]
         user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
         folder_path = sys.argv[sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
@@ -111,6 +118,7 @@ class FunkinWorld(World):
         # print(instance.thisYaml)
 
         instance.thisYaml = instance.thisYaml[0]
+        instance.yamlList = apYAMLList
 
         return instance
 
@@ -162,9 +170,50 @@ class FunkinWorld(World):
         self.songLimit = self.options.song_limit.value
         #self.e_weight = self.options.trapAmount.value imma do this later
         while True:
+            self.item_id_index = self.fnfUtil.STARTING_CODE + (len(self.thisYaml.getSongList()) + 100)
+            self.item_names_to_id = ChainMap({self.fnfUtil.SHOW_TICKET_NAME: self.fnfUtil.SHOW_TICKET_CODE}, self.fnfUtil.filler_items, self.fnfUtil.normal_items, self.fnfUtil.trap_items, self.song_items)
+            self.location_names_to_id = ChainMap(self.song_locations)
+            randosongs = self.thisYaml.getSongList() or [yamlName.getSongList() for yamlName in self.yamlList if yamlName.name == self.player_name]
+            if randosongs:
+                print('DO THING')
+                self.random.shuffle(randosongs)
+                self.songlistforthe83rdtime = randosongs[:self.thisYaml.settings.song_limit]
+                print(randosongs[:self.thisYaml.settings.song_limit])
+                for song in randosongs[:self.thisYaml.settings.song_limit]:
+                    cur_song_name = song
+                    item_id = self.item_id_index
+                    isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+                    if cur_song_name in self.song_items.keys():
+                        self.song_items[cur_song_name].playerList.append(self.thisYaml.name)
+                    else:
+                        self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, self.thisYaml.name, [])
+                        self.song_items[cur_song_name].playerList.append(self.thisYaml.name)
+                        self.item_id_index += 1
+            else:
+                for song in FNFBaseList.emptySongList:
+                    # print("No one's playing FNF! Placing Test!")
+                    cur_song_name = song
+                    item_id = self.item_id_index
+                    isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+                    if cur_song_name in self.song_items.keys():
+                        self.song_items[cur_song_name].playerList.append('blank')
+                    else:
+                        self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, 'blank', [])
+                        self.song_items[cur_song_name].playerList.append('blank')
+                        self.item_id_index += 1
+
+            self.item_names_to_id.update({name: data.code for name, data in self.song_items.items()})
+
+            for song_name, song_data in self.song_items.items():
+                for j in range(2):
+                    self.song_locations[f"{song_name}-{j}"] = (song_data.code + 1000 * j)
+                for j in range(3):
+                    self.song_locations[f"Note {j}: {song_name}"] = (song_data.code + 1000 * j + 10000)
+
             # In most cases this should only need to run once
-            available_song_keys, song_ids = get_player_specific_ids(self.player_name, self.fnfUtil.song_items)
+            available_song_keys, song_ids = get_player_specific_ids(self.player_name, self.song_items)
             # print(available_song_keys)
+            print("SONG LIST:" + str(self.song_items))
 
             # print(get_player_specific_ids(self.options.songList.value, self.fnfUtil.song_items))
             # Choose victory song from current available keys, so we can access the song id
@@ -177,7 +226,7 @@ class FunkinWorld(World):
             count_needed_for_start = max(0, 1)
 
             final_song_list = available_song_keys
-            # print(final_song_list)
+            print(final_song_list)
             self.create_song_pool(final_song_list)
             break
 
@@ -199,8 +248,8 @@ class FunkinWorld(World):
 
         # print("Song list for " + self.player_name + " is " + str(self.options.songList.value))
 
-        song = self.fnfUtil.song_items.get(name)
-        # print(str(self.player_name) + ": " + str(song.songName))
+        song = self.song_items.get(name)
+        # print(str(self.player_name) + ": " + str(song))
         return FunkinItem(name, self.player, song)
 
     def create_event(self, event: str) -> Item:
@@ -235,6 +284,7 @@ class FunkinWorld(World):
         if len(available_song_keys) > 0:
             startingSong = available_song_keys[self.random.randrange(0, len(available_song_keys))]
             if not startingSong == "Test": available_song_keys.remove(startingSong)
+            print(startingSong)
             self.multiworld.push_precollected(self.create_item(startingSong))
             self.songList = available_song_keys
 
@@ -268,7 +318,7 @@ class FunkinWorld(World):
 
 
         all_selected_locations: List[str] = []
-        for song_name, song_data in self.fnfUtil.song_items.items():
+        for song_name, song_data in self.song_items.items():
             if song_data.playerSongBelongsTo == self.player_name or self.player_name in song_data.playerList or not song_data.modded:
                 all_selected_locations.append(song_name)
                 '''print('Successfully gave ' + song_name + ' to ' + self.player_name + ' who is also ' + song_data.playerSongBelongsTo)
@@ -284,7 +334,7 @@ class FunkinWorld(World):
             if self.unlock_method == "Song Completion":
                 for j in range(2):
                     loc_name = f"{name}"
-                    loc = FunkinLocation(self.player, loc_name + f"-{j}", self.fnfUtil.song_locations[loc_name + f"-{j}"], menu_region)
+                    loc = FunkinLocation(self.player, loc_name + f"-{j}", self.song_locations[loc_name + f"-{j}"], menu_region)
                     loc.access_rule = lambda state, place=loc_name: state.has(place, self.player) and \
                         (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
                     menu_region.locations.append(loc)
@@ -292,7 +342,7 @@ class FunkinWorld(World):
                 for j in range(3):
                     # print("Note.")
                     loc_name = f"Note {j}: {name}"
-                    loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
+                    loc = FunkinLocation(self.player, loc_name, self.song_locations[loc_name], menu_region)
                     loc.access_rule = lambda state, place=f"{name}": state.has(place, self.player) and \
                         (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
                     menu_region.locations.append(loc)
@@ -300,14 +350,14 @@ class FunkinWorld(World):
                 for j in range(2):
                     # print("SONG")
                     loc_name = f"{name}"
-                    loc = FunkinLocation(self.player, loc_name + f"-{j}", self.fnfUtil.song_locations[loc_name + f"-{j}"], menu_region)
+                    loc = FunkinLocation(self.player, loc_name + f"-{j}", self.song_locations[loc_name + f"-{j}"], menu_region)
                     loc.access_rule = lambda state, place=loc_name: state.has(place, self.player) and \
                         (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
                     menu_region.locations.append(loc)
                 for j in range(3):
                     # print("NOTE.")
                     loc_name = f"Note {j}: {name}"
-                    loc = FunkinLocation(self.player, loc_name, self.fnfUtil.song_locations[loc_name], menu_region)
+                    loc = FunkinLocation(self.player, loc_name, self.song_locations[loc_name], menu_region)
                     loc.access_rule = lambda state, place=f"{name}": state.has(place, self.player) and \
                         (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
                     menu_region.locations.append(loc)
@@ -318,7 +368,7 @@ class FunkinWorld(World):
 
 
     def create_items(self) -> None:
-        song_keys_in_pool = self.fnfUtil.get_songs_map(self.player_name).copy()
+        song_keys_in_pool = self.get_songs_map(self.player_name).copy()
         if len(song_keys_in_pool) > 0:
             item_count = self.get_ticket_count()
 
@@ -397,7 +447,7 @@ class FunkinWorld(World):
 
     def get_ticket_count(self) -> int:
         multiplier = self.options.ticket_percentage.value / 100.0
-        song_count = len(self.fnfUtil.get_songs_map(self.player_name))
+        song_count = len(self.get_songs_map(self.player_name))
         return max(1, floor(song_count * multiplier))
 
     def get_ticket_win_count(self) -> int:
@@ -412,19 +462,31 @@ class FunkinWorld(World):
         spoiler_handle.write(f"Victory Song: {self.victory_song_name}\n")
         spoiler_handle.write(f"Ticket Win Count: {self.get_ticket_win_count()}\n")
         spoiler_handle.write(f"Total Ticket Count: {self.get_ticket_count()}\n")
+        spoiler_handle.write(f"Total Song Count: {len(self.get_songs_map(self.player_name))}\n")
         
     # def extend_hint_information(self, hint_data):
     #     return super().extend_hint_information(hint_data)
     
     # def collect(self, state, item):
     #     return super().collect(state, item)
+
+    def get_songs_map(self, player_name:str) -> List[str]:
+        """Literally just shoves the songs into a list."""
+        filtered_list = []
+
+        for songKey, songData in self.song_items.items():
+            if songData.playerSongBelongsTo == player_name or player_name in songData.playerList or not songData.modded: #Make sure the right player gets the right songs
+                filtered_list.append(songKey)
+                #print(songKey)
+
+        return filtered_list
     
 
     def fill_slot_data(self):
         if not self.victory_song_name == "":
             return {
                 "deathLink": self.options.deathlink.value,
-                "fullSongCount": len(self.fnfUtil.get_songs_map(self.player_name)),
+                "fullSongCount": len(self.get_songs_map(self.player_name)),
                 "victoryLocation": self.victory_song_name,
                 "victoryID": self.victory_song_id,
                 "ticketWinCount": self.get_ticket_win_count(),

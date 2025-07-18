@@ -12118,14 +12118,7 @@ class yutautil_APYaml:
         self.settings = Reflect.field(parsedData,"Friday Night Funkin")
 
         self.settings.songList = [song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']') for song in self.settings.songList]
-        print(parsedData)
-        startingCode = 69000
-        self.song_to_id:dict[str, int]
-        curID = startingCode
-        for song in self.getSongList():
-            # add and increment.
-            self.song_to_id[song] = curID
-            curID = curID + 1
+
 
     def __repr__(self):
         name = f"YAML of {self.name}"
