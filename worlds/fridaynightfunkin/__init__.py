@@ -659,17 +659,42 @@ class FunkinWorld(World):
 
         return filtered_list
     
+    def get_player_song_details(self, player_name: str) -> Dict[str, Dict]:
+        """Get detailed information about songs for a specific player"""
+        song_details = {}
+        
+        for song_name, song_data in self.song_items.items():
+            if (song_data.playerSongBelongsTo == player_name or 
+                player_name in song_data.playerList or 
+                not song_data.modded):
+                
+                song_details[song_name] = {
+                    "id": song_data.code,
+                    "modded": song_data.modded,
+                    "playerOwner": song_data.playerSongBelongsTo,
+                    "sharedWith": song_data.playerList,
+                    "songName": song_data.songName
+                }
+        
+        return song_details
+    
 
     def fill_slot_data(self):
         if not self.victory_song_name == "":
+            # Get the songs that belong to this player
+            player_songs = self.get_songs_map(self.player_name)
+            song_details = self.get_player_song_details(self.player_name)
+            
             return {
                 "deathLink": self.options.deathlink.value,
-                "fullSongCount": len(self.get_songs_map(self.player_name)),
+                "fullSongCount": len(player_songs),
                 "victoryLocation": self.victory_song_name,
                 "victoryID": self.victory_song_id,
                 "ticketWinCount": self.get_ticket_win_count(),
                 "gradeNeeded": self.options.graderequirement.value,
                 "accuracyNeeded": self.options.accrequirement.value,
                 "locationType": self.unlock_method,
-                "locationMethod": self.unlock_type
+                "locationMethod": self.unlock_type,
+                "selectedSongs": player_songs,  # List of songs selected for this player
+                "songData": song_details  # Detailed song metadata for the client
             }
