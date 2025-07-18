@@ -4,6 +4,7 @@
 # https://opensource.org/licenses/MIT
 from BaseClasses import Region, Item, MultiWorld, Tutorial, ItemClassification
 from typing import Dict, List, ClassVar, Type, Tuple, TextIO
+from Utils import user_path
 from worlds.AutoWorld import World, WebWorld
 from math import floor
 import random
@@ -68,11 +69,49 @@ class FunkinWorld(World):
     trap_items_weights: dict[str, int] = {}
     items_weights: dict[str, int] = {}
     songLimit:int
+    
+    
+    def __new__(cls, multiworld: MultiWorld, player: int):
+        import Utils
+        from .Yutautil import yutautil_APYaml
+        import sys
+        import os
+        instance = super(FunkinWorld, cls).__new__(cls)
+        player_name = multiworld.player_name[1]
+        apYAMLList : List[yutautil_APYaml]
+        user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
+        folder_path = sys.argv[sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
+        
+        if not os.path.isdir(folder_path):
+            raise ValueError(f"The path {folder_path} is not a valid directory.")
+        # print(f"Checking YAMLs for songList at {folder_path}")
+        apYAMLList = []
+        for item in os.listdir(folder_path):
+            item_path = os.path.join(folder_path, item)
+            if os.path.isfile(item_path):
+                with open(item_path, 'r', encoding='utf-8') as file:
+                    file_content = file.read()
+
+                    yaml = yutautil_APYaml(file_content)
+                    if yaml.game == "Friday Night Funkin":
+                        apYAMLList.append(yaml)
+
+
+        if not apYAMLList:
+            raise ValueError(f"No valid YAML files found in the directory {folder_path}.")
+
+        instance.thisYaml = [yaml for yaml in apYAMLList if yaml.name == player_name]
+        if len(instance.thisYaml) > 1 or instance.thisYaml[0].game != "Friday Night Funkin":
+            raise ValueError(f"There are too many YAMLs for player {player_name}, or there is another YAML for the wrong game!")
+        if not instance.thisYaml:
+            raise ValueError(f"No YAML file found for player {player_name} in the directory {folder_path}.")
+        # print(instance.thisYaml)
 
     def __init__(self, multiworld: MultiWorld, player: int):
         # print("Building FunkinWorld...")
         super(FunkinWorld, self).__init__(multiworld, player)
         # print("Building FunkinWorld...")
+
         self.playable_songs = []
         self.mods_enabled = AllowMods.default
         self.starting_song = SongStarter.default

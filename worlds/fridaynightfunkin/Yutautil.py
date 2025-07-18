@@ -12118,6 +12118,18 @@ class yutautil_APYaml:
         self.settings = Reflect.field(parsedData,"Friday Night Funkin")
         print(parsedData)
 
+    def __repr__(self):
+        name = f"YAML of {self.name}"
+        game = f"for game: {self.game}"
+        settings = f"with settings: {self.settings}"
+        rep:str = ""
+
+        for stuff in [name, game, settings]:
+            rep += stuff + '\n'
+
+        return rep
+
+
     def convertYamlToJson(self,yamlContent):
         lines = yamlContent.split("\n")
         jsonObject = haxe_ds_StringMap()
