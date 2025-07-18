@@ -108,6 +108,8 @@ class FunkinWorld(World):
             raise ValueError(f"No YAML file found for player {player_name} in the directory {folder_path}.")
         # print(instance.thisYaml)
 
+        instance.thisYaml = instance.thisYaml[0]
+
         return instance
 
     def __init__(self, multiworld: MultiWorld, player: int):
