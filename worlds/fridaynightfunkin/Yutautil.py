@@ -12117,8 +12117,6 @@ class yutautil_APYaml:
         parsedData = haxe_format_JsonParser(jsonContent).doParse()
         self.settings = Reflect.field(parsedData,"Friday Night Funkin")
 
-        self.settings.songList = [song.replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']') for song in self.settings.songList]
-
 
     def __repr__(self):
         name = f"YAML of {self.name}"

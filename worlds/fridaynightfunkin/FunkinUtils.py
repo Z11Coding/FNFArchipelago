@@ -68,60 +68,32 @@ class FunkinUtils:
                 with open(item_path, 'r', encoding='utf-8') as file:  # Open the file in read mode
                     file_content = file.read()
 
-                    YUtil = yutautil_APYaml(file_content)
+                    # YUtil = yutautil_APYaml(file_content)
 
-                    print(YUtil.name)
-                    songlistings[YUtil.name] = YUtil.getSongList()
-                    self.songLimits[YUtil.name] = YUtil.settings.song_limit
+                    # print(YUtil.name)
+                    # print(YUtil.settings)
+                    # songlistings[YUtil.name] = YUtil.getSongList()
+                    # self.songLimits[YUtil.name] = YUtil.settings.song_limit
 
         return songlistings
 
     def __init__(self) -> None:
-        item_id_index = self.STARTING_CODE + (len(FNFBaseList.localSongList) + 100)
-        self.item_names_to_id = ChainMap({self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, self.filler_items, self.normal_items, self.trap_items, self.song_items)
-        self.location_names_to_id = ChainMap(self.song_locations)
+        # Don't initialize song-related data here anymore - it's handled at the World class level
+        # Just setup the basic item mappings without songs
+        self.item_names_to_id = ChainMap(
+            {self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, 
+            self.filler_items, 
+            self.normal_items, 
+            self.trap_items
+            # Songs will be added by the World class
+        )
+        self.location_names_to_id = ChainMap()  # Will be populated by World class
 
-        mod_data = self.extract_song_list()
-        sloopcount:int = 0
-        print('LIMIT:' + str(self.songLimits.items()))
-        if mod_data:
-            # print('-- DOING FNF SONG FILL --')
-            for name, list in mod_data.items():
-                # print("Listing Songs for " + name + "\n" + str(list))
-                for song in list:
-                    if sloopcount <= int():
-                        cur_song_name = song
-                        item_id = item_id_index
-                        isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
-                        if cur_song_name in self.song_items.keys():
-                            self.song_items[cur_song_name].playerList.append(name)
-                        else:
-                            self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, name, [])
-                            self.song_items[cur_song_name].playerList.append(name)
-                            item_id_index += 1
-                            sloopcount+=1
-                        # print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
-        else:
-            for song in FNFBaseList.emptySongList:
-                # print("No one's playing FNF! Placing Test!")
-                cur_song_name = song
-                item_id = item_id_index
-                isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
-                if cur_song_name in self.song_items.keys():
-                    self.song_items[cur_song_name].playerList.append('blank')
-                else:
-                    self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, 'blank', [])
-                    self.song_items[cur_song_name].playerList.append('blank')
-                    item_id_index += 1
-                    # print(str(self.song_items[cur_song_name]) + " is Modded: " + str(isModded))
-
-        self.item_names_to_id.update({name: data.code for name, data in self.song_items.items()})
-
-        for song_name, song_data in self.song_items.items():
-            for j in range(2):
-                self.song_locations[f"{song_name}-{j}"] = (song_data.code + 1000 * j)
-            for j in range(3):
-                self.song_locations[f"Note {j}: {song_name}"] = (song_data.code + 1000 * j + 10000)
+        # for song_name, song_data in self.song_items.items():
+        #     for j in range(2):
+        #         self.song_locations[f"{song_name}-{j}"] = (song_data.code + 1000 * j)
+        #     for j in range(3):
+        #         self.song_locations[f"Note {j}: {song_name}"] = (song_data.code + 1000 * j + 10000)
 
 
     def get_songs_with_settings(self, mods: bool, mod_ids: List[int]) -> Tuple[List[str], List[int]]:

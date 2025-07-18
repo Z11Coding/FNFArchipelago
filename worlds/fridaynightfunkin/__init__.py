@@ -65,65 +65,164 @@ class FunkinWorld(World):
     fnfUtil = FunkinUtils()
     filler_item_names = list(fnfUtil.filler_items.keys())
     filler_item_weights = list(fnfUtil.filler_item_weights.values())
+    
+    # These will be populated during class creation in __new__
     song_items: Dict[str, SongData] = {}
+    song_locations: Dict[str, int] = {}
+    item_name_to_id: Dict[str, int] = {}
+    location_name_to_id: Dict[str, int] = {}
+    
+    # Temporary storage for setup
     items_in_general: dict[str, int] = {}
     trap_items_weights: dict[str, int] = {}
-    item_name_to_id = {}
-    location_name_to_id = {}
     items_weights: dict[str, int] = {}
-    songLimit:int
-    item_name_to_id = {name: code for name, code in fnfUtil.item_names_to_id.items()}
-    location_name_to_id = {name: code for name, code in fnfUtil.location_names_to_id.items()}
-    song_locations: Dict[str, int] = {}
-    item_id_index:int = 0
+    songLimit: int
+    item_id_index: int = 0
     songlistforthe83rdtime: list[str] = []
     
-    def __new__(cls, multiworld: MultiWorld, player: int):
+    @classmethod
+    def _setup_class_data(cls, multiworld: MultiWorld):
+        """Setup all item and location IDs for all players during class creation"""
+        if hasattr(cls, '_class_data_initialized'):
+            return  # Already initialized
+            
         import Utils
         from .Yutautil import yutautil_APYaml
         import sys
         import os
-        instance = super(FunkinWorld, cls).__new__(cls)
-        instance.item_name_to_id = {}
-        instance.location_name_to_id = {}
-        player_name = multiworld.player_name[player]
-        apYAMLList : List[yutautil_APYaml]
+        
+        # Get all player YAML files
         user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
         folder_path = sys.argv[sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
         
         if not os.path.isdir(folder_path):
             raise ValueError(f"The path {folder_path} is not a valid directory.")
-        # print(f"Checking YAMLs for songList at {folder_path}")
-        apYAMLList = []
+            
+        # Load all FNF YAML files
+        all_yamls = []
         for item in os.listdir(folder_path):
             item_path = os.path.join(folder_path, item)
             if os.path.isfile(item_path):
-                with open(item_path, 'r', encoding='utf-8') as file:
-                    file_content = file.read()
-
-                    yaml = yutautil_APYaml(file_content)
-                    if yaml.game == "Friday Night Funkin":
-                        apYAMLList.append(yaml)
-
-
-
-        if not apYAMLList:
-            raise ValueError(f"No valid YAML files found in the directory {folder_path}.")
-
-        instance.thisYaml = [yaml for yaml in apYAMLList if yaml.name == player_name]
-        if len(instance.thisYaml) > 1 or instance.thisYaml[0].game != "Friday Night Funkin":
-            raise ValueError(f"There are too many YAMLs for player {player_name}, or there is another YAML for the wrong game!")
-        if not instance.thisYaml:
-            raise ValueError(f"No YAML file found for player {player_name} in the directory {folder_path}.")
-        # print(instance.thisYaml)
-
-        instance.thisYaml = instance.thisYaml[0]
-        instance.yamlList = apYAMLList
+                try:
+                    with open(item_path, 'r', encoding='utf-8') as file:
+                        file_content = file.read()
+                        yaml = yutautil_APYaml(file_content)
+                        if yaml.game == "Friday Night Funkin":
+                            all_yamls.append(yaml)
+                except Exception as e:
+                    print(f"Error reading YAML file {item}: {e}")
+                    continue
         
-        # randomize the song list, and only allow the amount of songs specified in the YAML
-        random.shuffle(instance.thisYaml.settings.songList)
-        instance.thisYaml.settings.songList = instance.thisYaml.settings.songList[:instance.thisYaml.settings.song_limit] or 5
-
+        if not all_yamls:
+            print("No FNF YAML files found, using default songs")
+            # Create a default YAML for fallback
+            all_yamls = []
+        
+        # Initialize class-level data
+        cls.song_items = {}
+        cls.song_locations = {}
+        cls.item_name_to_id = {}
+        cls.location_name_to_id = {}
+        cls.item_id_index = cls.fnfUtil.STARTING_CODE + 100
+        
+        # Process all songs from all players
+        all_songs = set()
+        
+        # Collect all unique songs from all players
+        for yaml_data in all_yamls:
+            if yaml_data.getSongList():
+                for song in yaml_data.getSongList():
+                    # Clean the song name
+                    cleaned_song = song.strip().replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']').strip()
+                    all_songs.add(cleaned_song)
+        
+        # Add fallback songs if no custom songs found
+        if not all_songs:
+            all_songs.update(FNFBaseList.emptySongList)
+            
+        print(f"Found {len(all_songs)} unique songs across all players: {list(all_songs)}")
+        
+        # Create SongData for all songs
+        for song in all_songs:
+            cur_song_name = song
+            item_id = cls.item_id_index
+            isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+            
+            # Create song data - we'll assign players later
+            cls.song_items[cur_song_name] = SongData(
+                item_id, 
+                isModded, 
+                cur_song_name, 
+                "", # Will be set per-instance
+                []  # Will be populated per-instance
+            )
+            cls.item_id_index += 1
+        
+        # Create all possible locations for all songs
+        for song_name, song_data in cls.song_items.items():
+            # Song completion locations
+            for j in range(2):
+                cls.song_locations[f"{song_name}-{j}"] = (song_data.code + 1000 * j)
+            
+            # Note check locations  
+            for j in range(3):
+                cls.song_locations[f"Note {j}: {song_name}"] = (song_data.code + 1000 * j + 10000)
+        
+        # Build final name-to-ID mappings
+        cls.item_name_to_id = ChainMap(
+            {cls.fnfUtil.SHOW_TICKET_NAME: cls.fnfUtil.SHOW_TICKET_CODE},
+            cls.fnfUtil.filler_items,
+            cls.fnfUtil.normal_items, 
+            cls.fnfUtil.trap_items,
+            {name: data.code for name, data in cls.song_items.items()}
+        )
+        
+        cls.location_name_to_id = ChainMap(cls.song_locations)
+        
+        # Store YAML data for instances to use
+        cls._all_yamls = all_yamls
+        cls._class_data_initialized = True
+        
+        print(f"Initialized {len(cls.item_name_to_id)} items and {len(cls.location_name_to_id)} locations")
+    
+    def __new__(cls, multiworld: MultiWorld, player: int):
+        # Setup class data if not already done
+        cls._setup_class_data(multiworld)
+        
+        instance = super(FunkinWorld, cls).__new__(cls)
+        instance.item_name_to_id = cls.item_name_to_id.copy()
+        instance.location_name_to_id = cls.location_name_to_id.copy()
+        
+        # Find this player's YAML
+        player_name = multiworld.player_name[player]
+        player_yaml = None
+        
+        for yaml_data in cls._all_yamls:
+            if yaml_data.name == player_name:
+                player_yaml = yaml_data
+                break
+        
+        if not player_yaml:
+            print(f"No YAML found for player {player_name}, using defaults")
+            # Create a minimal YAML with defaults
+            class DefaultYAML:
+                def __init__(self):
+                    self.name = player_name
+                    self.game = "Friday Night Funkin"
+                    self.settings = type('Settings', (), {
+                        'songList': FNFBaseList.emptySongList.copy(),
+                        'song_limit': 5
+                    })()
+                def getSongList(self):
+                    return self.settings.songList
+            player_yaml = DefaultYAML()
+        
+        instance.thisYaml = player_yaml
+        instance.yamlList = cls._all_yamls
+        instance.original_song_list = player_yaml.getSongList() or []
+        
+        print(f"Created FunkinWorld instance for player {player_name} with {len(instance.original_song_list)} songs")
+        
         return instance
 
     def __init__(self, multiworld: MultiWorld, player: int):
@@ -131,7 +230,7 @@ class FunkinWorld(World):
         super(FunkinWorld, self).__init__(multiworld, player)
         # print("Building FunkinWorld...")
 
-
+        # Initialize core attributes
         self.playable_songs = []
         self.mods_enabled = AllowMods.default
         self.starting_song = SongStarter.default
@@ -149,6 +248,11 @@ class FunkinWorld(World):
         self.graderequirement = gradeNeeded.default
         self.accrequirement = accuracyNeeded.default
         self.checksPerSong = CheckCount.default
+        
+        # Initialize instance-specific tracking (don't overwrite class data)
+        self.trap_items_weights = {}
+        self.items_in_general = {}
+        self.songLimit = 5
 
     def generate_early(self):
         # Basic Settings
@@ -156,6 +260,7 @@ class FunkinWorld(World):
         self.starting_song = self.options.starting_song.value
         self.unlock_type = self.options.unlock_type.value.pop()
         self.unlock_method = self.options.unlock_method.value.pop()
+        
         # Trap Settings
         self.trapAmount = self.options.trapAmount.value
         self.trap_items_weights['Blue Balls Curse'] = self.options.bbcWeight.value
@@ -166,73 +271,149 @@ class FunkinWorld(World):
         self.trap_items_weights['Chart Modifier Trap'] = self.options.chart_modifier_change_chance.value
         self.items_in_general['Shield'] = self.options.shieldWeight.value
         self.items_in_general['Max HP Up'] = self.options.MHPWeight.value
+        
+        # Other Settings
         self.ticket_percentage = self.options.ticket_percentage.value
         self.ticket_win_percentage = self.options.ticket_win_percentage.value
         self.graderequirement = self.options.graderequirement.value
         self.accrequirement = self.options.accrequirement.value
         self.checksPerSong = self.options.check_count.value
         self.songLimit = self.options.song_limit.value
-        #self.e_weight = self.options.trapAmount.value imma do this later
-        while True:
-            self.item_id_index = self.fnfUtil.STARTING_CODE + (len(self.thisYaml.getSongList()) + 100)
-            self.item_names_to_id = ChainMap({self.fnfUtil.SHOW_TICKET_NAME: self.fnfUtil.SHOW_TICKET_CODE}, self.fnfUtil.filler_items, self.fnfUtil.normal_items, self.fnfUtil.trap_items, self.song_items)
-            self.location_names_to_id = ChainMap(self.song_locations)
-            randosongs = self.thisYaml.getSongList() or [yamlName.getSongList() for yamlName in self.yamlList if yamlName.name == self.player_name]
-            if randosongs:
-                print('DO THING')
-                self.random.shuffle(randosongs)
-                self.songlistforthe83rdtime = randosongs[:self.thisYaml.settings.song_limit]
-                print(randosongs[:self.thisYaml.settings.song_limit])
-                for song in randosongs[:self.thisYaml.settings.song_limit]:
-                    cur_song_name = song
-                    item_id = self.item_id_index
-                    isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
-                    if cur_song_name in self.song_items.keys():
-                        self.song_items[cur_song_name].playerList.append(self.thisYaml.name)
-                    else:
-                        self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, self.thisYaml.name, [])
-                        self.song_items[cur_song_name].playerList.append(self.thisYaml.name)
-                        self.item_id_index += 1
-            else:
-                for song in FNFBaseList.emptySongList:
-                    # print("No one's playing FNF! Placing Test!")
-                    cur_song_name = song
-                    item_id = self.item_id_index
-                    isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
-                    if cur_song_name in self.song_items.keys():
-                        self.song_items[cur_song_name].playerList.append('blank')
-                    else:
-                        self.song_items[cur_song_name] = SongData(item_id, isModded, cur_song_name, 'blank', [])
-                        self.song_items[cur_song_name].playerList.append('blank')
-                        self.item_id_index += 1
 
-            self.item_names_to_id.update({name: data.code for name, data in self.song_items.items()})
+        # Process song list with proper randomization and limiting
+        self._process_song_list()
+        
+        # Generate locations for the finalized song list
+        self._generate_song_locations()
+        
+        # Choose victory song and create song pool
+        self._setup_victory_song_and_pool()
+        
 
-            for song_name, song_data in self.song_items.items():
+
+    def _process_song_list(self):
+        """Process the song list with randomization and limiting using pre-initialized class data"""
+        # Get the original song list from YAML
+        raw_song_list = getattr(self, 'original_song_list', [])
+        
+        # If no songs in YAML, use fallback
+        if not raw_song_list:
+            raw_song_list = FNFBaseList.emptySongList.copy()
+            print(f"No songs found for player {self.player_name}, using fallback songs")
+
+        # Clean the song names
+        def remove_YAML_formatting(song_list: List[str]) -> List[str]:
+            """Remove YAML formatting from the song list"""
+            if not song_list:
+                return []
+            
+            cleaned_list = []
+            for song in song_list:
+                cleaned_song = song.strip().replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']').strip()
+                cleaned_list.append(cleaned_song)
+            
+            return cleaned_list
+
+        cleaned_song_list = remove_YAML_formatting(raw_song_list)
+        
+        # Filter to only include songs that exist in our class-level song_items
+        available_songs = [song for song in cleaned_song_list if song in self.song_items]
+        
+        # Add any missing base songs that should be available to all players
+        for song in FNFBaseList.baseSongList:
+            if song in self.song_items and song not in available_songs:
+                available_songs.append(song)
+        
+        if not available_songs:
+            # Emergency fallback - use any song from class data
+            available_songs = list(self.song_items.keys())[:5]
+            print(f"Emergency fallback: Using first 5 songs from class data for {self.player_name}")
+
+        # Randomize the song list
+        self.random.shuffle(available_songs)
+        
+        # Apply song limit
+        song_limit = max(1, getattr(self.thisYaml.settings, 'song_limit', 5) or 5)
+        limited_song_list = available_songs[:song_limit]
+        
+        print(f"Processing {len(limited_song_list)} songs for player {self.player_name}: {limited_song_list}")
+        
+        # Update the song ownership in the existing SongData objects
+        for song_name in limited_song_list:
+            if song_name in self.song_items:
+                song_data = self.song_items[song_name]
+                # Update the player ownership
+                if self.player_name not in song_data.playerList:
+                    song_data.playerList.append(self.player_name)
+                # Set primary owner if not set
+                if not song_data.playerSongBelongsTo:
+                    # Create a new SongData with updated ownership
+                    self.song_items[song_name] = SongData(
+                        song_data.code,
+                        song_data.modded,
+                        song_data.songName,
+                        self.player_name,
+                        song_data.playerList.copy()
+                    )
+
+        print(f"Updated song ownership for {len(limited_song_list)} songs")
+    def _generate_song_locations(self):
+        """Location mappings are already generated at class level, just reference them"""
+        # Locations are already created in _setup_class_data, so just log what we have
+        available_locations = []
+        for song_name in self.song_items.keys():
+            if self.unlock_method in ["Song Completion", "Both"]:
                 for j in range(2):
-                    self.song_locations[f"{song_name}-{j}"] = (song_data.code + 1000 * j)
+                    loc_name = f"{song_name}-{j}"
+                    if loc_name in self.song_locations:
+                        available_locations.append(loc_name)
+            
+            if self.unlock_method in ["Note Checks", "Both"]:
                 for j in range(3):
-                    self.song_locations[f"Note {j}: {song_name}"] = (song_data.code + 1000 * j + 10000)
+                    loc_name = f"Note {j}: {song_name}"
+                    if loc_name in self.song_locations:
+                        available_locations.append(loc_name)
+        
+        print(f"Available locations for {self.player_name}: {len(available_locations)} locations")
+        
+    def format_song_list(self, song_list: List[str]) -> str:
+        """Format the song list for display"""
+        if not song_list:
+            return "No songs available"
+        
+        formatted_list = []
+        for song in song_list:
+            if song in self.song_items:
+                song_data = self.song_items[song]
+                formatted_list.append(f"{song} (ID: {song_data.code}, Modded: {song_data.modded})")
+            else:
+                formatted_list.append(f"{song} (Unknown ID)")
+        
+        return "\n".join(formatted_list)
+    
 
-            # In most cases this should only need to run once
-            available_song_keys, song_ids = get_player_specific_ids(self.player_name, self.song_items)
-            # print(available_song_keys)
-            print("SONG LIST:" + str(self.song_items))
 
-            # print(get_player_specific_ids(self.options.songList.value, self.fnfUtil.song_items))
-            # Choose victory song from current available keys, so we can access the song id
-            chosen_song_index = random.randrange(0, len(available_song_keys))
-            self.victory_song_name = available_song_keys[chosen_song_index]
-            self.victory_song_id = int(song_ids[chosen_song_index])
-            del available_song_keys[chosen_song_index]
-
-            available_song_keys = available_song_keys
-            count_needed_for_start = max(0, 1)
-
-            final_song_list = available_song_keys
-            print(final_song_list)
-            self.create_song_pool(final_song_list)
-            break
+    def _setup_victory_song_and_pool(self):
+        """Choose victory song and set up the song pool"""
+        # Get songs available to this player
+        available_song_keys, song_ids = get_player_specific_ids(self.player_name, self.song_items)
+        
+        if not available_song_keys:
+            raise ValueError(f"No songs available for player {self.player_name}")
+        
+        print(f"Available songs for {self.player_name}: {available_song_keys}")
+        
+        # Choose victory song randomly
+        chosen_song_index = self.random.randrange(0, len(available_song_keys))
+        self.victory_song_name = available_song_keys[chosen_song_index]
+        self.victory_song_id = int(song_ids[chosen_song_index])
+        
+        # Remove victory song from available pool
+        remaining_songs = available_song_keys.copy()
+        del remaining_songs[chosen_song_index]
+        
+        # Create song pool and give starting song
+        self.create_song_pool(remaining_songs)
 
     def create_item(self, name: str) -> Item:
         if name == self.fnfUtil.SHOW_TICKET_NAME:
@@ -259,7 +440,7 @@ class FunkinWorld(World):
     def create_event(self, event: str) -> Item:
         return FunkinItem(event, ItemClassification.filler, None, self.player)
 
-    def _create_item_in_quantities(self, name: str, qty: int) -> [Item]:
+    def _create_item_in_quantities(self, name: str, qty: int) -> List[Item]:
         return [self.create_item(name) for _ in range(0, qty)]
 
     def get_filler_item_name(self) -> str:
@@ -285,34 +466,25 @@ class FunkinWorld(World):
             return self.items_in_general[theItem]
 
     def create_song_pool(self, available_song_keys: List[str]):
-        if len(available_song_keys) > 0:
-            startingSong = available_song_keys[self.random.randrange(0, len(available_song_keys))]
-            if not startingSong == "Test": available_song_keys.remove(startingSong)
-            print(startingSong)
-            self.multiworld.push_precollected(self.create_item(startingSong))
-            self.songList = available_song_keys
-
-            if self.options.starting_song.value != "":
-                starting_song_count = 1
-            else:
-                starting_song_count = 0
-            self.random.shuffle(available_song_keys)
-            song_count = len(self.songList)
-            # choose a random victory song from the available songs
-            chosen_song = self.random.randrange(0, len(available_song_keys))
-            if chosen_song < song_count:
-                self.victory_song_name = self.songList[chosen_song]
-                del self.songList[chosen_song]
-            else:
-                self.victory_song_name = available_song_keys[chosen_song - song_count]
-                del available_song_keys[chosen_song - song_count]
-
-            # Then attempt to fulfill any remaining songs for interim songs
-            if len(self.songList) < song_count:
-                for _ in range(0, len(self.songList)):
-                    if len(available_song_keys) <= 0:
-                        break
-                    self.songList.append(available_song_keys.pop())
+        """Create the song pool and give the player a starting song"""
+        if not available_song_keys:
+            self.songList = []
+            return
+            
+        # Choose and give starting song (precollected)
+        starting_song_index = self.random.randrange(0, len(available_song_keys))
+        starting_song = available_song_keys[starting_song_index]
+        
+        # Remove Test songs from normal processing
+        if starting_song != "Test":
+            available_song_keys.remove(starting_song)
+        
+        print(f"Starting song for {self.player_name}: {starting_song}")
+        self.multiworld.push_precollected(self.create_item(starting_song))
+        
+        # The remaining songs become the item pool
+        self.songList = available_song_keys.copy()
+        self.random.shuffle(self.songList)
 
     def create_regions(self):
         menu_region = Region("Freeplay", self.player, self.multiworld)
@@ -366,9 +538,11 @@ class FunkinWorld(World):
                         (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
                     menu_region.locations.append(loc)
             self.location_count = len(menu_region.locations)
+            
+            self.location_name_to_id.update({loc.name: loc.address for loc in menu_region.locations if loc.name not in self.location_name_to_id})
 
-            # print(self.fnfUtil.song_locations)
-        # print('-- FNF LOCATION GEN FINISHED --')
+            print(self.location_name_to_id)
+        print('-- FNF LOCATION GEN FINISHED --')
 
 
     def create_items(self) -> None:
@@ -496,6 +670,6 @@ class FunkinWorld(World):
                 "ticketWinCount": self.get_ticket_win_count(),
                 "gradeNeeded": self.options.graderequirement.value,
                 "accuracyNeeded": self.options.accrequirement.value,
-                "locationType": self.unlock_method, "yeah idk either"
+                "locationType": self.unlock_method,
                 "locationMethod": self.unlock_type
             }
