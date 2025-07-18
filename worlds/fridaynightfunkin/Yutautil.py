@@ -12104,7 +12104,7 @@ sys_thread__Thread_Thread_Impl_.processEvents()
 
 class yutautil_APYaml:
     _hx_class_name = "yutautil.APYaml"
-    __slots__ = ("game", "name", "description", "settings", "song_to_id")
+    __slots__ = ("game", "name", "description", "settings")
     _hx_fields = ["game", "name", "description", "settings"]
     _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled"]
 
