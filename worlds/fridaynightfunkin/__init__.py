@@ -115,6 +115,7 @@ class FunkinWorld(World):
         super(FunkinWorld, self).__init__(multiworld, player)
         # print("Building FunkinWorld...")
 
+
         self.playable_songs = []
         self.mods_enabled = AllowMods.default
         self.starting_song = SongStarter.default
