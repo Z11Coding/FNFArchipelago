@@ -119,6 +119,10 @@ class FunkinWorld(World):
 
         instance.thisYaml = instance.thisYaml[0]
         instance.yamlList = apYAMLList
+        
+        # randomize the song list, and only allow the amount of songs specified in the YAML
+        random.shuffle(instance.thisYaml.settings.songList)
+        instance.thisYaml.settings.songList = instance.thisYaml.settings.songList[:instance.thisYaml.settings.song_limit] or 5
 
         return instance
 

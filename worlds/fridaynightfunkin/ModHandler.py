@@ -187,5 +187,4 @@ def get_player_specific_ids(player_name: str, song_items: dict[str, SongData]):
             song_ids.append(data.code)
             song_names.append(song)
 
-
     return song_names, song_ids   # Return the list of song IDs
