@@ -168,18 +168,16 @@ class FunkinWorld(World):
         self.accrequirement = self.options.accrequirement.value
         self.checksPerSong = self.options.check_count.value
         self.songLimit = self.options.song_limit.value
-        self.allowedSongs: dict[str, list[str]] = {}
         #self.e_weight = self.options.trapAmount.value imma do this later
         while True:
             self.item_id_index = self.fnfUtil.STARTING_CODE + (len(self.thisYaml.getSongList()) + 100)
             self.item_names_to_id = ChainMap({self.fnfUtil.SHOW_TICKET_NAME: self.fnfUtil.SHOW_TICKET_CODE}, self.fnfUtil.filler_items, self.fnfUtil.normal_items, self.fnfUtil.trap_items, self.song_items)
             self.location_names_to_id = ChainMap(self.song_locations)
-            randosongs = (self.thisYaml.getSongList() or [yamlName.getSongList() for yamlName in self.yamlList if yamlName.name == self.player_name])
+            randosongs = self.thisYaml.getSongList() or [yamlName.getSongList() for yamlName in self.yamlList if yamlName.name == self.player_name]
             if randosongs:
                 print('DO THING')
                 self.random.shuffle(randosongs)
                 self.songlistforthe83rdtime = randosongs[:self.thisYaml.settings.song_limit]
-                self.allowedSongs[self.thisYaml.name] = randosongs[:self.thisYaml.settings.song_limit]
                 print(randosongs[:self.thisYaml.settings.song_limit])
                 for song in randosongs[:self.thisYaml.settings.song_limit]:
                     cur_song_name = song
@@ -321,7 +319,7 @@ class FunkinWorld(World):
 
         all_selected_locations: List[str] = []
         for song_name, song_data in self.song_items.items():
-            if (song_data.playerSongBelongsTo == self.player_name or self.player_name in song_data.playerList or not song_data.modded) and song_name in self.allowedSongs.get(self.player_name, []):
+            if song_data.playerSongBelongsTo == self.player_name or self.player_name in song_data.playerList or not song_data.modded:
                 all_selected_locations.append(song_name)
                 '''print('Successfully gave ' + song_name + ' to ' + self.player_name + ' who is also ' + song_data.playerSongBelongsTo)
             else:
