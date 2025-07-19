@@ -326,7 +326,7 @@ class FunkinWorld(World):
         
         if not available_songs:
             # Emergency fallback - use any song from class data
-            available_songs = list(self.song_items.keys())[:5]
+            available_songs = remove_YAML_formatting(list(self.song_items.keys())[:5])
             print(f"Emergency fallback: Using first 5 songs from class data for {self.player_name}")
 
         # Randomize the song list
