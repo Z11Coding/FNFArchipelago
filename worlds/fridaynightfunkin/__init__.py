@@ -79,6 +79,7 @@ class FunkinWorld(World):
     songLimit: int
     item_id_index: int = 0
     songlistforthe83rdtime: list[str] = []
+    allowDupes: bool = False
     
     @classmethod
     def _setup_class_data(cls, multiworld: MultiWorld):
@@ -146,12 +147,15 @@ class FunkinWorld(World):
         for song in all_songs:
             cur_song_name = song
             item_id = cls.item_id_index
-            isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+            isModded = True #cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+
+            if not isModded:
+                continue
             
             # Create song data - we'll assign players later
             cls.song_items[cur_song_name] = SongData(
                 item_id, 
-                isModded, 
+                isModded,
                 cur_song_name, 
                 "", # Will be set per-instance
                 []  # Will be populated per-instance
@@ -279,13 +283,14 @@ class FunkinWorld(World):
         self.accrequirement = self.options.accrequirement.value
         self.checksPerSong = self.options.check_count.value
         self.songLimit = self.options.song_limit.value
+        self.allowDupes = bool(self.options.allowDupes.value)
 
         # Process song list with proper randomization and limiting
         self._process_song_list()
-        
+
         # Generate locations for the finalized song list
         self._generate_song_locations()
-        
+
         # Choose victory song and create song pool
         self._setup_victory_song_and_pool()
         
@@ -587,17 +592,17 @@ class FunkinWorld(World):
             # Fill given percentage of remaining slots as Useful/non-progression dupes.
             dupe_count = floor(items_left * (20 / 100))
             items_left -= dupe_count
-    
+
             # This is for the extraordinary case of needing to fill a lot of items.
             while dupe_count > len(song_keys_in_pool):
                 for key in song_keys_in_pool:
                     item = self.create_item(key)
                     item.classification = ItemClassification.useful
                     self.multiworld.itempool.append(item)
-    
+
                 dupe_count -= len(song_keys_in_pool)
                 continue
-    
+
             self.random.shuffle(song_keys_in_pool)
             for i in range(0, dupe_count):
                 item = self.create_item(song_keys_in_pool[i])
@@ -653,7 +658,7 @@ class FunkinWorld(World):
         filtered_list = []
 
         for songKey, songData in self.song_items.items():
-            if songData.playerSongBelongsTo == player_name or player_name in songData.playerList or not songData.modded: #Make sure the right player gets the right songs
+            if songData.playerSongBelongsTo == player_name or player_name in songData.playerList: #Make sure the right player gets the right songs
                 filtered_list.append(songKey)
                 #print(songKey)
 
