@@ -156,6 +156,11 @@ class songLimit(Range):
     default = 16
     display_name = "Song Limit"
 
+class AllowDuplicateSongs(Toggle):
+    """If there should be multiple of songs if there's room for them."""
+    display_name = "Allow Duplicate Songs"
+    default = False
+
 
 fnf_option_groups = [
     OptionGroup("Base Settings", [
@@ -169,7 +174,8 @@ fnf_option_groups = [
         TicketPercentage,
         TicketWinPercentage,
         gradeNeeded,
-        accuracyNeeded
+        accuracyNeeded,
+        AllowDuplicateSongs
     ]),
     OptionGroup("Traps", [
         trapAmount,
@@ -208,3 +214,4 @@ class FunkinOptions(PerGameCommonOptions):
     ticket_win_percentage: TicketWinPercentage
     graderequirement: gradeNeeded
     accrequirement: accuracyNeeded
+    allowDupes: AllowDuplicateSongs
