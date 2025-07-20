@@ -11760,6 +11760,7 @@ class yutautil_save_FuncEmbed:
             None
             e = haxe_Exception.caught(_g).unwrap()
             errorMsg = StringTools.replace(StringTools.replace(Std.string(e),"hscript:","Line -"),":"," -")
+            print(f"Haxe encountered an error: {errorMsg}")
             haxe_Log.trace(("Error executing function: " + ("null" if errorMsg is None else errorMsg)),_hx_AnonObject({'fileName': "src/yutautil/save/FuncEmbed.hx", 'lineNumber': 86, 'className': "yutautil.save.FuncEmbed", 'methodName': "runFunctionFromString"}))
             haxe_Log.trace(("The Expression was: \n" + ("null" if hscriptExprStr is None else hscriptExprStr)),_hx_AnonObject({'fileName': "src/yutautil/save/FuncEmbed.hx", 'lineNumber': 87, 'className': "yutautil.save.FuncEmbed", 'methodName': "runFunctionFromString"}))
             return None
