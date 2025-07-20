@@ -45,7 +45,7 @@ class FNFBaseList:
 		'Pico (Pico mix)', 'Philly Nice (Pico mix)', 'Blammed (Pico mix)',
 		'Eggnog (Pico Mix)', 'Cocoa (Pico Mix)',
 		'Senpai (Pico mix)', 'Roses (Pico mix)',
-		'Ugh (Pico mix)', 'Guns (Pico mix)', 'Stress (Pico Mix)'
+		'Ugh (Pico mix)', 'Guns (Pico mix)', 'Stress (Pico Mix)',
         'Small Argument',
         'Beat Battle',
         'Beat Battle 2'
