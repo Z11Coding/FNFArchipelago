@@ -197,8 +197,8 @@ class FunkinWorld(World):
         cls._setup_class_data(multiworld)
         
         instance = super(FunkinWorld, cls).__new__(cls)
-        instance.item_name_to_id = cls.item_name_to_id.copy()
-        instance.location_name_to_id = cls.location_name_to_id.copy()
+        # instance.item_name_to_id = cls.item_name_to_id.copy()
+        # instance.location_name_to_id = cls.location_name_to_id.copy()
         
         # Find this player's YAML
         player_name = multiworld.player_name[player]
