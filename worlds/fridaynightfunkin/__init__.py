@@ -134,7 +134,11 @@ class FunkinWorld(World):
         for song in all_songs:
             cur_song_name = song
             item_id = item_id_index
-            isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+            # isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+            isModded = True
+
+            if not isModded:
+                continue
 
             # Create song data - we'll assign players later
             song_items[cur_song_name] = SongData(
@@ -260,7 +264,11 @@ class FunkinWorld(World):
         for song in all_songs:
             cur_song_name = song
             item_id = cls.item_id_index
-            isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+            # isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+            isModded = True
+
+            if not isModded:
+                continue
 
             # Create song data - we'll assign players later
             cls.song_items[cur_song_name] = SongData(
@@ -770,7 +778,7 @@ class FunkinWorld(World):
         filtered_list = []
 
         for songKey, songData in self.song_items.items():
-            if songData.playerSongBelongsTo == player_name or player_name in songData.playerList or not songData.modded: #Make sure the right player gets the right songs
+            if songData.playerSongBelongsTo == player_name or player_name in songData.playerList: #Make sure the right player gets the right songs
                 filtered_list.append(songKey)
                 #print(songKey)
 
