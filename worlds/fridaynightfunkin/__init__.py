@@ -172,17 +172,20 @@ class FunkinWorld(World):
             for j in range(3):
                 cls.song_locations[f"Note {j}: {song_name}"] = (song_data.code + 1000 * j + 10000)
         
-        # Build final name-to-ID mappings
-        cls.item_name_to_id = dict(ChainMap(
+        # Build final name-to-ID mappings using ChainMap, then update the dicts
+        combined_item_map = ChainMap(
             {cls.fnfUtil.SHOW_TICKET_NAME: cls.fnfUtil.SHOW_TICKET_CODE},
             cls.fnfUtil.filler_items,
             cls.fnfUtil.normal_items, 
             cls.fnfUtil.trap_items,
             {name: data.code for name, data in cls.song_items.items()}
-        ))
-        
-        cls.location_name_to_id = dict(ChainMap(cls.song_locations))
-        
+        )
+        cls.item_name_to_id.clear()
+        cls.item_name_to_id.update(combined_item_map)
+
+        combined_location_map = ChainMap(cls.song_locations)
+        cls.location_name_to_id.clear()
+        cls.location_name_to_id.update(combined_location_map)
         # Store YAML data for instances to use
         cls._all_yamls = all_yamls
         cls._class_data_initialized = True
