@@ -258,6 +258,13 @@ class FunkinWorld(World):
         if not all_songs:
             all_songs.update(FNFBaseList.emptySongList)
 
+        # Remove single quotes around song names if they exist
+        cleaned_songs = set()
+        for song in all_songs:
+            cleaned_song = song.strip("'") if song.startswith("'") and song.endswith("'") else song
+            cleaned_songs.add(cleaned_song)
+        all_songs = cleaned_songs
+
         print(f"Found {len(all_songs)} unique songs across all players: {list(all_songs)}")
 
         # Create SongData for all songs
@@ -766,6 +773,7 @@ class FunkinWorld(World):
         spoiler_handle.write(f"Ticket Win Count: {self.get_ticket_win_count()}\n")
         spoiler_handle.write(f"Total Ticket Count: {self.get_ticket_count()}\n")
         spoiler_handle.write(f"Total Song Count: {len(self.get_songs_map(self.player_name))}\n")
+        spoiler_handle.write(f"Songs selected: {self.get_songs_map(self.player_name)}\n")
 
     # def extend_hint_information(self, hint_data):
     #     return super().extend_hint_information(hint_data)
