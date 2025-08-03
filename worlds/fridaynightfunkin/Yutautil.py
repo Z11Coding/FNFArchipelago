@@ -12107,7 +12107,7 @@ class yutautil_APYaml:
     _hx_class_name = "yutautil.APYaml"
     __slots__ = ("game", "name", "description", "settings")
     _hx_fields = ["game", "name", "description", "settings"]
-    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled"]
+    _hx_methods = ["convertYamlToJson", "processRandomSetting", "getSongList", "getTicketWinPercentage", "isModsEnabled"]
 
     def __init__(self,yamlContent):
         self.settings = None
@@ -12116,7 +12116,24 @@ class yutautil_APYaml:
         self.game = None
         jsonContent = self.convertYamlToJson(yamlContent)
         parsedData = haxe_format_JsonParser(jsonContent).doParse()
-        self.settings = Reflect.field(parsedData,"Friday Night Funkin")
+        fnfSettings = Reflect.field(parsedData,"Friday Night Funkin")
+        
+        # If Friday Night Funkin object has 0 fields, process other sections
+        if (fnfSettings is None) or (len(Reflect.fields(fnfSettings)) == 0):
+            self.settings = _hx_AnonObject({})
+            # Process all fields in parsedData except "main" and "Friday Night Funkin"
+            allFields = Reflect.fields(parsedData)
+            _g = 0
+            while (_g < len(allFields)):
+                fieldName = (allFields[_g] if _g >= 0 and _g < len(allFields) else None)
+                _g = (_g + 1)
+                if (fieldName != "main") and (fieldName != "Friday Night Funkin"):
+                    fieldData = Reflect.field(parsedData, fieldName)
+                    if fieldData is not None:
+                        processedValue = self.processRandomSetting(fieldData)
+                        Reflect.setField(self.settings, fieldName, processedValue)
+        else:
+            self.settings = fnfSettings
 
 
     def __repr__(self):
@@ -12183,6 +12200,115 @@ class yutautil_APYaml:
         if (currentSection is not None):
             jsonObject.h[currentSection] = sectionData
         return haxe_format_JsonPrinter.print(jsonObject,None,None)
+
+    def processRandomSetting(self, fieldData):
+        """Process a field that may contain random settings with weights"""
+        import random
+        
+        if fieldData is None:
+            return None
+            
+        # If it's a simple value (not an object), return it directly
+        if not hasattr(fieldData, '__dict__') and not isinstance(fieldData, dict):
+            return fieldData
+            
+        # Get all fields in this setting
+        settingFields = Reflect.fields(fieldData) if hasattr(fieldData, '__dict__') else list(fieldData.keys())
+        
+        # Check if this is a weighted random setting (has numeric values)
+        weightedOptions = []
+        weights = []
+        hasWeights = False
+        nonWeightedValue = None
+        
+        _g = 0
+        while (_g < len(settingFields)):
+            key = (settingFields[_g] if _g >= 0 and _g < len(settingFields) else None)
+            _g = (_g + 1)
+            value = Reflect.field(fieldData, key) if hasattr(fieldData, '__dict__') else fieldData.get(key)
+            
+            # Check if value is numeric (weight)
+            if isinstance(value, (int, float)) and value >= 0:
+                if value > 0:  # Only include options with positive weight
+                    weightedOptions.append(key)
+                    weights.append(value)
+                hasWeights = True
+            else:
+                # Non-numeric value, could be an array or single value
+                nonWeightedValue = value
+        
+        # If we found weighted options, use Python's random.choices for weighted selection
+        if hasWeights and len(weightedOptions) > 0:
+            try:
+                selectedOption = random.choices(weightedOptions, weights=weights, k=1)[0]
+                
+                # Handle special cases for selected option
+                if selectedOption == "random":
+                    # If "random" was selected, pick from other available options (excluding random)
+                    nonRandomOptions = []
+                    nonRandomWeights = []
+                    for i, opt in enumerate(weightedOptions):
+                        if opt not in ["random", "random-low", "random-high"]:
+                            nonRandomOptions.append(opt)
+                            nonRandomWeights.append(weights[i])
+                    
+                    if len(nonRandomOptions) > 0:
+                        selectedOption = random.choices(nonRandomOptions, weights=nonRandomWeights, k=1)[0]
+                    else:
+                        # If no non-random options, just pick the first available
+                        selectedOption = weightedOptions[0] if len(weightedOptions) > 0 else None
+                        
+                elif selectedOption == "random-low":
+                    # Handle random-low case - pick from lower end of range
+                    nonRandomOptions = []
+                    nonRandomWeights = []
+                    for i, opt in enumerate(weightedOptions):
+                        if opt not in ["random", "random-low", "random-high"]:
+                            nonRandomOptions.append(opt)
+                            nonRandomWeights.append(weights[i])
+                    
+                    if len(nonRandomOptions) > 0:
+                        # Pick from first half of options
+                        halfPoint = max(1, len(nonRandomOptions) // 2)
+                        selectedOption = random.choices(nonRandomOptions[:halfPoint], 
+                                                      weights=nonRandomWeights[:halfPoint], k=1)[0]
+                    else:
+                        selectedOption = weightedOptions[0] if len(weightedOptions) > 0 else None
+                        
+                elif selectedOption == "random-high":
+                    # Handle random-high case - pick from upper end of range
+                    nonRandomOptions = []
+                    nonRandomWeights = []
+                    for i, opt in enumerate(weightedOptions):
+                        if opt not in ["random", "random-low", "random-high"]:
+                            nonRandomOptions.append(opt)
+                            nonRandomWeights.append(weights[i])
+                    
+                    if len(nonRandomOptions) > 0:
+                        # Pick from second half of options
+                        halfPoint = len(nonRandomOptions) // 2
+                        selectedOption = random.choices(nonRandomOptions[halfPoint:], 
+                                                      weights=nonRandomWeights[halfPoint:], k=1)[0]
+                    else:
+                        selectedOption = weightedOptions[-1] if len(weightedOptions) > 0 else None
+                
+                return selectedOption
+            except Exception:
+                # If selection fails, fall back to first available option
+                return weightedOptions[0] if len(weightedOptions) > 0 else None
+        
+        # If not a weighted setting, return the non-weighted value or the field data itself
+        if nonWeightedValue is not None:
+            return nonWeightedValue
+        
+        # If it's an object with sub-fields, process recursively
+        if len(settingFields) == 1:
+            singleKey = settingFields[0]
+            singleValue = Reflect.field(fieldData, singleKey) if hasattr(fieldData, '__dict__') else fieldData.get(singleKey)
+            return singleValue
+        
+        # Return the field data as-is if we can't process it
+        return fieldData
 
     def getSongList(self):
         return Reflect.field(self.settings,"songList")
