@@ -261,7 +261,7 @@ class FunkinWorld(World):
         # Remove single quotes around song names if they exist
         cleaned_songs = set()
         for song in all_songs:
-            cleaned_song = song.strip("'") if song.startswith("'") and song.endswith("'") else song
+            cleaned_song = song[1:-1] if song.startswith("'") and song.endswith("'") and len(song) >= 2 else song
             cleaned_songs.add(cleaned_song)
         all_songs = cleaned_songs
 
