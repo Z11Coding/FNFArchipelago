@@ -12107,7 +12107,7 @@ class yutautil_APYaml:
     _hx_class_name = "yutautil.APYaml"
     __slots__ = ("game", "name", "description", "settings", "isWeightedFormat")
     _hx_fields = ["game", "name", "description", "settings", "isWeightedFormat"]
-    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled", "detectYamlFormat", "processWeightedSettings"]
+    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled", "processWeightedSections", "selectWeightedValue"]
 
     def __init__(self,yamlContent):
         self.settings = None
@@ -12115,16 +12115,214 @@ class yutautil_APYaml:
         self.name = None
         self.game = None
         self.isWeightedFormat = False
+        
         jsonContent = self.convertYamlToJson(yamlContent)
         parsedData = haxe_format_JsonParser(jsonContent).doParse()
-        rawSettings = Reflect.field(parsedData,"Friday Night Funkin")
         
-        # Detect format and process settings accordingly
-        self.isWeightedFormat = self.detectYamlFormat(rawSettings)
-        if self.isWeightedFormat:
-            self.settings = self.processWeightedSettings(rawSettings)
+        # Get the main Friday Night Funkin section
+        fnfSettings = Reflect.field(parsedData,"Friday Night Funkin")
+        
+        # Check if there are additional sections (indicating weighted format)
+        # Get all field names from the parsed data object
+        allFields = python_Boot.fields(parsedData)
+        
+        # Expected sections for simple format
+        expectedSections = ["main", "Friday Night Funkin"]
+        hasAdditionalSections = False
+        
+        # Check if there are any sections beyond the expected ones
+        for fieldName in allFields:
+            if fieldName not in expectedSections:
+                hasAdditionalSections = True
+                break
+        
+        if hasAdditionalSections:
+            # This is weighted format - process additional sections as weighted settings
+            self.isWeightedFormat = True
+            self.settings = self.processWeightedSections(parsedData, fnfSettings, allFields)
         else:
-            self.settings = rawSettings
+            # This is simple format - use settings as-is
+            self.isWeightedFormat = False
+            self.settings = fnfSettings if fnfSettings is not None else haxe_ds_StringMap()
+
+    def processWeightedSections(self, parsedData, fnfSettings, allFields):
+        # Start with existing Friday Night Funkin settings
+        if fnfSettings is not None:
+            processedSettings = fnfSettings
+        else:
+            processedSettings = haxe_ds_StringMap()
+        
+        # Ensure processedSettings is a StringMap
+        if not hasattr(processedSettings, 'h'):
+            newSettings = haxe_ds_StringMap()
+            processedSettings = newSettings
+        
+        # Process additional sections as weighted settings
+        for fieldName in allFields:
+            if fieldName not in ["main", "Friday Night Funkin"]:
+                # This section represents a weighted setting
+                weightedSection = Reflect.field(parsedData, fieldName)
+                if weightedSection is not None:
+                    selectedValue = self.selectWeightedValue(fieldName, weightedSection)
+                    processedSettings.h[fieldName] = selectedValue
+        
+        return processedSettings
+
+    def selectWeightedValue(self, settingName, weightedSection):
+        import random
+        
+        choices = []
+        weights = []
+        
+        # Extract choices and weights from the weighted section
+        if hasattr(weightedSection, 'h'):
+            # It's a StringMap
+            for choice in weightedSection.h.keys():
+                weight = weightedSection.h.get(choice, 0)
+                
+                if isinstance(weight, (int, float)) and weight > 0:
+                    choices.append(choice)
+                    weights.append(weight)
+        else:
+            # It's a dynamic object, use python_Boot.fields to get field names
+            fieldNames = python_Boot.fields(weightedSection)
+            for choice in fieldNames:
+                weight = Reflect.field(weightedSection, choice)
+                
+                if isinstance(weight, (int, float)) and weight > 0:
+                    choices.append(choice)
+                    weights.append(weight)
+        
+        if not choices:
+            # No valid choices, return a default
+            return self.getDefaultValue(settingName)
+        
+        # Use Python's random.choices for weighted selection
+        try:
+            selected = random.choices(choices, weights=weights, k=1)[0]
+        except:
+            # Fallback to uniform selection if weights fail
+            selected = random.choice(choices)
+        
+        # Convert special values
+        return self.convertSelectedValue(settingName, selected)
+
+    def convertSelectedValue(self, settingName, selected):
+        # Convert string values to appropriate types
+        if selected == "true" or selected == "'true'":
+            return True
+        elif selected == "false" or selected == "'false'":
+            return False
+        elif selected == "random":
+            return self.handleRandomValue(settingName)
+        elif selected == "random-low":
+            return self.handleRandomLowValue(settingName)
+        elif selected == "random-high":
+            return self.handleRandomHighValue(settingName)
+        elif selected.isdigit():
+            return int(selected)
+        elif selected == "":
+            return ""
+        else:
+            # Try to convert to float, otherwise keep as string
+            try:
+                return float(selected)
+            except:
+                # Remove quotes if present
+                if selected.startswith("'") and selected.endswith("'"):
+                    return selected[1:-1]
+                return selected
+
+    def handleRandomValue(self, settingName):
+        import random
+        # Define ranges for different settings
+        ranges = {
+            "song_limit": (3, 6000000),
+            "check_count": (1, 3),
+            "ticket_percentage": (10, 50),
+            "ticket_win_percentage": (50, 100),
+            "trapAmount": (0, 60),
+            "progression_balancing": (0, 99),
+            "bbcWeight": (0, 10),
+            "ghostChatWeight": (0, 10),
+            "svcWeight": (0, 10),
+            "tutorialWeight": (0, 10),
+            "fakeTransWeight": (0, 10),
+            "shieldWeight": (0, 10),
+            "MHPWeight": (0, 10),
+            "chart_modifier_change_chance": (0, 10)
+        }
+        
+        if settingName in ranges:
+            min_val, max_val = ranges[settingName]
+            return random.randint(min_val, max_val)
+        else:
+            return self.getDefaultValue(settingName)
+
+    def handleRandomLowValue(self, settingName):
+        import random
+        # Define low ranges for different settings
+        lowRanges = {
+            "song_limit": (3, 1000),
+            "check_count": (1, 1),
+            "ticket_percentage": (10, 20),
+            "ticket_win_percentage": (50, 65),
+            "trapAmount": (0, 15),
+            "progression_balancing": (0, 30)
+        }
+        
+        if settingName in lowRanges:
+            min_val, max_val = lowRanges[settingName]
+            return random.randint(min_val, max_val)
+        else:
+            return self.getDefaultValue(settingName)
+
+    def handleRandomHighValue(self, settingName):
+        import random
+        # Define high ranges for different settings
+        highRanges = {
+            "song_limit": (50000, 6000000),
+            "check_count": (3, 3),
+            "ticket_percentage": (40, 50),
+            "ticket_win_percentage": (85, 100),
+            "trapAmount": (45, 60),
+            "progression_balancing": (70, 99)
+        }
+        
+        if settingName in highRanges:
+            min_val, max_val = highRanges[settingName]
+            return random.randint(min_val, max_val)
+        else:
+            return self.getDefaultValue(settingName)
+
+    def getDefaultValue(self, settingName):
+        # Default values for settings
+        defaults = {
+            "progression_balancing": 50,
+            "accessibility": "full",
+            "check_count": 1,
+            "mods_enabled": False,
+            "starting_song": "",
+            "song_limit": 16,
+            "unlock_type": "Per Song",
+            "unlock_method": "Song Completion",
+            "deathlink": False,
+            "ticket_percentage": 30,
+            "ticket_win_percentage": 80,
+            "graderequirement": "Any",
+            "accrequirement": "Any",
+            "allowDupes": False,
+            "trapAmount": 10,
+            "bbcWeight": 5,
+            "ghostChatWeight": 5,
+            "svcWeight": 5,
+            "tutorialWeight": 5,
+            "fakeTransWeight": 5,
+            "shieldWeight": 5,
+            "MHPWeight": 5,
+            "chart_modifier_change_chance": 5
+        }
+        return defaults.get(settingName, None)
 
 
     def __repr__(self):
@@ -12137,189 +12335,6 @@ class yutautil_APYaml:
             rep += stuff + '\n'
 
         return rep
-
-    def detectYamlFormat(self, settings):
-        # Check if this is a weighted format by looking for weighted sub-objects
-        if settings is None:
-            return False
-        
-        # Get some sample keys to check
-        sampleKeys = ["progression_balancing", "accessibility", "check_count", "mods_enabled", "song_limit"]
-        
-        for key in sampleKeys:
-            value = Reflect.field(settings, key)
-            if value is not None:
-                # If the value is a map/object with numeric weights, it's weighted format
-                if hasattr(value, 'h') and hasattr(value.h, 'get'):
-                    # This is a StringMap, check if it has weighted entries
-                    hasWeights = False
-                    sampleKeys2 = ["50", "0", "random", "random-low", "random-high"]
-                    for weightKey in sampleKeys2:
-                        if value.h.get(weightKey, None) is not None:
-                            hasWeights = True
-                            break
-                    if hasWeights:
-                        return True
-                # If the value is a simple value (not a map), it's simple format
-                elif isinstance(value, (int, float, str, bool, list)):
-                    return False
-        
-        return False
-
-    def processWeightedSettings(self, rawSettings):
-        # Process weighted settings and select values based on weights
-        processedSettings = haxe_ds_StringMap()
-        
-        if rawSettings is None:
-            return processedSettings
-        
-        # Get all keys from rawSettings
-        keys = []
-        if hasattr(rawSettings, 'h'):
-            for key in rawSettings.h.keys():
-                keys.append(key)
-        
-        for key in keys:
-            value = Reflect.field(rawSettings, key)
-            
-            if value is None:
-                continue
-            
-            # Check if this is a weighted value (StringMap with weights)
-            if hasattr(value, 'h') and hasattr(value.h, 'get'):
-                # This is a weighted setting, use ChanceSelector to pick a value
-                try:
-                    selectedValue = yutautil_ChanceSelector.selectFromMap(value)
-                    
-                    # Convert special values
-                    if selectedValue == "true":
-                        selectedValue = True
-                    elif selectedValue == "false":
-                        selectedValue = False
-                    elif selectedValue == "random":
-                        # Handle random values based on the setting type
-                        selectedValue = self.handleRandomValue(key, value)
-                    elif selectedValue == "random-low":
-                        selectedValue = self.handleRandomLowValue(key)
-                    elif selectedValue == "random-high":
-                        selectedValue = self.handleRandomHighValue(key)
-                    elif isinstance(selectedValue, str) and selectedValue.isdigit():
-                        selectedValue = int(selectedValue)
-                    elif isinstance(selectedValue, str):
-                        try:
-                            selectedValue = float(selectedValue)
-                        except:
-                            pass  # Keep as string
-                    
-                    processedSettings.h[key] = selectedValue
-                except:
-                    # If selection fails, try to get a default value
-                    defaultValue = self.getDefaultValue(key, value)
-                    processedSettings.h[key] = defaultValue
-            else:
-                # This is a simple value, copy as-is
-                processedSettings.h[key] = value
-        
-        return processedSettings
-
-    def handleRandomValue(self, key, weightedValue):
-        # Handle random values based on the setting type
-        if key in ["song_limit", "check_count", "ticket_percentage", "ticket_win_percentage", "trapAmount"]:
-            # Numeric values - get reasonable random range
-            minVal = self.getMinValueForSetting(key)
-            maxVal = self.getMaxValueForSetting(key)
-            return int(python_lib_Random.random() * (maxVal - minVal + 1)) + minVal
-        elif key in ["progression_balancing"]:
-            return int(python_lib_Random.random() * 100)  # 0-99
-        else:
-            # For other types, try to find the first non-random value
-            return self.getDefaultValue(key, weightedValue)
-
-    def handleRandomLowValue(self, key):
-        # Handle random-low values
-        minVal = self.getMinValueForSetting(key)
-        maxVal = self.getMaxValueForSetting(key)
-        range = maxVal - minVal
-        lowMax = minVal + int(range * 0.3)  # Use lower 30% of range
-        return int(python_lib_Random.random() * (lowMax - minVal + 1)) + minVal
-
-    def handleRandomHighValue(self, key):
-        # Handle random-high values
-        minVal = self.getMinValueForSetting(key)
-        maxVal = self.getMaxValueForSetting(key)
-        range = maxVal - minVal
-        highMin = minVal + int(range * 0.7)  # Use upper 30% of range
-        return int(python_lib_Random.random() * (maxVal - highMin + 1)) + highMin
-
-    def getMinValueForSetting(self, key):
-        # Get minimum values for different settings
-        minimums = {
-            "song_limit": 3,
-            "check_count": 1,
-            "ticket_percentage": 10,
-            "ticket_win_percentage": 50,
-            "trapAmount": 0,
-            "progression_balancing": 0
-        }
-        return minimums.get(key, 0)
-
-    def getMaxValueForSetting(self, key):
-        # Get maximum values for different settings
-        maximums = {
-            "song_limit": 6000000,
-            "check_count": 3,
-            "ticket_percentage": 50,
-            "ticket_win_percentage": 100,
-            "trapAmount": 60,
-            "progression_balancing": 99
-        }
-        return maximums.get(key, 100)
-
-    def getDefaultValue(self, key, weightedValue):
-        # Get a default value when weighted selection fails
-        if hasattr(weightedValue, 'h'):
-            # Try to find the first non-random value with the highest weight
-            bestKey = None
-            bestWeight = -1
-            
-            for weightKey in weightedValue.h.keys():
-                if weightKey not in ["random", "random-low", "random-high"]:
-                    weight = weightedValue.h.get(weightKey, 0)
-                    if isinstance(weight, (int, float)) and weight > bestWeight:
-                        bestWeight = weight
-                        bestKey = weightKey
-            
-            if bestKey is not None:
-                if bestKey == "true":
-                    return True
-                elif bestKey == "false":
-                    return False
-                elif bestKey.isdigit():
-                    return int(bestKey)
-                else:
-                    try:
-                        return float(bestKey)
-                    except:
-                        return bestKey
-        
-        # Default fallbacks
-        defaults = {
-            "progression_balancing": 50,
-            "accessibility": "full",
-            "check_count": 1,
-            "mods_enabled": False,
-            "song_limit": 16,
-            "unlock_type": "Per Song",
-            "unlock_method": "Song Completion",
-            "deathlink": False,
-            "ticket_percentage": 30,
-            "ticket_win_percentage": 80,
-            "graderequirement": "Any",
-            "accrequirement": "Any",
-            "allowDupes": False,
-            "trapAmount": 10
-        }
-        return defaults.get(key, None)
 
 
     def convertYamlToJson(self,yamlContent):
