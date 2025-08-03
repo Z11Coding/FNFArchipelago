@@ -459,7 +459,7 @@ class FunkinWorld(World):
 
         # Apply song limit
         song_limit = max(1, getattr(self.thisYaml.settings, 'song_limit', 5) or 5)
-        limited_song_list = available_songs[:song_limit]
+        limited_song_list = available_songs if getattr(self.multiworld, 'gen_is_fake', False) else available_songs[:song_limit]
 
         print(f"Processing {len(limited_song_list)} songs for player {self.player_name}: {limited_song_list}")
 
