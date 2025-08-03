@@ -12105,18 +12105,26 @@ sys_thread__Thread_Thread_Impl_.processEvents()
 
 class yutautil_APYaml:
     _hx_class_name = "yutautil.APYaml"
-    __slots__ = ("game", "name", "description", "settings")
-    _hx_fields = ["game", "name", "description", "settings"]
-    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled"]
+    __slots__ = ("game", "name", "description", "settings", "isWeightedFormat")
+    _hx_fields = ["game", "name", "description", "settings", "isWeightedFormat"]
+    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled", "detectYamlFormat", "processWeightedSettings"]
 
     def __init__(self,yamlContent):
         self.settings = None
         self.description = None
         self.name = None
         self.game = None
+        self.isWeightedFormat = False
         jsonContent = self.convertYamlToJson(yamlContent)
         parsedData = haxe_format_JsonParser(jsonContent).doParse()
-        self.settings = Reflect.field(parsedData,"Friday Night Funkin")
+        rawSettings = Reflect.field(parsedData,"Friday Night Funkin")
+        
+        # Detect format and process settings accordingly
+        self.isWeightedFormat = self.detectYamlFormat(rawSettings)
+        if self.isWeightedFormat:
+            self.settings = self.processWeightedSettings(rawSettings)
+        else:
+            self.settings = rawSettings
 
 
     def __repr__(self):
@@ -12129,6 +12137,189 @@ class yutautil_APYaml:
             rep += stuff + '\n'
 
         return rep
+
+    def detectYamlFormat(self, settings):
+        # Check if this is a weighted format by looking for weighted sub-objects
+        if settings is None:
+            return False
+        
+        # Get some sample keys to check
+        sampleKeys = ["progression_balancing", "accessibility", "check_count", "mods_enabled", "song_limit"]
+        
+        for key in sampleKeys:
+            value = Reflect.field(settings, key)
+            if value is not None:
+                # If the value is a map/object with numeric weights, it's weighted format
+                if hasattr(value, 'h') and hasattr(value.h, 'get'):
+                    # This is a StringMap, check if it has weighted entries
+                    hasWeights = False
+                    sampleKeys2 = ["50", "0", "random", "random-low", "random-high"]
+                    for weightKey in sampleKeys2:
+                        if value.h.get(weightKey, None) is not None:
+                            hasWeights = True
+                            break
+                    if hasWeights:
+                        return True
+                # If the value is a simple value (not a map), it's simple format
+                elif isinstance(value, (int, float, str, bool, list)):
+                    return False
+        
+        return False
+
+    def processWeightedSettings(self, rawSettings):
+        # Process weighted settings and select values based on weights
+        processedSettings = haxe_ds_StringMap()
+        
+        if rawSettings is None:
+            return processedSettings
+        
+        # Get all keys from rawSettings
+        keys = []
+        if hasattr(rawSettings, 'h'):
+            for key in rawSettings.h.keys():
+                keys.append(key)
+        
+        for key in keys:
+            value = Reflect.field(rawSettings, key)
+            
+            if value is None:
+                continue
+            
+            # Check if this is a weighted value (StringMap with weights)
+            if hasattr(value, 'h') and hasattr(value.h, 'get'):
+                # This is a weighted setting, use ChanceSelector to pick a value
+                try:
+                    selectedValue = yutautil_ChanceSelector.selectFromMap(value)
+                    
+                    # Convert special values
+                    if selectedValue == "true":
+                        selectedValue = True
+                    elif selectedValue == "false":
+                        selectedValue = False
+                    elif selectedValue == "random":
+                        # Handle random values based on the setting type
+                        selectedValue = self.handleRandomValue(key, value)
+                    elif selectedValue == "random-low":
+                        selectedValue = self.handleRandomLowValue(key)
+                    elif selectedValue == "random-high":
+                        selectedValue = self.handleRandomHighValue(key)
+                    elif isinstance(selectedValue, str) and selectedValue.isdigit():
+                        selectedValue = int(selectedValue)
+                    elif isinstance(selectedValue, str):
+                        try:
+                            selectedValue = float(selectedValue)
+                        except:
+                            pass  # Keep as string
+                    
+                    processedSettings.h[key] = selectedValue
+                except:
+                    # If selection fails, try to get a default value
+                    defaultValue = self.getDefaultValue(key, value)
+                    processedSettings.h[key] = defaultValue
+            else:
+                # This is a simple value, copy as-is
+                processedSettings.h[key] = value
+        
+        return processedSettings
+
+    def handleRandomValue(self, key, weightedValue):
+        # Handle random values based on the setting type
+        if key in ["song_limit", "check_count", "ticket_percentage", "ticket_win_percentage", "trapAmount"]:
+            # Numeric values - get reasonable random range
+            minVal = self.getMinValueForSetting(key)
+            maxVal = self.getMaxValueForSetting(key)
+            return int(python_lib_Random.random() * (maxVal - minVal + 1)) + minVal
+        elif key in ["progression_balancing"]:
+            return int(python_lib_Random.random() * 100)  # 0-99
+        else:
+            # For other types, try to find the first non-random value
+            return self.getDefaultValue(key, weightedValue)
+
+    def handleRandomLowValue(self, key):
+        # Handle random-low values
+        minVal = self.getMinValueForSetting(key)
+        maxVal = self.getMaxValueForSetting(key)
+        range = maxVal - minVal
+        lowMax = minVal + int(range * 0.3)  # Use lower 30% of range
+        return int(python_lib_Random.random() * (lowMax - minVal + 1)) + minVal
+
+    def handleRandomHighValue(self, key):
+        # Handle random-high values
+        minVal = self.getMinValueForSetting(key)
+        maxVal = self.getMaxValueForSetting(key)
+        range = maxVal - minVal
+        highMin = minVal + int(range * 0.7)  # Use upper 30% of range
+        return int(python_lib_Random.random() * (maxVal - highMin + 1)) + highMin
+
+    def getMinValueForSetting(self, key):
+        # Get minimum values for different settings
+        minimums = {
+            "song_limit": 3,
+            "check_count": 1,
+            "ticket_percentage": 10,
+            "ticket_win_percentage": 50,
+            "trapAmount": 0,
+            "progression_balancing": 0
+        }
+        return minimums.get(key, 0)
+
+    def getMaxValueForSetting(self, key):
+        # Get maximum values for different settings
+        maximums = {
+            "song_limit": 6000000,
+            "check_count": 3,
+            "ticket_percentage": 50,
+            "ticket_win_percentage": 100,
+            "trapAmount": 60,
+            "progression_balancing": 99
+        }
+        return maximums.get(key, 100)
+
+    def getDefaultValue(self, key, weightedValue):
+        # Get a default value when weighted selection fails
+        if hasattr(weightedValue, 'h'):
+            # Try to find the first non-random value with the highest weight
+            bestKey = None
+            bestWeight = -1
+            
+            for weightKey in weightedValue.h.keys():
+                if weightKey not in ["random", "random-low", "random-high"]:
+                    weight = weightedValue.h.get(weightKey, 0)
+                    if isinstance(weight, (int, float)) and weight > bestWeight:
+                        bestWeight = weight
+                        bestKey = weightKey
+            
+            if bestKey is not None:
+                if bestKey == "true":
+                    return True
+                elif bestKey == "false":
+                    return False
+                elif bestKey.isdigit():
+                    return int(bestKey)
+                else:
+                    try:
+                        return float(bestKey)
+                    except:
+                        return bestKey
+        
+        # Default fallbacks
+        defaults = {
+            "progression_balancing": 50,
+            "accessibility": "full",
+            "check_count": 1,
+            "mods_enabled": False,
+            "song_limit": 16,
+            "unlock_type": "Per Song",
+            "unlock_method": "Song Completion",
+            "deathlink": False,
+            "ticket_percentage": 30,
+            "ticket_win_percentage": 80,
+            "graderequirement": "Any",
+            "accrequirement": "Any",
+            "allowDupes": False,
+            "trapAmount": 10
+        }
+        return defaults.get(key, None)
 
 
     def convertYamlToJson(self,yamlContent):
@@ -12199,6 +12390,7 @@ class yutautil_APYaml:
         _hx_o.name = None
         _hx_o.description = None
         _hx_o.settings = None
+        _hx_o.isWeightedFormat = None
 yutautil_APYaml._hx_class = yutautil_APYaml
 _hx_classes["yutautil.APYaml"] = yutautil_APYaml
 
