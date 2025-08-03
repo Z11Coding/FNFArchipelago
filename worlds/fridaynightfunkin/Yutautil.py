@@ -12107,7 +12107,7 @@ class yutautil_APYaml:
     _hx_class_name = "yutautil.APYaml"
     __slots__ = ("game", "name", "description", "settings")
     _hx_fields = ["game", "name", "description", "settings"]
-    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled"]
+    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled", "_findSongListInParsedData"]
 
     def __init__(self,yamlContent):
         self.settings = None
@@ -12117,6 +12117,79 @@ class yutautil_APYaml:
         jsonContent = self.convertYamlToJson(yamlContent)
         parsedData = haxe_format_JsonParser(jsonContent).doParse()
         self.settings = Reflect.field(parsedData,"Friday Night Funkin")
+        
+        # If settings doesn't have a songList, search recursively through parsedData
+        if self.settings is None or Reflect.field(self.settings, "songList") is None:
+            self._findSongListInParsedData(parsedData)
+
+    def _findSongListInParsedData(self, data):
+        """Recursively search through all fields in data to find a songList"""
+        if data is None:
+            return
+            
+        # If data has a songList field, use it
+        if hasattr(data, '__dict__') or isinstance(data, dict):
+            # Handle object-like data
+            if hasattr(data, '__dict__'):
+                fields = data.__dict__
+            else:
+                fields = data
+                
+            # Check if this object has a songList
+            if 'songList' in fields and fields['songList'] is not None:
+                if self.settings is None:
+                    self.settings = data
+                else:
+                    # Add songList to existing settings
+                    if hasattr(self.settings, '__dict__'):
+                        self.settings.__dict__['songList'] = fields['songList']
+                    elif isinstance(self.settings, dict):
+                        self.settings['songList'] = fields['songList']
+                return
+                
+            # Recursively check all fields
+            for field_name, field_value in fields.items():
+                if field_value is not None and field_name != 'songList':
+                    self._findSongListInParsedData(field_value)
+                    # If we found and set a songList, stop searching
+                    if (self.settings is not None and 
+                        ((hasattr(self.settings, '__dict__') and 'songList' in self.settings.__dict__) or \
+                         (isinstance(self.settings, dict) and 'songList' in self.settings))):
+                        return
+        
+        # Handle Reflect-style objects (Haxe objects)
+        try:
+            # Try to get field names using Reflect if available
+            if hasattr(data, '_hx_fields'):
+                field_names = data._hx_fields
+            else:
+                # Fallback: try common attribute inspection
+                field_names = [attr for attr in dir(data) if not attr.startswith('_')]
+            
+            # Check if this object has a songList
+            songList = Reflect.field(data, "songList")
+            if songList is not None:
+                if self.settings is None:
+                    self.settings = data
+                else:
+                    # Try to set songList on existing settings
+                    try:
+                        Reflect.setField(self.settings, "songList", songList)
+                    except:
+                        pass
+                return
+                
+            # Recursively check all fields
+            for field_name in field_names:
+                field_value = Reflect.field(data, field_name)
+                if field_value is not None and field_name != 'songList':
+                    self._findSongListInParsedData(field_value)
+                    # If we found and set a songList, stop searching
+                    if self.settings is not None and Reflect.field(self.settings, "songList") is not None:
+                        return
+        except:
+            # If Reflect operations fail, continue with basic inspection
+            pass
 
 
     def __repr__(self):
