@@ -12105,224 +12105,18 @@ sys_thread__Thread_Thread_Impl_.processEvents()
 
 class yutautil_APYaml:
     _hx_class_name = "yutautil.APYaml"
-    __slots__ = ("game", "name", "description", "settings", "isWeightedFormat")
-    _hx_fields = ["game", "name", "description", "settings", "isWeightedFormat"]
-    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled", "processWeightedSections", "selectWeightedValue"]
+    __slots__ = ("game", "name", "description", "settings")
+    _hx_fields = ["game", "name", "description", "settings"]
+    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled"]
 
     def __init__(self,yamlContent):
         self.settings = None
         self.description = None
         self.name = None
         self.game = None
-        self.isWeightedFormat = False
-        
         jsonContent = self.convertYamlToJson(yamlContent)
         parsedData = haxe_format_JsonParser(jsonContent).doParse()
-        
-        # Get the main Friday Night Funkin section
-        fnfSettings = Reflect.field(parsedData,"Friday Night Funkin")
-        
-        # Check if there are additional sections (indicating weighted format)
-        # Get all field names from the parsed data object
-        allFields = python_Boot.fields(parsedData)
-        
-        # Expected sections for simple format
-        expectedSections = ["main", "Friday Night Funkin"]
-        hasAdditionalSections = False
-        
-        # Check if there are any sections beyond the expected ones
-        for fieldName in allFields:
-            if fieldName not in expectedSections:
-                hasAdditionalSections = True
-                break
-        
-        if hasAdditionalSections:
-            # This is weighted format - process additional sections as weighted settings
-            self.isWeightedFormat = True
-            self.settings = self.processWeightedSections(parsedData, fnfSettings, allFields)
-        else:
-            # This is simple format - use settings as-is
-            self.isWeightedFormat = False
-            self.settings = fnfSettings if fnfSettings is not None else haxe_ds_StringMap()
-
-    def processWeightedSections(self, parsedData, fnfSettings, allFields):
-        # Start with existing Friday Night Funkin settings
-        if fnfSettings is not None:
-            processedSettings = fnfSettings
-        else:
-            processedSettings = haxe_ds_StringMap()
-        
-        # Ensure processedSettings is a StringMap
-        if not hasattr(processedSettings, 'h'):
-            newSettings = haxe_ds_StringMap()
-            processedSettings = newSettings
-        
-        # Process additional sections as weighted settings
-        for fieldName in allFields:
-            if fieldName not in ["main", "Friday Night Funkin"]:
-                # This section represents a weighted setting
-                weightedSection = Reflect.field(parsedData, fieldName)
-                if weightedSection is not None:
-                    selectedValue = self.selectWeightedValue(fieldName, weightedSection)
-                    processedSettings.h[fieldName] = selectedValue
-        
-        return processedSettings
-
-    def selectWeightedValue(self, settingName, weightedSection):
-        import random
-        
-        choices = []
-        weights = []
-        
-        # Extract choices and weights from the weighted section
-        if hasattr(weightedSection, 'h'):
-            # It's a StringMap
-            for choice in weightedSection.h.keys():
-                weight = weightedSection.h.get(choice, 0)
-                
-                if isinstance(weight, (int, float)) and weight > 0:
-                    choices.append(choice)
-                    weights.append(weight)
-        else:
-            # It's a dynamic object, use python_Boot.fields to get field names
-            fieldNames = python_Boot.fields(weightedSection)
-            for choice in fieldNames:
-                weight = Reflect.field(weightedSection, choice)
-                
-                if isinstance(weight, (int, float)) and weight > 0:
-                    choices.append(choice)
-                    weights.append(weight)
-        
-        if not choices:
-            # No valid choices, return a default
-            return self.getDefaultValue(settingName)
-        
-        # Use Python's random.choices for weighted selection
-        try:
-            selected = random.choices(choices, weights=weights, k=1)[0]
-        except:
-            # Fallback to uniform selection if weights fail
-            selected = random.choice(choices)
-        
-        # Convert special values
-        return self.convertSelectedValue(settingName, selected)
-
-    def convertSelectedValue(self, settingName, selected):
-        # Convert string values to appropriate types
-        if selected == "true" or selected == "'true'":
-            return True
-        elif selected == "false" or selected == "'false'":
-            return False
-        elif selected == "random":
-            return self.handleRandomValue(settingName)
-        elif selected == "random-low":
-            return self.handleRandomLowValue(settingName)
-        elif selected == "random-high":
-            return self.handleRandomHighValue(settingName)
-        elif selected.isdigit():
-            return int(selected)
-        elif selected == "":
-            return ""
-        else:
-            # Try to convert to float, otherwise keep as string
-            try:
-                return float(selected)
-            except:
-                # Remove quotes if present
-                if selected.startswith("'") and selected.endswith("'"):
-                    return selected[1:-1]
-                return selected
-
-    def handleRandomValue(self, settingName):
-        import random
-        # Define ranges for different settings
-        ranges = {
-            "song_limit": (3, 6000000),
-            "check_count": (1, 3),
-            "ticket_percentage": (10, 50),
-            "ticket_win_percentage": (50, 100),
-            "trapAmount": (0, 60),
-            "progression_balancing": (0, 99),
-            "bbcWeight": (0, 10),
-            "ghostChatWeight": (0, 10),
-            "svcWeight": (0, 10),
-            "tutorialWeight": (0, 10),
-            "fakeTransWeight": (0, 10),
-            "shieldWeight": (0, 10),
-            "MHPWeight": (0, 10),
-            "chart_modifier_change_chance": (0, 10)
-        }
-        
-        if settingName in ranges:
-            min_val, max_val = ranges[settingName]
-            return random.randint(min_val, max_val)
-        else:
-            return self.getDefaultValue(settingName)
-
-    def handleRandomLowValue(self, settingName):
-        import random
-        # Define low ranges for different settings
-        lowRanges = {
-            "song_limit": (3, 1000),
-            "check_count": (1, 1),
-            "ticket_percentage": (10, 20),
-            "ticket_win_percentage": (50, 65),
-            "trapAmount": (0, 15),
-            "progression_balancing": (0, 30)
-        }
-        
-        if settingName in lowRanges:
-            min_val, max_val = lowRanges[settingName]
-            return random.randint(min_val, max_val)
-        else:
-            return self.getDefaultValue(settingName)
-
-    def handleRandomHighValue(self, settingName):
-        import random
-        # Define high ranges for different settings
-        highRanges = {
-            "song_limit": (50000, 6000000),
-            "check_count": (3, 3),
-            "ticket_percentage": (40, 50),
-            "ticket_win_percentage": (85, 100),
-            "trapAmount": (45, 60),
-            "progression_balancing": (70, 99)
-        }
-        
-        if settingName in highRanges:
-            min_val, max_val = highRanges[settingName]
-            return random.randint(min_val, max_val)
-        else:
-            return self.getDefaultValue(settingName)
-
-    def getDefaultValue(self, settingName):
-        # Default values for settings
-        defaults = {
-            "progression_balancing": 50,
-            "accessibility": "full",
-            "check_count": 1,
-            "mods_enabled": False,
-            "starting_song": "",
-            "song_limit": 16,
-            "unlock_type": "Per Song",
-            "unlock_method": "Song Completion",
-            "deathlink": False,
-            "ticket_percentage": 30,
-            "ticket_win_percentage": 80,
-            "graderequirement": "Any",
-            "accrequirement": "Any",
-            "allowDupes": False,
-            "trapAmount": 10,
-            "bbcWeight": 5,
-            "ghostChatWeight": 5,
-            "svcWeight": 5,
-            "tutorialWeight": 5,
-            "fakeTransWeight": 5,
-            "shieldWeight": 5,
-            "MHPWeight": 5,
-            "chart_modifier_change_chance": 5
-        }
-        return defaults.get(settingName, None)
+        self.settings = Reflect.field(parsedData,"Friday Night Funkin")
 
 
     def __repr__(self):
@@ -12405,7 +12199,6 @@ class yutautil_APYaml:
         _hx_o.name = None
         _hx_o.description = None
         _hx_o.settings = None
-        _hx_o.isWeightedFormat = None
 yutautil_APYaml._hx_class = yutautil_APYaml
 _hx_classes["yutautil.APYaml"] = yutautil_APYaml
 
