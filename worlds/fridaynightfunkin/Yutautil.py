@@ -12153,7 +12153,7 @@ class yutautil_APYaml:
                     self._findSongListInParsedData(field_value)
                     # If we found and set a songList, stop searching
                     if (self.settings is not None and 
-                        ((hasattr(self.settings, '__dict__') and 'songList' in self.settings.__dict__) or \
+                        ((hasattr(self.settings, '__dict__') and 'songList' in self.settings.__dict__) or 
                          (isinstance(self.settings, dict) and 'songList' in self.settings))):
                         return
         
