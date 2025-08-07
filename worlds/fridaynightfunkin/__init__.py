@@ -154,9 +154,18 @@ class FunkinWorld(World):
                         # Execute the custom script
                         exec(custom_script, exec_globals, exec_locals)
                         
-                        # Get the custom data if function exists
-                        if 'get_custom_data_for_class' in exec_locals:
+                        # Get the custom data - check for new class-based approach first
+                        custom_data = None
+                        if 'INSTANCE' in exec_locals:
+                            # New class-based approach
+                            instance = exec_locals['INSTANCE']
+                            if hasattr(instance, 'get_custom_data_for_class'):
+                                custom_data = instance.get_custom_data_for_class()
+                        elif 'get_custom_data_for_class' in exec_locals:
+                            # Legacy function-based approach
                             custom_data = exec_locals['get_custom_data_for_class']()
+                        
+                        if custom_data:
                             
                             # Store player-specific data WITHOUT prefixes
                             player_items = custom_data.get('items', [])
