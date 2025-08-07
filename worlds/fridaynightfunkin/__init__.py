@@ -134,63 +134,68 @@ class FunkinWorld(World):
                 player_names.add(yaml_data.name)
         
         # Look for player-specific custom data files
-        for item in os.listdir(folder_path):
-            if item.endswith("_customFNFData.py"):
-                # Extract player name from filename
-                player_name = item[:-len("_customFNFData.py")]
-                
-                # Only load if this player has a YAML file or if it's a general file
-                if player_name in player_names or not player_names:
-                    custom_file_path = os.path.join(folder_path, item)
-                    try:
-                        print(f"Loading custom logic for player '{player_name}' from: {item}")
-                        with open(custom_file_path, 'r', encoding='utf-8') as file:
-                            custom_script = file.read()
-                        
-                        # Create execution environment
-                        exec_globals = {}
-                        exec_locals = {}
-                        
-                        # Execute the custom script
-                        exec(custom_script, exec_globals, exec_locals)
-                        
-                        # Get the custom data if function exists
-                        if 'get_custom_data_for_class' in exec_locals:
-                            custom_data = exec_locals['get_custom_data_for_class']()
-                            
-                            # Store player-specific data WITHOUT prefixes
-                            player_items = custom_data.get('items', [])
-                            player_locations = custom_data.get('locations', {})  # Now contains location objects with rules
-                            
-                            # Add items without player prefix - ownership will be tracked in LocationData
-                            for item_name in player_items:
-                                if item_name not in custom_items:  # Avoid duplicates
-                                    custom_items.append(item_name)
-                            
-                            # Add trap items without player prefix - ownership will be tracked in LocationData
-                            player_trap_items = custom_data.get('trap_items', [])
-                            for trap_name in player_trap_items:
-                                if trap_name not in custom_trap_items:  # Avoid duplicates
-                                    custom_trap_items.append(trap_name)
-                            
-                            # Track song additions and exclusions from scripts
-                            player_song_additions = custom_data.get('song_additions', [])
-                            player_song_exclusions = custom_data.get('song_exclusions', [])
-                            custom_song_additions.extend(player_song_additions)
-                            custom_song_exclusions.extend(player_song_exclusions)
-                            
-                            # Store location data with ownership tracking (no prefixes)
-                            for location_name, location_obj in player_locations.items():
-                                # Add player info to location data
-                                location_info_with_player = location_obj.copy()
-                                location_info_with_player['player'] = player_name
-                                custom_location_data[location_name] = location_info_with_player
-                            
-                            print(f"Loaded {len(player_items)} custom items and {len(player_locations)} custom locations for player '{player_name}'")
-                        
-                    except Exception as e:
-                        print(f"Error loading custom logic from {item}: {e}")
-                        continue
+        if os.path.isdir(folder_path + "\\fnfdata"):
+            for item in os.listdir(folder_path + "\\fnfdata"):
+                if item.endswith("_customFNFData.py"):
+                    # Extract player name from filename
+                    player_name = item[:-len("_customFNFData.py")]
+
+                    # Only load if this player has a YAML file or if it's a general file
+                    if player_name in player_names or not player_names:
+                        custom_file_path = os.path.join(folder_path + "\\fnfdata", item)
+                        try:
+                            print(f"Loading custom logic for player '{player_name}' from: {item}")
+                            with open(custom_file_path, 'r', encoding='utf-8') as file:
+                                custom_script = file.read()
+
+                            # Create execution environment
+                            exec_globals = {}
+                            exec_locals = {}
+
+                            # Execute the custom script
+                            exec(custom_script, exec_globals, exec_locals)
+
+                            print("globals: " + str(exec_globals))
+                            print("locals: " + str(exec_locals))
+
+                            # Get the custom data if function exists
+                            if 'get_custom_data_for_class' in exec_locals:
+                                print("AOEUGHAOUEBGNOAUEIGBOIAUEGB")
+                                custom_data = exec_locals['get_custom_data_for_class']()
+
+                                # Store player-specific data WITHOUT prefixes
+                                player_items = custom_data.get('items', [])
+                                player_locations = custom_data.get('locations', {})  # Now contains location objects with rules
+
+                                # Add items without player prefix - ownership will be tracked in LocationData
+                                for item_name in player_items:
+                                    if item_name not in custom_items:  # Avoid duplicates
+                                        custom_items.append(item_name)
+
+                                # Add trap items without player prefix - ownership will be tracked in LocationData
+                                player_trap_items = custom_data.get('trap_items', [])
+                                for trap_name in player_trap_items:
+                                    if trap_name not in custom_trap_items:  # Avoid duplicates
+                                        custom_trap_items.append(trap_name)
+
+                                # Track song additions and exclusions from scripts
+                                player_song_additions = custom_data.get('song_additions', [])
+                                player_song_exclusions = custom_data.get('song_exclusions', [])
+                                custom_song_additions.extend(player_song_additions)
+                                custom_song_exclusions.extend(player_song_exclusions)
+
+                                # Store location data with ownership tracking (no prefixes)
+                                for location_name, location_obj in player_locations.items():
+                                    # Add player info to location data
+                                    location_info_with_player = location_obj.copy()
+                                    location_info_with_player['player'] = player_name
+                                    custom_location_data[location_name] = location_info_with_player
+
+                                print(f"Loaded {len(player_items)} custom items and {len(player_locations)} custom locations for player '{player_name}'")
+
+                        except Exception as e:
+                            print(f"Error loading custom logic from {item}: {e}")
+                            continue
 
         # Initialize class-level data
         song_items = {}
