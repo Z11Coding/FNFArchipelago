@@ -133,6 +133,9 @@ class FunkinWorld(World):
             if hasattr(yaml_data, 'name'):
                 player_names.add(yaml_data.name)
         
+        # Check if fnfModData folder exists and use it if available
+        folder_path = f"{folder_path}\\fnfModData" if os.path.exists(f"{folder_path}\\fnfModData") and os.path.isdir(f"{folder_path}\\fnfModData") else folder_path
+        
         # Look for player-specific custom data files
         for item in os.listdir(folder_path):
             if item.endswith("_customFNFData.py"):
