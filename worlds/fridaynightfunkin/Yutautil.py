@@ -12183,6 +12183,10 @@ class yutautil_APYaml:
                 sectionData = haxe_ds_StringMap()
             else:
                 keyValue = line.split(":")
+
+                    # Combine all elements after the first one into a single element
+                    keyValue = [keyValue[0], "".join(keyValue[1:])]
+
                 if (len(keyValue) == 2):
                     key = StringTools.trim((keyValue[0] if 0 < len(keyValue) else None))
                     value = StringTools.trim((keyValue[1] if 1 < len(keyValue) else None))
