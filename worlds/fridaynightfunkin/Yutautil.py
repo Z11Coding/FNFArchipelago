@@ -12184,6 +12184,7 @@ class yutautil_APYaml:
             else:
                 keyValue = line.split(":")
 
+                if (len(keyValue) > 2):
                     # Combine all elements after the first one into a single element
                     keyValue = [keyValue[0], "".join(keyValue[1:])]
 
