@@ -12169,6 +12169,7 @@ class yutautil_APYaml:
         jsonObject = haxe_ds_StringMap()
         currentSection = "main"
         sectionData = haxe_ds_StringMap()
+        storedSongList = None  # Store songList found during conversion
         _g = 0
         while (_g < len(lines)):
             line = (lines[_g] if _g >= 0 and _g < len(lines) else None)
@@ -12197,6 +12198,17 @@ class yutautil_APYaml:
                         self.name = StringTools.trim(value)
                     elif (key == "description"):
                         self.description = StringTools.trim(value)
+                    
+                    # Store songList when encountered during conversion
+                    if (key == "songList"):
+                        if (value.startswith("[") and value.endswith("]")):
+                            value_temp = HxString.substr(value,1,(len(value) - 2))
+                            def _hx_local_songlist(item):
+                                return StringTools.trim(item)
+                            storedSongList = list(map(_hx_local_songlist,value_temp.split(",")))
+                        else:
+                            storedSongList = value
+                    
                     if (value.startswith("[") and value.endswith("]")):
                         value = HxString.substr(value,1,(len(value) - 2))
                         def _hx_local_1(item):
@@ -12220,6 +12232,51 @@ class yutautil_APYaml:
                             sectionData.h[key] = value
         if (currentSection is not None):
             jsonObject.h[currentSection] = sectionData
+        
+        # Check if songList is missing and add it if we stored one during conversion
+        if (storedSongList is not None):
+            # Check if Friday Night Funkin section has a songList
+            fnfHasSongList = False
+            if "Friday Night Funkin" in jsonObject.h:
+                friday_section = jsonObject.h["Friday Night Funkin"]
+                if hasattr(friday_section, 'h') and "songList" in friday_section.h:
+                    fnfHasSongList = True
+            
+            # If Friday Night Funkin section doesn't have songList, check other sections
+            if not fnfHasSongList:
+                foundInSection = None
+                foundSongList = None
+                
+                # Look for songList in other sections
+                for section_key in jsonObject.h:
+                    if section_key != "Friday Night Funkin":
+                        section = jsonObject.h[section_key]
+                        if hasattr(section, 'h') and "songList" in section.h:
+                            foundInSection = section_key
+                            foundSongList = section.h["songList"]
+                            # Remove it from the current section
+                            del section.h["songList"]
+                            print(f"Found songList in section '{section_key}', moving to 'Friday Night Funkin' section")
+                            break
+                
+                # Ensure Friday Night Funkin section exists
+                if "Friday Night Funkin" not in jsonObject.h:
+                    fnf_section = haxe_ds_StringMap()
+                    jsonObject.h["Friday Night Funkin"] = fnf_section
+                
+                # Add songList to Friday Night Funkin section
+                friday_section = jsonObject.h["Friday Night Funkin"]
+                if not hasattr(friday_section, 'h'):
+                    friday_section.h = {}
+                
+                # Use the found songList or the stored one
+                songListToAdd = foundSongList if foundSongList is not None else storedSongList
+                friday_section.h["songList"] = songListToAdd
+                
+                if foundInSection is None:
+                    print("Adding stored songList to 'Friday Night Funkin' section")
+        
+        
         return haxe_format_JsonPrinter.print(jsonObject,None,None)
 
     def getSongList(self):
