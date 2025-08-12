@@ -217,8 +217,42 @@ class FunkinWorld(World):
 
         # Collect all unique songs from all players
         for yaml_data in all_yamls:
-            if yaml_data.getSongList():
-                for song in yaml_data.getSongList():
+            # Check if the YAML has a valid song list
+            song_list = yaml_data.getSongList() if hasattr(yaml_data, 'getSongList') else None
+            player_name = getattr(yaml_data, 'name', 'Unknown Player')
+            
+            if not song_list or len(song_list) == 0:
+                print(f"\nWarning: Player '{player_name}' has no song list or an empty song list in their YAML file.")
+                print("Options:")
+                print("1. Continue generation with base game songs")
+                print("2. Skip this player (will throw an error)")
+                
+                while True:
+                    choice = input(f"What would you like to do for player '{player_name}'? (1/2): ").strip()
+                    if choice == "1":
+                        print(f"Continuing generation for '{player_name}' with base game songs.")
+                        # Add base game songs to the YAML's song list
+                        if hasattr(yaml_data, 'settings') and hasattr(yaml_data.settings, 'songList'):
+                            if not yaml_data.settings.songList:
+                                yaml_data.settings.songList = FNFBaseList.baseSongList.copy()
+                            else:
+                                yaml_data.settings.songList.extend(FNFBaseList.baseSongList)
+                        else:
+                            # Create settings and songList if they don't exist
+                            if not hasattr(yaml_data, 'settings'):
+                                yaml_data.settings = type('Settings', (), {})()
+                            yaml_data.settings.songList = FNFBaseList.baseSongList.copy()
+                        
+                        # Now get the updated song list
+                        song_list = yaml_data.getSongList()
+                        break
+                    elif choice == "2":
+                        raise ValueError(f"Player '{player_name}' has an empty or invalid song list in their YAML file. Generation cannot continue.")
+                    else:
+                        print("Invalid choice. Please enter 1 or 2.")
+            
+            if song_list:
+                for song in song_list:
                     # Clean the song name
                     cleaned_song = song.strip().replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>',
                                                                                                          '[').replace(
@@ -227,7 +261,7 @@ class FunkinWorld(World):
 
         # Add fallback songs if no custom songs found
         if not all_songs:
-            all_songs.update(FNFBaseList.emptySongList)
+            all_songs.update(FNFBaseList.baseSongList)
 
         print(f"Found {len(all_songs)} unique songs across all players: {list(all_songs)}")
 
@@ -450,7 +484,7 @@ class FunkinWorld(World):
 
         # Add fallback songs if no custom songs found
         if not all_songs:
-            all_songs.update(FNFBaseList.emptySongList)
+            all_songs.update(FNFBaseList.baseSongList)
 
         # Remove single quotes around song names if they exist
         cleaned_songs = set()
@@ -536,7 +570,7 @@ class FunkinWorld(World):
                     self.name = player_name
                     self.game = "Friday Night Funkin"
                     self.settings = type('Settings', (), {
-                        'songList': FNFBaseList.emptySongList.copy(),
+                        'songList': FNFBaseList.baseSongList.copy(),
                         'song_limit': 5
                     })()
                 def getSongList(self):
@@ -583,6 +617,14 @@ class FunkinWorld(World):
         # Initialize custom song modification tracking
         self._custom_song_additions = self.custom_song_additions.copy()
         self._custom_song_exclusions = self.custom_song_exclusions.copy()
+        
+        # Check if songList is empty and use thisYaml's songList if so
+        if not hasattr(self, 'songList') or not self.songList:
+            yaml_song_list = getattr(self, 'original_song_list', [])
+            if yaml_song_list:
+                self.songList = yaml_song_list.copy()
+            else:
+                self.songList = []
 
     def generate_early(self):
         # Basic Settings
@@ -628,7 +670,7 @@ class FunkinWorld(World):
 
         # If no songs in YAML, use fallback
         if not raw_song_list:
-            raw_song_list = FNFBaseList.emptySongList.copy()
+            raw_song_list = FNFBaseList.baseSongList.copy()
             print(f"No songs found for player {self.player_name}, using fallback songs")
 
         # Clean the song names
