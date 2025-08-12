@@ -225,7 +225,7 @@ class FunkinWorld(World):
                 print(f"\nWarning: Player '{player_name}' has no song list or an empty song list in their YAML file.")
                 print("Options:")
                 print("1. Continue generation with base game songs")
-                print("2. Skip this player (will throw an error)")
+                print("2. Skip this player (will cancel generation)")
                 
                 while True:
                     choice = input(f"What would you like to do for player '{player_name}'? (1/2): ").strip()
