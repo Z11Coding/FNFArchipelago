@@ -12170,6 +12170,13 @@ class yutautil_APYaml:
         currentSection = "main"
         sectionData = haxe_ds_StringMap()
         storedSongList = None  # Store songList found during conversion
+        inSongListSection = False  # Track if we're in a songList section
+        songListSectionFound = False  # Track if we found songs in a songList section
+        # Multi-line list tracking
+        inMultiLineList = False
+        multiLineListItems = []
+        multiLineListKey = None
+        multiLineListStartLine = 0
         _g = 0
         while (_g < len(lines)):
             line = (lines[_g] if _g >= 0 and _g < len(lines) else None)
@@ -12177,12 +12184,114 @@ class yutautil_APYaml:
             line = StringTools.trim(line)
             if ((line == "") or line.startswith("#")):
                 continue
+            
+            # Handle multi-line list continuation
+            if inMultiLineList:
+                if "]" in line:
+                    # Found end of multi-line list
+                    closing_bracket_index = line.index("]")
+                    before_bracket = line[:closing_bracket_index]
+                    if before_bracket.strip():
+                        # Add items before the closing bracket
+                        items = before_bracket.split(",")
+                        for item in items:
+                            stripped_item = StringTools.trim(item)
+                            if stripped_item:
+                                multiLineListItems.append(stripped_item)
+                    
+                    # Complete the multi-line list
+                    inMultiLineList = False
+                    if multiLineListKey == "songList":
+                        storedSongList = multiLineListItems
+                        print(f"Found multi-line songList: {storedSongList}")
+                    elif inSongListSection:
+                        storedSongList = multiLineListItems
+                        songListSectionFound = True
+                        print(f"Found multi-line songList array in songList section: {storedSongList}")
+                    else:
+                        sectionData.h[multiLineListKey] = multiLineListItems
+                        print(f"Found multi-line list for key '{multiLineListKey}': {multiLineListItems}")
+                    
+                    # Reset multi-line list variables
+                    multiLineListItems = []
+                    multiLineListKey = None
+                    multiLineListStartLine = 0
+                else:
+                    # Continue collecting list items
+                    items = line.split(",")
+                    for item in items:
+                        stripped_item = StringTools.trim(item)
+                        if stripped_item:
+                            multiLineListItems.append(stripped_item)
+                continue
+            
             if line.endswith(":"):
+                # Check for unclosed multi-line list before starting new section
+                if inMultiLineList:
+                    print(f"Error: Unclosed multi-line list started at line {multiLineListStartLine} for key '{multiLineListKey}'")
+                    # Reset the multi-line list state
+                    inMultiLineList = False
+                    multiLineListItems = []
+                    multiLineListKey = None
+                    multiLineListStartLine = 0
+                
                 if (currentSection is not None):
                     jsonObject.h[currentSection] = sectionData
                 currentSection = HxString.substr(line,0,(len(line) - 1))
                 sectionData = haxe_ds_StringMap()
+                # print(f"Current Section: {currentSection}")
+                
+                # Check if we're entering a songList section
+                if (currentSection.lower() == "songlist"):
+                    inSongListSection = True
+                    print(f"Entering songList section: '{currentSection}'")
+                else:
+                    # If we were in a songList section and now we're not, stop processing it
+                    if inSongListSection and songListSectionFound:
+                        inSongListSection = False
+                        print(f"Exiting songList section, found songs: {storedSongList}")
             else:
+                # Special handling when we're in a songList section
+                if inSongListSection:
+                    # Look for lines with [ which indicate a list
+                    if "[" in line:
+                        # Extract the list content
+                        if line.startswith("[") and line.endswith("]"):
+                            # Complete list on one line
+                            value_temp = HxString.substr(line,1,(len(line) - 2))
+                            def _hx_local_songlist_section(item):
+                                return StringTools.trim(item)
+                            storedSongList = list(map(_hx_local_songlist_section,value_temp.split(",")))
+                            songListSectionFound = True
+                            print(f"Found songList array in songList section: {storedSongList}")
+                        elif line.startswith("["):
+                            # Multi-line list start
+                            bracket_content = line[1:]  # Remove opening bracket
+                            if "]" in bracket_content:
+                                # Single line with bracket at start
+                                value_temp = bracket_content[:bracket_content.index("]")]
+                                def _hx_local_songlist_multiline(item):
+                                    return StringTools.trim(item)
+                                storedSongList = list(map(_hx_local_songlist_multiline,value_temp.split(",")))
+                                songListSectionFound = True
+                                print(f"Found songList array in songList section: {storedSongList}")
+                            else:
+                                # Start of multi-line list
+                                inMultiLineList = True
+                                multiLineListKey = "songListSection"
+                                multiLineListStartLine = _g
+                                multiLineListItems = []
+                                # Add items from the current line (after [)
+                                if bracket_content.strip():
+                                    items = bracket_content.split(",")
+                                    for item in items:
+                                        stripped_item = StringTools.trim(item)
+                                        if stripped_item:
+                                            multiLineListItems.append(stripped_item)
+                                print(f"Starting multi-line songList array in songList section at line {_g}")
+                    continue  # Skip normal processing for songList section lines
+                
+                # Normal key-value processing
                 keyValue = line.split(":")
 
                 if (len(keyValue) > 2):
@@ -12206,6 +12315,30 @@ class yutautil_APYaml:
                             def _hx_local_songlist(item):
                                 return StringTools.trim(item)
                             storedSongList = list(map(_hx_local_songlist,value_temp.split(",")))
+                        elif value.startswith("["):
+                            # Multi-line songList
+                            bracket_content = value[1:]  # Remove opening bracket
+                            if "]" in bracket_content:
+                                # Single line with bracket at start
+                                value_temp = bracket_content[:bracket_content.index("]")]
+                                def _hx_local_songlist_single(item):
+                                    return StringTools.trim(item)
+                                storedSongList = list(map(_hx_local_songlist_single,value_temp.split(",")))
+                            else:
+                                # Start of multi-line songList
+                                inMultiLineList = True
+                                multiLineListKey = "songList"
+                                multiLineListStartLine = _g
+                                multiLineListItems = []
+                                # Add items from the current line (after [)
+                                if bracket_content.strip():
+                                    items = bracket_content.split(",")
+                                    for item in items:
+                                        stripped_item = StringTools.trim(item)
+                                        if stripped_item:
+                                            multiLineListItems.append(stripped_item)
+                                print(f"Starting multi-line songList at line {_g}")
+                                continue  # Skip the rest of processing for this line
                         else:
                             storedSongList = value
                     
@@ -12215,6 +12348,30 @@ class yutautil_APYaml:
                             return StringTools.trim(item)
                         value1 = list(map(_hx_local_1,value.split(",")))
                         sectionData.h[key] = value1
+                    elif value.startswith("["):
+                        # Multi-line list for regular key
+                        bracket_content = value[1:]  # Remove opening bracket
+                        if "]" in bracket_content:
+                            # Single line with bracket at start
+                            value_temp = bracket_content[:bracket_content.index("]")]
+                            def _hx_local_regular_single(item):
+                                return StringTools.trim(item)
+                            sectionData.h[key] = list(map(_hx_local_regular_single,value_temp.split(",")))
+                        else:
+                            # Start of multi-line list for regular key
+                            inMultiLineList = True
+                            multiLineListKey = key
+                            multiLineListStartLine = _g
+                            multiLineListItems = []
+                            # Add items from the current line (after [)
+                            if bracket_content.strip():
+                                items = bracket_content.split(",")
+                                for item in items:
+                                    stripped_item = StringTools.trim(item)
+                                    if stripped_item:
+                                        multiLineListItems.append(stripped_item)
+                            print(f"Starting multi-line list for key '{key}' at line {_g}")
+                            continue  # Skip the rest of processing for this line
                     elif ((value == "true") or ((value == "false"))):
                         sectionData.h[key] = (value == "true")
                     else:
@@ -12230,8 +12387,22 @@ class yutautil_APYaml:
                             sectionData.h[key] = value2
                         else:
                             sectionData.h[key] = value
+        # Check for unclosed multi-line list at end of file
+        if inMultiLineList:
+            print(f"Error: Unclosed multi-line list at end of file, started at line {multiLineListStartLine} for key '{multiLineListKey}'")
+            print(f"Partial list items collected: {multiLineListItems}")
+            # Optionally, you could still use the partial list:
+            # if multiLineListKey == "songList" or multiLineListKey == "songListSection":
+            #     storedSongList = multiLineListItems
+            # else:
+            #     sectionData.h[multiLineListKey] = multiLineListItems
+        
         if (currentSection is not None):
             jsonObject.h[currentSection] = sectionData
+        
+        # Handle special case where multi-line songList was in songListSection
+        if storedSongList is not None and isinstance(storedSongList, list) and multiLineListKey == "songListSection":
+            songListSectionFound = True
         
         # Check if songList is missing and add it if we stored one during conversion
         if (storedSongList is not None):
@@ -12247,11 +12418,22 @@ class yutautil_APYaml:
                 foundInSection = None
                 foundSongList = None
                 
-                # Look for songList in other sections
+                # Look for songList in other sections (including songList sections themselves)
                 for section_key in jsonObject.h:
                     if section_key != "Friday Night Funkin":
                         section = jsonObject.h[section_key]
-                        if hasattr(section, 'h') and "songList" in section.h:
+                        
+                        # Check if this is a songList section itself
+                        if section_key.lower() == "songlist":
+                            foundInSection = section_key
+                            foundSongList = storedSongList  # Use the stored songList from the section
+                            print(f"Found songList section '{section_key}', moving contents to 'Friday Night Funkin' section")
+                            # Remove the songList section since we're moving its contents
+                            del jsonObject.h[section_key]
+                            break
+                        
+                        # Check if this section has a songList property
+                        elif hasattr(section, 'h') and "songList" in section.h:
                             foundInSection = section_key
                             foundSongList = section.h["songList"]
                             # Remove it from the current section
