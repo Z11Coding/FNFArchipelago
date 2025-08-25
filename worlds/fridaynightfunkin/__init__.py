@@ -22,7 +22,7 @@ from .FunkinUtils import FunkinUtils
 
 # Custom location data class similar to SongData
 class LocationData:
-    def __init__(self, code: int, location_name: str, player_owner: str, player_list: List[str], 
+    def __init__(self, code: int, location_name: str, player_owner: str, player_list: List[str],
                  origin_song: str = "", origin_mod: str = "", access_rule_func=None):
         self.code = code
         self.locationName = location_name
@@ -44,14 +44,14 @@ class FunkinWeb(WebWorld):
     )]
     theme = "partyTime"
     bug_report_page = "https://github.com/Z11Coding/Mixtape-Engine/issues"
-    option_groups = fnf_option_groups   
+    option_groups = fnf_option_groups
 
 
 class FunkinWorld(World):
     """
-        Friday Night Funkin' is a rhythm game in which 
-        the player controls a character called Boyfriend, 
-        who must defeat a series of opponents to continue dating 
+        Friday Night Funkin' is a rhythm game in which
+        the player controls a character called Boyfriend,
+        who must defeat a series of opponents to continue dating
         his significant other, Girlfriend. Now infused with the chaotic world
         of Archipelago.
     """
@@ -124,24 +124,25 @@ class FunkinWorld(World):
         custom_location_data = {}
         custom_song_additions = []  # Track songs added by scripts
         custom_song_exclusions = []  # Track songs excluded by scripts
-        
+        vip_exclusive_song_additions:dict[str, list[str]] = {}
+
         print("Loading custom AP logic files...")
-        
+
         # First, collect all player names from YAML files
         player_names = set()
         for yaml_data in all_yamls:
             if hasattr(yaml_data, 'name'):
                 player_names.add(yaml_data.name)
-        
+
         # Check if fnfModData folder exists and use it if available
         folder_path = f"{folder_path}\\fnfModData" if os.path.exists(f"{folder_path}\\fnfModData") and os.path.isdir(f"{folder_path}\\fnfModData") else folder_path
-        
+
         # Look for player-specific custom data files
         for item in os.listdir(folder_path):
             if item.endswith("_customFNFData.py"):
                 # Extract player name from filename
                 player_name = item[:-len("_customFNFData.py")]
-                
+
                 # Only load if this player has a YAML file or if it's a general file
                 if player_name in player_names or not player_names:
                     custom_file_path = os.path.join(folder_path, item)
@@ -149,14 +150,14 @@ class FunkinWorld(World):
                         print(f"Loading custom logic for player '{player_name}' from: {item}")
                         with open(custom_file_path, 'r', encoding='utf-8') as file:
                             custom_script = file.read()
-                        
+
                         # Create execution environment
                         exec_globals = {}
                         exec_locals = {}
-                        
+
                         # Execute the custom script
                         exec(custom_script, exec_globals, exec_locals)
-                        
+
                         # Get the custom data - check for new class-based approach first
                         custom_data = None
                         if 'INSTANCE' in exec_locals:
@@ -167,39 +168,45 @@ class FunkinWorld(World):
                         elif 'get_custom_data_for_class' in exec_locals:
                             # Legacy function-based approach
                             custom_data = exec_locals['get_custom_data_for_class']()
-                        
+
                         if custom_data:
-                            
+
                             # Store player-specific data WITHOUT prefixes
                             player_items = custom_data.get('items', [])
                             player_locations = custom_data.get('locations', {})  # Now contains location objects with rules
-                            
+
                             # Add items without player prefix - ownership will be tracked in LocationData
                             for item_name in player_items:
                                 if item_name not in custom_items:  # Avoid duplicates
                                     custom_items.append(item_name)
-                            
+
                             # Add trap items without player prefix - ownership will be tracked in LocationData
                             player_trap_items = custom_data.get('trap_items', [])
                             for trap_name in player_trap_items:
                                 if trap_name not in custom_trap_items:  # Avoid duplicates
                                     custom_trap_items.append(trap_name)
-                            
+
                             # Track song additions and exclusions from scripts
                             player_song_additions = custom_data.get('song_additions', [])
                             player_song_exclusions = custom_data.get('song_exclusions', [])
                             custom_song_additions.extend(player_song_additions)
                             custom_song_exclusions.extend(player_song_exclusions)
-                            
+                            vip_exclusive_song_additions[player_name] = player_song_additions
+
+                            for yaml in all_yamls:
+                                if yaml.name == player_name:
+                                    for song in player_song_additions:
+                                        yaml.settings.songList.append(song['name'])
+
                             # Store location data with ownership tracking (no prefixes)
                             for location_name, location_obj in player_locations.items():
                                 # Add player info to location data
                                 location_info_with_player = location_obj.copy()
                                 location_info_with_player['player'] = player_name
                                 custom_location_data[location_name] = location_info_with_player
-                            
+
                             print(f"Loaded {len(player_items)} custom items and {len(player_locations)} custom locations for player '{player_name}'")
-                        
+
                     except Exception as e:
                         print(f"Error loading custom logic from {item}: {e}")
                         continue
@@ -220,13 +227,13 @@ class FunkinWorld(World):
             # Check if the YAML has a valid song list
             song_list = yaml_data.getSongList() if hasattr(yaml_data, 'getSongList') else None
             player_name = getattr(yaml_data, 'name', 'Unknown Player')
-            
+
             if not song_list or len(song_list) == 0:
                 print(f"\nWarning: Player '{player_name}' has no song list or an empty song list in their YAML file.")
                 print("Options:")
                 print("1. Continue generation with base game songs")
                 print("2. Skip this player (will cancel generation)")
-                
+
                 while True:
                     choice = input(f"What would you like to do for player '{player_name}'? (1/2): ").strip()
                     if choice == "1":
@@ -242,7 +249,7 @@ class FunkinWorld(World):
                             if not hasattr(yaml_data, 'settings'):
                                 yaml_data.settings = type('Settings', (), {})()
                             yaml_data.settings.songList = FNFBaseList.baseSongList.copy()
-                        
+
                         # Now get the updated song list
                         song_list = yaml_data.getSongList()
                         break
@@ -250,13 +257,12 @@ class FunkinWorld(World):
                         raise ValueError(f"Player '{player_name}' has an empty or invalid song list in their YAML file. Generation cannot continue.")
                     else:
                         print("Invalid choice. Please enter 1 or 2.")
-            
+
             if song_list:
                 for song in song_list:
                     # Clean the song name
-                    cleaned_song = song.strip().replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>',
-                                                                                                         '[').replace(
-                        '<sClose>', ']').strip()
+                    cleaned_song = song.strip().replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']').strip()
+
                     all_songs.add(cleaned_song)
 
         # Add fallback songs if no custom songs found
@@ -298,12 +304,12 @@ class FunkinWorld(World):
         # Create custom locations using LocationData objects - start after song locations
         custom_location_id_start = max(song_locations.values()) + 1000 if song_locations else item_id_index + 20000
         current_custom_id = custom_location_id_start
-        
+
         # Group custom locations by location name to track ownership
         location_ownership = {}
         for location_name, location_info in custom_location_data.items():
             player_owner = location_info.get('player', '')
-            
+
             if location_name not in location_ownership:
                 location_ownership[location_name] = {
                     'id': current_custom_id,
@@ -313,7 +319,7 @@ class FunkinWorld(World):
                     'access_rule': location_info.get('access_rule')  # Rule is now part of location object
                 }
                 current_custom_id += 1
-            
+
             # Add player to ownership list
             if player_owner and player_owner not in location_ownership[location_name]['players']:
                 location_ownership[location_name]['players'].append(player_owner)
@@ -324,12 +330,12 @@ class FunkinWorld(World):
             if not location_name or not location_name.strip():
                 print(f"Skipping invalid location: empty name")
                 continue
-                
+
             origin_song = ownership_info['origin_song']
             if not origin_song or not origin_song.strip():
                 print(f"Skipping invalid location '{location_name}': empty origin song")
                 continue
-            
+
             # Check for duplicate location names and resolve conflicts
             duplicate_suffix = 1
             original_location_name = location_name
@@ -337,7 +343,7 @@ class FunkinWorld(World):
                 location_name = f"{original_location_name}_{duplicate_suffix}"
                 duplicate_suffix += 1
                 print(f"Resolved duplicate location name: {original_location_name} -> {location_name}")
-            
+
             custom_location_items[location_name] = LocationData(
                 ownership_info['id'],
                 location_name,
@@ -355,7 +361,7 @@ class FunkinWorld(World):
         custom_item_id_start = current_custom_id + 1000
         for i, item_name in enumerate(custom_items):
             custom_item_ids[item_name] = custom_item_id_start + i
-        
+
         # Add custom trap items with their own IDs - start after custom items
         custom_trap_item_ids = {}
         custom_trap_id_start = custom_item_id_start + len(custom_items) + 100
@@ -373,6 +379,8 @@ class FunkinWorld(World):
             custom_trap_item_ids  # Add custom trap items
         ))
 
+        print(item_name_to_id)
+
         location_name_to_id = dict(ChainMap(
             song_locations,
             custom_locations  # Add custom locations
@@ -386,7 +394,7 @@ class FunkinWorld(World):
         print(f"Custom data: {len(custom_items)} items, {len(custom_trap_items)} trap items, {len(custom_locations)} locations")
 
         return {
-            "items": item_name_to_id, 
+            "items": item_name_to_id,
             "locations": location_name_to_id,
             "custom_access_rules": custom_access_rules,  # Legacy, will be removed
             "custom_location_data": custom_location_data,  # Legacy, will be removed
@@ -396,16 +404,20 @@ class FunkinWorld(World):
             "custom_song_additions": custom_song_additions,  # Songs added by scripts
             "custom_song_exclusions": custom_song_exclusions,  # Songs excluded by scripts
             "song_items": song_items,
-            "song_locations": song_locations
+            "song_locations": song_locations,
+            "all_yamls": _all_yamls,
+            "vip_songs": vip_exclusive_song_additions
         }
-    
+
     # These will be populated during class creation in __new__
     yaml_data = stuff()
     item_name_to_id = yaml_data["items"]
     location_name_to_id = yaml_data["locations"]
-    song_items: Dict[str, SongData] = yaml_data.get("song_items", {})
-    song_locations: Dict[str, int] = yaml_data.get("song_locations", {})
-    
+    song_items: dict[str, SongData] = yaml_data.get("song_items", {})
+    song_locations: dict[str, int] = yaml_data.get("song_locations", {})
+    all_yamls = yaml_data["all_yamls"]
+    player_song_additions:dict[str, list[str]] = yaml_data["vip_songs"]
+
     # Custom data from loaded scripts
     custom_access_rules = yaml_data.get("custom_access_rules", {})  # Legacy - will be removed
     custom_location_data = yaml_data.get("custom_location_data", {})  # Legacy - will be removed
@@ -414,7 +426,7 @@ class FunkinWorld(World):
     custom_location_items: Dict[str, LocationData] = yaml_data.get("custom_location_items", {})
     custom_song_additions = yaml_data.get("custom_song_additions", [])  # Songs added by scripts
     custom_song_exclusions = yaml_data.get("custom_song_exclusions", [])  # Songs excluded by scripts
-    
+
     # Temporary storage for setup
     items_in_general: dict[str, int] = {}
     trap_items_weights: dict[str, int] = {}
@@ -546,10 +558,6 @@ class FunkinWorld(World):
 
     def __new__(cls, multiworld: MultiWorld, player: int):
         # Setup class data if not already done
-        cls.data = cls._setup_class_data(multiworld)
-
-        print(cls.data)
-
         instance = super(FunkinWorld, cls).__new__(cls)
 
 
@@ -557,7 +565,7 @@ class FunkinWorld(World):
         player_name = multiworld.player_name[player]
         player_yaml = None
 
-        for yaml_data in cls._all_yamls:
+        for yaml_data in cls.all_yamls:
             if yaml_data.name == player_name:
                 player_yaml = yaml_data
                 break
@@ -578,7 +586,7 @@ class FunkinWorld(World):
             player_yaml = DefaultYAML()
 
         instance.thisYaml = player_yaml
-        instance.yamlList = cls._all_yamls
+        instance.yamlList = cls.all_yamls
         instance.original_song_list = player_yaml.getSongList() or []
 
         print(f"Created FunkinWorld instance for player {player_name} with {len(instance.original_song_list)} songs")
@@ -613,11 +621,11 @@ class FunkinWorld(World):
         self.trap_items_weights = {}
         self.items_in_general = {}
         self.songLimit = 5
-        
+
         # Initialize custom song modification tracking
         self._custom_song_additions = self.custom_song_additions.copy()
         self._custom_song_exclusions = self.custom_song_exclusions.copy()
-        
+
         # Check if songList is empty and use thisYaml's songList if so
         if not hasattr(self, 'songList') or not self.songList:
             yaml_song_list = getattr(self, 'original_song_list', [])
@@ -667,7 +675,8 @@ class FunkinWorld(World):
         """Process the song list with randomization and limiting using pre-initialized class data"""
         # Get the original song list from YAML
         raw_song_list = getattr(self, 'original_song_list', [])
-
+        for song in self.yaml_data['custom_song_additions']:
+            raw_song_list.append(song['name'])
         # If no songs in YAML, use fallback
         if not raw_song_list:
             raw_song_list = FNFBaseList.baseSongList.copy()
@@ -704,6 +713,8 @@ class FunkinWorld(World):
         # Randomize the song list
         self.random.shuffle(available_songs)
 
+        print(available_songs)
+
         # Apply song limit
         song_limit = max(1, getattr(self.thisYaml.settings, 'song_limit', self.songLimit) or 5)
         limited_song_list = available_songs if getattr(self.multiworld, 'gen_is_fake', False) else available_songs[:song_limit]
@@ -729,23 +740,23 @@ class FunkinWorld(World):
                     )
 
         print(f"Updated song ownership for {len(limited_song_list)} songs")
-        
+
         # Validate custom locations against song limit
         self._validate_custom_locations_against_song_limit(limited_song_list)
-        
+
     def _validate_custom_locations_against_song_limit(self, available_songs: List[str]):
         """Validate that custom locations don't reference songs that were cut by song limit"""
         # Keep track of invalid locations but DON'T remove them from mappings
         # This maintains ID stability while preventing location creation
         self.invalid_custom_locations = getattr(self, 'invalid_custom_locations', set())
-        
+
         for location_name, location_data in self.custom_location_items.items():
             origin_song = location_data.originSong
-            
+
             # Check if this location belongs to this player
-            if (location_data.playerLocationBelongsTo == self.player_name or 
+            if (location_data.playerLocationBelongsTo == self.player_name or
                 self.player_name in location_data.playerList):
-                
+
                 # Check if the origin song is still available after song limit
                 if origin_song and origin_song not in available_songs:
                     self.invalid_custom_locations.add(location_name)
@@ -755,7 +766,7 @@ class FunkinWorld(World):
                 elif location_name in self.invalid_custom_locations:
                     # Remove from invalid set if it becomes valid again
                     self.invalid_custom_locations.discard(location_name)
-    
+
     def _generate_song_locations(self):
         """Location mappings are already generated at class level, just reference them"""
         # Locations are already created in _setup_class_data, so just log what we have
@@ -864,22 +875,22 @@ class FunkinWorld(World):
 
     def get_available_traps(self) -> List[str]:
         full_trap_list = list(self.fnfUtil.trap_items.keys())
-        
+
         # Add custom trap items for this player
         player_custom_traps = []
         for trap_name in self.custom_trap_items_list:
             # Custom trap items are available if this player has custom locations
             player_has_custom_locations = any(
-                loc_data.playerLocationBelongsTo == self.player_name or 
+                loc_data.playerLocationBelongsTo == self.player_name or
                 self.player_name in loc_data.playerList
                 for loc_data in self.custom_location_items.values()
             )
-            
+
             if player_has_custom_locations:
                 player_custom_traps.append(trap_name)
-        
+
         full_trap_list.extend(player_custom_traps)
-        
+
         return [trap for trap in full_trap_list if self.options.trapAmount.value > 0 and self.check_trap_weight(trap) > 0]
 
     def get_available_items(self) -> List[str]:
@@ -889,7 +900,7 @@ class FunkinWorld(World):
     def check_trap_weight(self, theTrap:str):
         if self.trap_items_weights.keys().__contains__(theTrap):
             return self.trap_items_weights[theTrap]
-        
+
         # Custom trap items default to weight 1 if not specified
         if theTrap in self.custom_trap_items_list:
             return 1
@@ -973,24 +984,24 @@ class FunkinWorld(World):
 
             self.location_name_to_id.update({loc.name: loc.address for loc in menu_region.locations if loc.name not in self.location_name_to_id})
 
-            print(self.location_name_to_id)
-        
+            # print(self.location_name_to_id)
+
         # Add custom locations using the new LocationData system
         print("Adding custom locations...")
         for location_name, location_data in self.custom_location_items.items():
             # Check if this location belongs to this player
-            if (location_data.playerLocationBelongsTo == self.player_name or 
+            if (location_data.playerLocationBelongsTo == self.player_name or
                 self.player_name in location_data.playerList):
-                
+
                 # Skip invalid locations (but preserve their ID mappings)
                 if hasattr(self, 'invalid_custom_locations') and location_name in self.invalid_custom_locations:
                     print(f"Skipping invalid custom location: {location_name} (origin song not available)")
                     continue
-                
+
                 # Create the custom location (no player prefix in name)
                 location_id = location_data.code
                 custom_loc = FunkinLocation(self.player, location_name, location_id, menu_region)
-                
+
                 # Apply custom access rule if available
                 if location_data.accessRuleFunc:
                     custom_loc.access_rule = lambda state, rule=location_data.accessRuleFunc: rule(state, self.player)
@@ -999,23 +1010,23 @@ class FunkinWorld(World):
                     # Default access rule - require origin song with mod formatting if specified
                     origin_song = location_data.originSong
                     origin_mod = location_data.originMod
-                    
+
                     if origin_song:
                         # Format song name with mod in parentheses if mod is provided
                         if origin_mod and origin_mod.strip():
                             formatted_song_name = f"{origin_song} ({origin_mod})"
                         else:
                             formatted_song_name = origin_song
-                        
+
                         custom_loc.access_rule = lambda state, song=formatted_song_name: state.has(song, self.player)
                         print(f"Applied origin song access rule ({formatted_song_name}) to: {location_name}")
-                
+
                 menu_region.locations.append(custom_loc)
                 print(f"Added custom location for {self.player_name}: {location_name}")
-        
+
         # Update location count
         self.location_count = len(menu_region.locations)
-        
+
         print('-- FNF LOCATION GEN FINISHED --')
 
 
@@ -1055,20 +1066,20 @@ class FunkinWorld(World):
 
             # Add custom items to the pool
             items_left = self.location_count - item_count
-            
+
             # Filter custom items for this player by checking location ownership
             player_custom_items = []
             for item_name in self.custom_items_list:
                 # Check if this player has any custom locations that might need this item
                 player_has_custom_locations = any(
-                    loc_data.playerLocationBelongsTo == self.player_name or 
+                    loc_data.playerLocationBelongsTo == self.player_name or
                     self.player_name in loc_data.playerList
                     for loc_data in self.custom_location_items.values()
                 )
-                
+
                 if player_has_custom_locations:
                     player_custom_items.append(item_name)
-            
+
             custom_item_count = min(items_left, len(player_custom_items))
             if custom_item_count > 0:
                 print(f"Adding {custom_item_count} custom items to pool for {self.player_name}")
@@ -1085,14 +1096,14 @@ class FunkinWorld(World):
                 for trap_name in self.custom_trap_items_list:
                     # Check if this player has any custom locations that might need this trap
                     player_has_custom_locations = any(
-                        loc_data.playerLocationBelongsTo == self.player_name or 
+                        loc_data.playerLocationBelongsTo == self.player_name or
                         self.player_name in loc_data.playerList
                         for loc_data in self.custom_location_items.values()
                     )
-                    
+
                     if player_has_custom_locations:
                         player_custom_traps.append(trap_name)
-                
+
                 custom_trap_count = min(items_left, len(player_custom_traps))
                 if custom_trap_count > 0:
                     print(f"Adding {custom_trap_count} custom trap items to pool for {self.player_name}")
@@ -1182,16 +1193,16 @@ class FunkinWorld(World):
                 #print(songKey)
 
         return filtered_list
-    
+
     def get_player_song_details(self, player_name: str) -> Dict[str, Dict]:
         """Get detailed information about songs for a specific player"""
         song_details = {}
-        
+
         for song_name, song_data in self.song_items.items():
-            if (song_data.playerSongBelongsTo == player_name or 
-                player_name in song_data.playerList or 
+            if (song_data.playerSongBelongsTo == player_name or
+                player_name in song_data.playerList or
                 not song_data.modded):
-                
+
                 song_details[song_name] = {
                     "id": song_data.code,
                     "modded": song_data.modded,
@@ -1199,19 +1210,19 @@ class FunkinWorld(World):
                     "sharedWith": song_data.playerList,
                     "songName": song_data.songName
                 }
-        
+
         return song_details
-    
+
     def get_player_location_details(self, player_name: str) -> Dict[str, Dict]:
         """Get detailed information about locations for a specific player"""
         location_details = {}
-        
+
         # Add song-based locations
         for song_name, song_data in self.song_items.items():
-            if (song_data.playerSongBelongsTo == player_name or 
-                player_name in song_data.playerList or 
+            if (song_data.playerSongBelongsTo == player_name or
+                player_name in song_data.playerList or
                 not song_data.modded):
-                
+
                 # Song completion locations
                 if self.unlock_method in ["Song Completion", "Both"]:
                     for j in range(2):
@@ -1225,7 +1236,7 @@ class FunkinWorld(World):
                                 "playerOwner": song_data.playerSongBelongsTo,
                                 "sharedWith": song_data.playerList
                             }
-                
+
                 # Note check locations
                 if self.unlock_method in ["Note Checks", "Both"]:
                     for j in range(3):
@@ -1239,16 +1250,16 @@ class FunkinWorld(World):
                                 "playerOwner": song_data.playerSongBelongsTo,
                                 "sharedWith": song_data.playerList
                             }
-        
+
         # Add custom locations
         for location_name, location_data in self.custom_location_items.items():
-            if (location_data.playerLocationBelongsTo == player_name or 
+            if (location_data.playerLocationBelongsTo == player_name or
                 player_name in location_data.playerList):
-                
+
                 # Skip invalid locations from slot data (but preserve their ID mappings)
                 if hasattr(self, 'invalid_custom_locations') and location_name in self.invalid_custom_locations:
                     continue
-                
+
                 location_details[location_name] = {
                     "id": location_data.code,
                     "type": "custom",
@@ -1257,9 +1268,9 @@ class FunkinWorld(World):
                     "playerOwner": location_data.playerLocationBelongsTo,
                     "sharedWith": location_data.playerList
                 }
-        
+
         return location_details
-    
+
 
     def fill_slot_data(self):
         if not self.victory_song_name == "":
@@ -1267,10 +1278,10 @@ class FunkinWorld(World):
             player_songs = self.get_songs_map(self.player_name)
             song_details = self.get_player_song_details(self.player_name)
             location_details = self.get_player_location_details(self.player_name)
-            
+
             # Collect custom week data for songs added by scripts
             custom_weeks_data = self._get_custom_weeks_data()
-            
+
             return {
                 "deathLink": self.options.deathlink.value,
                 "fullSongCount": len(player_songs),
@@ -1284,13 +1295,14 @@ class FunkinWorld(World):
                 "selectedSongs": player_songs,  # List of songs selected for this player
                 "songData": song_details,  # Detailed song metadata for the client
                 "locationData": location_details,  # Detailed location metadata for the client
-                "customWeeks": custom_weeks_data  # Custom week generation data for APGameState
+                "customWeeks": custom_weeks_data,  # Custom week generation data for APGameState
+                "song_modifications": {'song_additions': self.player_song_additions[self.player_name], 'song_exclusions': 'a thing we\'ll figure out later'}
             }
-    
+
     def _get_custom_weeks_data(self):
         """Generate custom week data for songs added by AP scripts"""
         custom_weeks = {}
-        
+
         # Check if we have any custom song additions from AP scripts
         # This would come from the HScript processing that adds songs via addSong()
         if hasattr(self, '_custom_song_additions'):
@@ -1299,14 +1311,14 @@ class FunkinWorld(World):
             for song_info in self._custom_song_additions:
                 song_name = song_info.get('name', '')
                 target_mod = song_info.get('targetMod', '') or 'base'
-                
+
                 if target_mod not in songs_by_mod:
                     songs_by_mod[target_mod] = []
-                
+
                 # Only add if song doesn't already exist in that mod's weeks
                 if not self._song_exists_in_mod_weeks(song_name, target_mod):
                     songs_by_mod[target_mod].append(song_name)
-            
+
             # Create week data for each mod that needs custom songs
             for mod_name, songs in songs_by_mod.items():
                 if songs:  # Only create week if there are songs to add
@@ -1318,9 +1330,9 @@ class FunkinWorld(World):
                         "weekTitle": f"AP Custom ({mod_name.title() if mod_name != 'base' else 'Base Game'})",
                         "difficulties": ["easy", "normal", "hard"]  # Default difficulties
                     }
-        
+
         return custom_weeks
-    
+
     def _song_exists_in_mod_weeks(self, song_name: str, target_mod: str):
         """Check if a song already exists in any week file for the target mod"""
         # This would check existing week files to prevent duplicates
