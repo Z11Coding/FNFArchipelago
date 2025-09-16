@@ -46,7 +46,7 @@ class FunkinUtils:
     }
 
     filler_item_weights: Dict[str, int] = {
-        "Nothing": 10
+        "Nothing": 1
     }
 
     mapthing:Dict[str, List[str]] = {}
