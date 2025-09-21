@@ -137,6 +137,78 @@ class FunkinWorld(World):
         # Check if fnfModData folder exists and use it if available
         folder_path = f"{folder_path}\\fnfModData" if os.path.exists(f"{folder_path}\\fnfModData") and os.path.isdir(f"{folder_path}\\fnfModData") else folder_path
 
+        # First, process modData from YAML files (embedded compressed Python code)
+        print("Processing modData from YAML files...")
+        import base64
+        for yaml_data in all_yamls:
+            if hasattr(yaml_data, 'modData') and yaml_data.modData:
+                player_name = getattr(yaml_data, 'name', 'Unknown Player')
+                try:
+                    print(f"Processing embedded modData for player '{player_name}'")
+
+                    # Decode Base64 compressed Python script
+                    compressed_script = yaml_data.modData
+                    custom_script = base64.b64decode(compressed_script).decode('utf-8')
+
+                    # Create execution environment
+                    exec_globals = {}
+                    exec_locals = {}
+
+                    # Execute the custom script
+                    exec(custom_script, exec_globals, exec_locals)
+
+                    # Get the custom data - check for new class-based approach first
+                    custom_data = None
+                    if 'INSTANCE' in exec_locals:
+                        # New class-based approach
+                        instance = exec_locals['INSTANCE']
+                        if hasattr(instance, 'get_custom_data_for_class'):
+                            custom_data = instance.get_custom_data_for_class()
+                    elif 'get_custom_data_for_class' in exec_locals:
+                        # Legacy function-based approach
+                        custom_data = exec_locals['get_custom_data_for_class']()
+
+                    if custom_data:
+                        # Store player-specific data WITHOUT prefixes
+                        player_items = custom_data.get('items', [])
+                        player_locations = custom_data.get('locations', {})  # Now contains location objects with rules
+
+                        # Add items without player prefix - ownership will be tracked in LocationData
+                        for item_name in player_items:
+                            if item_name not in custom_items:  # Avoid duplicates
+                                custom_items.append(item_name)
+
+                        # Add trap items without player prefix - ownership will be tracked in LocationData
+                        player_trap_items = custom_data.get('trap_items', [])
+                        for trap_name in player_trap_items:
+                            if trap_name not in custom_trap_items:  # Avoid duplicates
+                                custom_trap_items.append(trap_name)
+
+                        # Track song additions and exclusions from scripts
+                        player_song_additions = custom_data.get('song_additions', [])
+                        player_song_exclusions = custom_data.get('song_exclusions', [])
+                        custom_song_additions.extend(player_song_additions)
+                        custom_song_exclusions.extend(player_song_exclusions)
+                        vip_exclusive_song_additions[player_name] = player_song_additions
+
+                        for yaml in all_yamls:
+                            if yaml.name == player_name:
+                                for song in player_song_additions:
+                                    yaml.settings.songList.append(song['name'])
+
+                        # Store location data with ownership tracking (no prefixes)
+                        for location_name, location_obj in player_locations.items():
+                            # Add player info to location data
+                            location_info_with_player = location_obj.copy()
+                            location_info_with_player['player'] = player_name
+                            custom_location_data[location_name] = location_info_with_player
+
+                        print(f"Loaded from embedded modData: {len(player_items)} custom items and {len(player_locations)} custom locations for player '{player_name}'")
+
+                except Exception as e:
+                    print(f"Error processing embedded modData for player '{player_name}': {e}")
+                    continue
+
         # Look for player-specific custom data files
         for item in os.listdir(folder_path):
             if item.endswith("_customFNFData.py"):
