@@ -1354,6 +1354,11 @@ class FunkinWorld(World):
             # Collect custom week data for songs added by scripts
             custom_weeks_data = self._get_custom_weeks_data()
 
+            # Safely get player-specific song additions, or None if not present
+            player_song_additions = None
+            if hasattr(self, "player_song_additions") and isinstance(self.player_song_additions, dict):
+                player_song_additions = self.player_song_additions.get(self.player_name, None)
+
             return {
                 "deathLink": self.options.deathlink.value,
                 "fullSongCount": len(player_songs),
@@ -1368,7 +1373,10 @@ class FunkinWorld(World):
                 "songData": song_details,  # Detailed song metadata for the client
                 "locationData": location_details,  # Detailed location metadata for the client
                 "customWeeks": custom_weeks_data,  # Custom week generation data for APGameState
-                "song_modifications": {'song_additions': self.player_song_additions[self.player_name], 'song_exclusions': 'a thing we\'ll figure out later'}
+                "song_modifications": {
+                    'song_additions': player_song_additions,
+                    'song_exclusions': None  # Placeholder, update as needed
+                }
             }
 
     def _get_custom_weeks_data(self):
