@@ -118,6 +118,34 @@ class MHPWeight(Range):
     range_end = 10
     default = 5
 
+class ResistWeight(Range):
+    """The chances of having Zenetta sneak up behind and "kill" boyfriend"""
+    display_name = "Resistance Trap Weight"
+    range_start = 0
+    range_end = 10
+    default = 5
+
+class UnoWeight(Range):
+    """The chances of being forced to play a round of UNO"""
+    display_name = "UNO CHALLENGE Trap Weight"
+    range_start = 0
+    range_end = 10
+    default = 5
+
+class PongWeight(Range):
+    """The chances of being forced to play a round of PONG"""
+    display_name = "Pong CHALLENGE Trap Weight"
+    range_start = 0
+    range_end = 10
+    default = 5
+
+class SongSwitchWeight(Range):
+    """The chances of being forced to play a different song and then being returned to the song you were originally playing"""
+    display_name = "Song Switch Trap Weight"
+    range_start = 0
+    range_end = 10
+    default = 5
+
 
 class TicketPercentage(Range):
     """
@@ -183,10 +211,16 @@ fnf_option_groups = [
         ghostChatWeight,
         svcWeight,
         tutorialWeight,
+        SongSwitchWeight,
         fakeTransWeight,
+        chartModWeight,
+        ResistWeight,
+        UnoWeight,
+        PongWeight
+    ]),
+    OptionGroup("Items", [
         shieldWeight,
         MHPWeight,
-        chartModWeight
     ]),
 ]
 
@@ -206,6 +240,10 @@ class FunkinOptions(PerGameCommonOptions):
     ghostChatWeight: ghostChatWeight
     svcWeight: svcWeight
     tutorialWeight: tutorialWeight
+    songSwitchWeight: SongSwitchWeight
+    resistanceWeight: ResistWeight
+    unoWeight: UnoWeight
+    pongWeight: PongWeight
     fakeTransWeight: fakeTransWeight
     shieldWeight: shieldWeight
     MHPWeight: MHPWeight

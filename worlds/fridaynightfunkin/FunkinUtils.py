@@ -34,6 +34,10 @@ class FunkinUtils:
         "Tutorial Trap": STARTING_CODE + 4,
         "Fake Transition": STARTING_CODE + 5,
         "Chart Modifier Trap": STARTING_CODE + 6,
+        "Resistance Trap": STARTING_CODE + 7,
+        "UNO CHALLENGE": STARTING_CODE + 8,
+        "Pong CHALLENGE": STARTING_CODE + 9,
+        "Song Switch Trap": STARTING_CODE + 10,
     }
 
     normal_items: Dict[str, int] = {
@@ -42,11 +46,19 @@ class FunkinUtils:
     }
 
     filler_items: Dict[str, int] = {
-        "Nothing": STARTING_CODE + 50
+        "Nothing": STARTING_CODE + 50,
     }
 
     filler_item_weights: Dict[str, int] = {
         "Nothing": 1
+    }
+
+    trap_filler_items: Dict[str, int] = {
+        "UNO Color Filler": STARTING_CODE + 60,
+    }
+
+    trap_filler_item_weights: Dict[str, int] = {
+        "UNO Color Filler": 3
     }
 
     mapthing:Dict[str, List[str]] = {}

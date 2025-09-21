@@ -502,6 +502,7 @@ class FunkinWorld(World):
     # Temporary storage for setup
     items_in_general: dict[str, int] = {}
     trap_items_weights: dict[str, int] = {}
+    filter_items_weights: dict[str, int] = {}
     items_weights: dict[str, int] = {}
     songLimit: int
     item_id_index: int = 0
@@ -691,6 +692,7 @@ class FunkinWorld(World):
 
         # Initialize instance-specific tracking (don't overwrite class data)
         self.trap_items_weights = {}
+        self.filter_items_weights = {}
         self.items_in_general = {}
         self.songLimit = 5
 
@@ -719,10 +721,18 @@ class FunkinWorld(World):
         self.trap_items_weights['Ghost Chat'] = self.options.ghostChatWeight.value
         self.trap_items_weights['SvC Effect'] = self.options.svcWeight.value
         self.trap_items_weights['Tutorial Trap'] = self.options.tutorialWeight.value
+        self.trap_items_weights['Song Switch Trap'] = self.options.songSwitchWeight.value
         self.trap_items_weights['Fake Transition'] = self.options.fakeTransWeight.value
         self.trap_items_weights['Chart Modifier Trap'] = self.options.chart_modifier_change_chance.value
+        self.trap_items_weights['Resistance Trap'] = self.options.resistanceWeight.value
+        self.trap_items_weights['UNO CHALLENGE'] = self.options.unoWeight.value
+        self.trap_items_weights['Pong CHALLENGE'] = self.options.pongWeight.value
+
         self.items_in_general['Shield'] = self.options.shieldWeight.value
         self.items_in_general['Max HP Up'] = self.options.MHPWeight.value
+
+        self.filter_items_weights['Nothing'] = self.fnfUtil.filler_item_weights['Nothing']
+        self.filter_items_weights['UNO Color Filler'] = self.fnfUtil.trap_filler_item_weights['UNO Color Filler']
 
         # Other Settings
         self.ticket_percentage = self.options.ticket_percentage.value
@@ -905,6 +915,10 @@ class FunkinWorld(World):
         if filler:
             return FunkinFixedItem(name, ItemClassification.filler, filler, self.player)
 
+        alsoFiller = self.fnfUtil.trap_filler_items.get(name)
+        if alsoFiller:
+            return FunkinFixedItem(name, ItemClassification.filler, alsoFiller, self.player)
+
         item = self.fnfUtil.normal_items.get(name)
         if item:
             return FunkinFixedItem(name, ItemClassification.useful, item, self.player)
@@ -965,6 +979,11 @@ class FunkinWorld(World):
 
         return [trap for trap in full_trap_list if self.options.trapAmount.value > 0 and self.check_trap_weight(trap) > 0]
 
+    def get_available_filler(self) -> List[str]:
+        full_filler_list = list(self.fnfUtil.filler_items.keys())
+
+        return [filler for filler in full_filler_list if self.options.trapAmount.value > 0 and self.check_filler_trap_weight(filler) > 0 or filler == "Nothing"]
+
     def get_available_items(self) -> List[str]:
         full_item_list = self.fnfUtil.normal_items.keys()
         return [item for item in full_item_list if self.check_item_weight(item) > 0]
@@ -975,6 +994,14 @@ class FunkinWorld(World):
 
         # Custom trap items default to weight 1 if not specified
         if theTrap in self.custom_trap_items_list:
+            return 1
+
+    def check_filler_trap_weight(self, theFiller:str):
+        if self.filter_items_weights.keys().__contains__(theFiller):
+            return self.filter_items_weights[theFiller]
+
+        # Custom trap items default to weight 1 if not specified
+        if theFiller in self.custom_trap_items_list:
             return 1
 
     def check_item_weight(self, theItem:str):
@@ -1136,6 +1163,18 @@ class FunkinWorld(World):
                     index = self.random.randrange(0, len(item_list))
                     self.multiworld.itempool.append(self.create_item(item_list[index]))
 
+            # Then, add the Pocket Lens
+            self.multiworld.itempool.append(FunkinFixedItem("Pocket Lens", ItemClassification.useful, self.fnfUtil.STARTING_CODE + 69420, self.player))
+
+            # Next, add any items/filler items that are needed by traps
+            items_left = self.location_count - item_count
+            item_count = min(items_left, self.get_filler_trap_count())
+            filler_list = self.get_available_filler()
+            if len(item_list) > 0 and item_count > 0:
+                for _ in range(0, item_count):
+                    index = self.random.randrange(0, len(filler_list))
+                    self.multiworld.itempool.append(self.create_item(filler_list[index]))
+
             # Add custom items to the pool
             items_left = self.location_count - item_count
 
@@ -1228,6 +1267,9 @@ class FunkinWorld(World):
 
     def get_item_count(self) -> int:
         return self.items_in_general['Shield'] + self.items_in_general['Max HP Up']
+
+    def get_filler_trap_count(self) -> int:
+        return self.filter_items_weights['UNO Color Filler']
 
     def get_ticket_count(self) -> int:
         multiplier = self.options.ticket_percentage.value / 100.0
