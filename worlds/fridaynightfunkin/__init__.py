@@ -445,6 +445,7 @@ class FunkinWorld(World):
             {fnfUtil.SHOW_TICKET_NAME: fnfUtil.SHOW_TICKET_CODE},
             fnfUtil.filler_items,
             fnfUtil.normal_items,
+            fnfUtil.one_time_items,
             fnfUtil.trap_items,
             {name: data.code for name, data in song_items.items()},
             custom_item_ids,  # Add custom items
@@ -615,6 +616,7 @@ class FunkinWorld(World):
             {cls.fnfUtil.SHOW_TICKET_NAME: cls.fnfUtil.SHOW_TICKET_CODE},
             cls.fnfUtil.filler_items,
             cls.fnfUtil.normal_items,
+            cls.fnfUtil.one_time_items,
             cls.fnfUtil.trap_items,
             {name: data.code for name, data in cls.song_items.items()}
         ))
@@ -923,6 +925,10 @@ class FunkinWorld(World):
         if item:
             return FunkinFixedItem(name, ItemClassification.useful, item, self.player)
 
+        onetimeitem = self.fnfUtil.one_time_items.get(name)
+        if onetimeitem:
+            return FunkinFixedItem(name, ItemClassification.useful, onetimeitem, self.player)
+
         trap = self.fnfUtil.trap_items.get(name)
         if trap:
             return FunkinFixedItem(name, ItemClassification.trap, trap, self.player)
@@ -1163,8 +1169,13 @@ class FunkinWorld(World):
                     index = self.random.randrange(0, len(item_list))
                     self.multiworld.itempool.append(self.create_item(item_list[index]))
 
-            # Then, add the Pocket Lens
-            self.multiworld.itempool.append(FunkinFixedItem("Pocket Lens", ItemClassification.useful, self.fnfUtil.STARTING_CODE + 69420, self.player))
+            # Then, add the One Time Items (Pocket lens) (THESE ITEMS ARE MANDATORY AND CANNOT BE TURNED OFF!)
+            items_left = self.location_count - item_count
+            item_count = min(items_left, self.fnfUtil.one_time_items.__len__())
+            item_list = self.fnfUtil.one_time_items
+            if len(item_list) > 0 and item_count > 0:
+                for item in item_list:
+                    self.multiworld.itempool.append(self.create_item(item))
 
             # Next, add any items/filler items that are needed by traps
             items_left = self.location_count - item_count
@@ -1420,14 +1431,10 @@ class FunkinWorld(World):
                     'song_exclusions': None  # Placeholder, update as needed
                 }
             }
-
     def _get_custom_weeks_data(self):
         """Generate custom week data for songs added by AP scripts"""
         custom_weeks = {}
 
-        # Check if we have any custom song additions from AP scripts
-        # This would come from the HScript processing that adds songs via addSong()
-        if hasattr(self, '_custom_song_additions'):
             # Group added songs by target mod
             songs_by_mod = {}
             for song_info in self._custom_song_additions:

@@ -35,14 +35,18 @@ class FunkinUtils:
         "Fake Transition": STARTING_CODE + 5,
         "Chart Modifier Trap": STARTING_CODE + 6,
         "Resistance Trap": STARTING_CODE + 7,
-        "UNO CHALLENGE": STARTING_CODE + 8,
-        "Pong CHALLENGE": STARTING_CODE + 9,
+        "UNO Challenge": STARTING_CODE + 8,
+        "Pong Challenge": STARTING_CODE + 9,
         "Song Switch Trap": STARTING_CODE + 10,
     }
 
     normal_items: Dict[str, int] = {
         "Shield": STARTING_CODE + 30,
         "Max HP Up": STARTING_CODE + 31
+    }
+
+    one_time_items: Dict[str, int] = {
+        "Pocket Lens": STARTING_CODE + 90
     }
 
     filler_items: Dict[str, int] = {
@@ -95,7 +99,8 @@ class FunkinUtils:
         self.item_names_to_id = ChainMap(
             {self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, 
             self.filler_items, 
-            self.normal_items, 
+            self.normal_items,
+            self.one_time_items,
             self.trap_items
             # Songs will be added by the World class
         )
