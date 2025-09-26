@@ -146,6 +146,20 @@ class SongSwitchWeight(Range):
     range_end = 10
     default = 5
 
+class OpponentWeight(Range):
+    """The chances of being forced to play as the opponent instead"""
+    display_name = "Opponent Mode Trap Weight"
+    range_start = 0
+    range_end = 10
+    default = 5
+
+class BothWeight(Range):
+    """The chances of being forced to play as the opponent AND the player instead"""
+    display_name = "Both Play Trap Weight"
+    range_start = 0
+    range_end = 10
+    default = 5
+
 
 class TicketPercentage(Range):
     """
@@ -212,6 +226,8 @@ fnf_option_groups = [
         svcWeight,
         tutorialWeight,
         SongSwitchWeight,
+        OpponentWeight,
+        BothWeight,
         fakeTransWeight,
         chartModWeight,
         ResistWeight,
@@ -241,6 +257,8 @@ class FunkinOptions(PerGameCommonOptions):
     svcWeight: svcWeight
     tutorialWeight: tutorialWeight
     songSwitchWeight: SongSwitchWeight
+    opponentWeight: OpponentWeight
+    bothWeight: BothWeight
     resistanceWeight: ResistWeight
     unoWeight: UnoWeight
     pongWeight: PongWeight

@@ -28,29 +28,31 @@ class FunkinUtils:
     songList: List[str] = []
 
     trap_items: Dict[str, int] = {
-        "Blue Balls Curse": STARTING_CODE + 1,
-        "Ghost Chat": STARTING_CODE + 2,
-        "SvC Effect": STARTING_CODE + 3,
-        "Tutorial Trap": STARTING_CODE + 4,
-        "Fake Transition": STARTING_CODE + 5,
-        "Chart Modifier Trap": STARTING_CODE + 6,
-        "Resistance Trap": STARTING_CODE + 7,
-        "UNO Challenge": STARTING_CODE + 8,
-        "Pong Challenge": STARTING_CODE + 9,
-        "Song Switch Trap": STARTING_CODE + 10,
+        "Blue Balls Curse": STARTING_CODE + 10,
+        "Ghost Chat": STARTING_CODE + 20,
+        "SvC Effect": STARTING_CODE + 30,
+        "Tutorial Trap": STARTING_CODE + 40,
+        "Fake Transition": STARTING_CODE + 50,
+        "Chart Modifier Trap": STARTING_CODE + 60,
+        "Resistance Trap": STARTING_CODE + 70,
+        "UNO Challenge": STARTING_CODE + 80,
+        "Pong Challenge": STARTING_CODE + 90,
+        "Song Switch Trap": STARTING_CODE + 100,
+        "Opponent Mode Trap": STARTING_CODE + 110,
+        "Both Play Trap": STARTING_CODE + 120,
     }
 
     normal_items: Dict[str, int] = {
-        "Shield": STARTING_CODE + 30,
-        "Max HP Up": STARTING_CODE + 31
+        "Shield": STARTING_CODE + 300,
+        "Max HP Up": STARTING_CODE + 310
     }
 
     one_time_items: Dict[str, int] = {
-        "Pocket Lens": STARTING_CODE + 90
+        "Pocket Lens": STARTING_CODE + 900
     }
 
     filler_items: Dict[str, int] = {
-        "Nothing": STARTING_CODE + 50,
+        "Nothing": STARTING_CODE + 500,
     }
 
     filler_item_weights: Dict[str, int] = {
@@ -58,7 +60,7 @@ class FunkinUtils:
     }
 
     trap_filler_items: Dict[str, int] = {
-        "UNO Color Filler": STARTING_CODE + 60,
+        "UNO Color Filler": STARTING_CODE + 600,
     }
 
     trap_filler_item_weights: Dict[str, int] = {

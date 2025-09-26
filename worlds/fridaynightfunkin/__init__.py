@@ -724,6 +724,8 @@ class FunkinWorld(World):
         self.trap_items_weights['SvC Effect'] = self.options.svcWeight.value
         self.trap_items_weights['Tutorial Trap'] = self.options.tutorialWeight.value
         self.trap_items_weights['Song Switch Trap'] = self.options.songSwitchWeight.value
+        self.trap_items_weights['Opponent Mode Trap'] = self.options.opponentWeight.value
+        self.trap_items_weights['Both Play Trap'] = self.options.bothWeight.value
         self.trap_items_weights['Fake Transition'] = self.options.fakeTransWeight.value
         self.trap_items_weights['Chart Modifier Trap'] = self.options.chart_modifier_change_chance.value
         self.trap_items_weights['Resistance Trap'] = self.options.resistanceWeight.value
@@ -995,12 +997,14 @@ class FunkinWorld(World):
         return [item for item in full_item_list if self.check_item_weight(item) > 0]
 
     def check_trap_weight(self, theTrap:str):
-        if self.trap_items_weights.keys().__contains__(theTrap):
+        if theTrap in self.trap_items_weights.keys():
             return self.trap_items_weights[theTrap]
 
         # Custom trap items default to weight 1 if not specified
         if theTrap in self.custom_trap_items_list:
             return 1
+
+        return 0 # if the trap doesn't exist/can't be found, don't try to add it
 
     def check_filler_trap_weight(self, theFiller:str):
         if self.filter_items_weights.keys().__contains__(theFiller):
@@ -1435,30 +1439,30 @@ class FunkinWorld(World):
         """Generate custom week data for songs added by AP scripts"""
         custom_weeks = {}
 
-            # Group added songs by target mod
-            songs_by_mod = {}
-            for song_info in self._custom_song_additions:
-                song_name = song_info.get('name', '')
-                target_mod = song_info.get('targetMod', '') or 'base'
+        # Group added songs by target mod
+        songs_by_mod = {}
+        for song_info in self._custom_song_additions:
+            song_name = song_info.get('name', '')
+            target_mod = song_info.get('targetMod', '') or 'base'
 
-                if target_mod not in songs_by_mod:
-                    songs_by_mod[target_mod] = []
+            if target_mod not in songs_by_mod:
+                songs_by_mod[target_mod] = []
 
-                # Only add if song doesn't already exist in that mod's weeks
-                if not self._song_exists_in_mod_weeks(song_name, target_mod):
-                    songs_by_mod[target_mod].append(song_name)
+            # Only add if song doesn't already exist in that mod's weeks
+            if not self._song_exists_in_mod_weeks(song_name, target_mod):
+                songs_by_mod[target_mod].append(song_name)
 
-            # Create week data for each mod that needs custom songs
-            for mod_name, songs in songs_by_mod.items():
-                if songs:  # Only create week if there are songs to add
-                    week_name = f"ap_custom_{mod_name}" if mod_name != 'base' else "ap_custom_base"
-                    custom_weeks[week_name] = {
-                        "targetMod": mod_name,
-                        "weekName": week_name,
-                        "songs": songs,
-                        "weekTitle": f"AP Custom ({mod_name.title() if mod_name != 'base' else 'Base Game'})",
-                        "difficulties": ["easy", "normal", "hard"]  # Default difficulties
-                    }
+        # Create week data for each mod that needs custom songs
+        for mod_name, songs in songs_by_mod.items():
+            if songs:  # Only create week if there are songs to add
+                week_name = f"ap_custom_{mod_name}" if mod_name != 'base' else "ap_custom_base"
+                custom_weeks[week_name] = {
+                    "targetMod": mod_name,
+                    "weekName": week_name,
+                    "songs": songs,
+                    "weekTitle": f"AP Custom ({mod_name.title() if mod_name != 'base' else 'Base Game'})",
+                    "difficulties": ["easy", "normal", "hard"]  # Default difficulties
+                }
 
         return custom_weeks
 
