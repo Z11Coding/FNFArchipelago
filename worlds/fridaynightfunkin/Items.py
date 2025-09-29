@@ -8,18 +8,12 @@ class SongData(NamedTuple):
     playerSongBelongsTo: str
     playerList: Optional[List[str]]
 
-class FNFBaseList:
-    items: List[str] = [
-        "Shield", "Max HP Up",
-        "Note Checks", "Song Checks",
-        "Blue Balls Curse", "Ghost Chat", "SvC Effect", "Tutorial Trap", "Fake Transition"
-    ]
+class UNOMinigameColor:
+    def __init__(self, name: str, color_code: str | int):
+        self.name = name
+        self.color_code = color_code
 
-    item_groups = {
-        "Helpers": ["Shield", "Max HP Up"],
-        "Targets": ["Note Checks", "Song Checks"],
-        "Traps": ["Blue Balls Curse", "Ghost Chat", "SvC Effect", "Tutorial Trap", "Fake Transition"]
-    }
+class FNFBaseList:
     # This is gonna drive me insane
     baseSongList: List[str] = [
         "Tutorial",
@@ -68,7 +62,6 @@ class FunkinItem(Item):
         super().__init__(name, ItemClassification.progression, data.code, player)
 
 class FunkinUNOMinigameItem(Item):
-    from ..fridaynightfunkin import UNOMinigameColor
     game: str = "Friday Night Funkin"
 
     def __init__(self, name: str, code: Optional[int], player: int, color: UNOMinigameColor) -> None:
