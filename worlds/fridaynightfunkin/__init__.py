@@ -9,7 +9,7 @@ from worlds.AutoWorld import World, WebWorld
 from math import floor
 import random
 from collections import ChainMap
-from .Items import FNFBaseList, SongData
+from .Items import FNFBaseList, SongData, UNOMinigameColor
 
 from .ModHandler import (
     get_player_specific_ids,
@@ -31,11 +31,6 @@ class LocationData:
         self.originSong = origin_song
         self.originMod = origin_mod
         self.accessRuleFunc = access_rule_func
-
-class UNOMinigameColor:
-    def __init__(self, name: str, color_code: str | int):
-        self.name = name
-        self.color_code = color_code
 
 
 class FunkinWeb(WebWorld):
@@ -751,11 +746,13 @@ class FunkinWorld(World):
         self.trap_items_weights['Fake Transition'] = self.options.fakeTransWeight.value
         self.trap_items_weights['Chart Modifier Trap'] = self.options.chart_modifier_change_chance.value
         self.trap_items_weights['Resistance Trap'] = self.options.resistanceWeight.value
-        self.trap_items_weights['UNO CHALLENGE'] = self.options.unoWeight.value
+        self.trap_items_weights['UNO Challenge'] = self.options.unoWeight.value
         self.trap_items_weights['Pong CHALLENGE'] = self.options.pongWeight.value
 
         self.items_in_general['Shield'] = self.options.shieldWeight.value
         self.items_in_general['Max HP Up'] = self.options.MHPWeight.value
+        self.items_in_general['Max HP Down'] = self.options.MHPDWeight.value
+        self.items_in_general['Extra Life'] = self.options.extralifeWeight.value
 
         self.filter_items_weights['Nothing'] = self.fnfUtil.filler_item_weights['Nothing']
         self.filter_items_weights['UNO Color Filler'] = self.fnfUtil.trap_filler_item_weights['UNO Color Filler']
@@ -1046,6 +1043,8 @@ class FunkinWorld(World):
         if self.items_in_general.keys().__contains__(theItem):
             return self.items_in_general[theItem]
 
+        return 0
+
     def create_song_pool(self, available_song_keys: List[str]):
         """Create the song pool and give the player a starting song"""
         if not available_song_keys:
@@ -1251,6 +1250,20 @@ class FunkinWorld(World):
 
             # Add custom items to the pool
             items_left = self.location_count - item_count
+
+            if self.check_trap_weight('UNO Challenge') > 0:
+                uno_filler_count = max(1, floor(self.location_count * 0.10))  # 10% of total locations
+                for _ in range(uno_filler_count):
+                    # Get a random UNO color, unless none are left.
+                    if self.available_uno_colors:
+                        color = self.random.choice(self.available_uno_colors)
+                        self.available_uno_colors.remove(color)
+                    else:
+                        color = None
+                    from .Items import FunkinUNOMinigameItem
+                    if color:
+                        self.multiworld.itempool.append(FunkinUNOMinigameItem(f'UNO Color Filler', 0, self.player, color))
+                        self.used_uno_colors.append(color)
 
             # Filter custom items for this player by checking location ownership
             player_custom_items = []

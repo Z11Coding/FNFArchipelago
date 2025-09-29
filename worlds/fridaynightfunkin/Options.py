@@ -118,6 +118,20 @@ class MHPWeight(Range):
     range_end = 10
     default = 5
 
+class MHPDWeight(Range):
+    """The chances of getting a Max HP Down Trap"""
+    display_name = "Max HP Down Trap Weight"
+    range_start = 0
+    range_end = 10
+    default = 5
+
+class ExtraLifeWeight(Range):
+    """The chances of getting an Extra Life"""
+    display_name = "Extra Life Weight"
+    range_start = 0
+    range_end = 10
+    default = 5
+
 class ResistWeight(Range):
     """The chances of having Zenetta sneak up behind and "kill" boyfriend"""
     display_name = "Resistance Trap Weight"
@@ -224,6 +238,7 @@ fnf_option_groups = [
         bbcWeight,
         ghostChatWeight,
         svcWeight,
+        MHPDWeight,
         tutorialWeight,
         SongSwitchWeight,
         OpponentWeight,
@@ -237,6 +252,7 @@ fnf_option_groups = [
     OptionGroup("Items", [
         shieldWeight,
         MHPWeight,
+        ExtraLifeWeight
     ]),
 ]
 
@@ -265,6 +281,8 @@ class FunkinOptions(PerGameCommonOptions):
     fakeTransWeight: fakeTransWeight
     shieldWeight: shieldWeight
     MHPWeight: MHPWeight
+    MHPDWeight: MHPDWeight
+    extralifeWeight: ExtraLifeWeight
     deathlink: DeathLink
     ticket_percentage: TicketPercentage
     ticket_win_percentage: TicketWinPercentage
