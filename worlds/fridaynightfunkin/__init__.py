@@ -330,14 +330,14 @@ class FunkinWorld(World):
                         # Add base game songs to the YAML's song list
                         if hasattr(yaml_data, 'settings') and hasattr(yaml_data.settings, 'songList'):
                             if not yaml_data.settings.songList:
-                                yaml_data.settings.songList = FNFBaseList.baseSongList.copy()
+                                yaml_data.settings.songList = FNFBaseList.omegaList.copy()
                             else:
-                                yaml_data.settings.songList.extend(FNFBaseList.baseSongList)
+                                yaml_data.settings.songList.extend(FNFBaseList.omegaList)
                         else:
                             # Create settings and songList if they don't exist
                             if not hasattr(yaml_data, 'settings'):
                                 yaml_data.settings = type('Settings', (), {})()
-                            yaml_data.settings.songList = FNFBaseList.baseSongList.copy()
+                            yaml_data.settings.songList = FNFBaseList.omegaList.copy()
 
                         # Now get the updated song list
                         song_list = yaml_data.getSongList()
@@ -356,7 +356,7 @@ class FunkinWorld(World):
 
         # Add fallback songs if no custom songs found
         if not all_songs:
-            all_songs.update(FNFBaseList.baseSongList)
+            all_songs.update(FNFBaseList.omegaList)
 
         print(f"Found {len(all_songs)} unique songs across all players: {list(all_songs)}")
 
@@ -587,7 +587,7 @@ class FunkinWorld(World):
 
         # Add fallback songs if no custom songs found
         if not all_songs:
-            all_songs.update(FNFBaseList.baseSongList)
+            all_songs.update(FNFBaseList.omegaList)
 
         # Remove single quotes around song names if they exist
         cleaned_songs = set()
@@ -670,7 +670,7 @@ class FunkinWorld(World):
                     self.name = player_name
                     self.game = "Friday Night Funkin"
                     self.settings = type('Settings', (), {
-                        'songList': FNFBaseList.baseSongList.copy(),
+                        'songList': FNFBaseList.omegaList.copy(),
                         'song_limit': 5
                     })()
                 def getSongList(self):
@@ -784,7 +784,7 @@ class FunkinWorld(World):
             raw_song_list.append(song['name'])
         # If no songs in YAML, use fallback
         if not raw_song_list:
-            raw_song_list = FNFBaseList.baseSongList.copy()
+            raw_song_list = FNFBaseList.omegaList.copy()
             print(f"No songs found for player {self.player_name}, using fallback songs")
 
         # Clean the song names
@@ -806,7 +806,7 @@ class FunkinWorld(World):
         available_songs = [song for song in cleaned_song_list if song in self.song_items]
 
         # Add any missing base songs that should be available to all players
-        for song in FNFBaseList.baseSongList:
+        for song in FNFBaseList.omegaList:
             if song in self.song_items and song not in available_songs:
                 available_songs.append(song)
 
@@ -1054,7 +1054,7 @@ class FunkinWorld(World):
         # Choose and give starting song (precollected)
         # Try to use the starting_song from YAML if it exists and is in available songs or matches victory song
         starting_song = getattr(self.thisYaml.settings, "starting_song", None)
-        
+
         if starting_song and starting_song == self.victory_song_name:
             # If starting song matches victory song, use the victory song directly
             starting_song = self.victory_song_name

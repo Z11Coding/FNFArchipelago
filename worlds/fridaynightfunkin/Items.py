@@ -41,9 +41,45 @@ class FNFBaseList:
 		'Senpai (Pico mix)', 'Roses (Pico mix)',
 		'Ugh (Pico mix)', 'Guns (Pico mix)', 'Stress (Pico Mix)',
         'Test'
+    ]
+
+    secretSongList: List[str] = [
         'Small Argument',
         'Beat Battle',
-        'Beat Battle 2'
+        'Beat Battle 2',
+        'GeoStar'
+    ]
+
+    omegaList: List[str] = [
+        "Tutorial",
+        "Bopeebo", "Fresh", "Dad Battle",
+        "Spookeez", "South", "Monster",
+        "Pico", "Philly Nice", "Blammed",
+        "Satin Panties", "High", "Milf",
+        "Cocoa", "Eggnog", "Winter Horrorland",
+        "Senpai", "Roses", "Thorns",
+        "Ugh", "Guns", "Stress",
+        "Darnell", "Lit Up", "2Hot", "Blazin",
+        "Darnell (BF Mix)", "Lit Up (BF Mix)",
+        'Bopeebo Erect', 'Fresh Erect', 'Dad Battle Erect',
+        'Spookeez Erect', 'South Erect',
+        'Pico Erect', 'Philly Nice Erect', 'Blammed Erect',
+        'Satin Panties Erect', 'High Erect',
+        'Cocoa Erect', 'Eggnog Erect',
+        'Senpai Erect', 'Roses Erect', 'Thorns Erect',
+        'Ugh Erect',
+        'Darnell Erect',
+		'Bopeebo (Pico Mix)', 'Fresh (Pico mix)', 'Dad Battle (Pico mix)',
+		'Spookeez (Pico mix)', 'South (Pico mix)',
+		'Pico (Pico mix)', 'Philly Nice (Pico mix)', 'Blammed (Pico mix)',
+		'Eggnog (Pico Mix)', 'Cocoa (Pico Mix)',
+		'Senpai (Pico mix)', 'Roses (Pico mix)',
+		'Ugh (Pico mix)', 'Guns (Pico mix)', 'Stress (Pico Mix)',
+        'Test',
+        'Small Argument',
+        'Beat Battle',
+        'Beat Battle 2',
+        'GeoStar'
     ]
 
     # Because it's not allowed to be empty ig
