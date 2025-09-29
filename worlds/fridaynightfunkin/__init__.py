@@ -921,8 +921,14 @@ class FunkinWorld(World):
 
         print(f"Available songs for {self.player_name}: {available_song_keys}")
 
-        # Choose victory song randomly
-        chosen_song_index = self.random.randrange(0, len(available_song_keys))
+        # Choose victory song randomly or from settings
+        # Try to use the victory_song from YAML if it exists and is in available songs
+        chosen_song_index = None
+        victory_song = getattr(self.thisYaml.settings, "victory_song", None)
+        if victory_song and victory_song in available_song_keys:
+            chosen_song_index = available_song_keys.index(victory_song)
+        else:
+            chosen_song_index = self.random.randrange(0, len(available_song_keys))
         self.victory_song_name = available_song_keys[chosen_song_index]
         self.victory_song_id = int(song_ids[chosen_song_index])
 
@@ -1047,12 +1053,27 @@ class FunkinWorld(World):
             return
 
         # Choose and give starting song (precollected)
-        starting_song_index = self.random.randrange(0, len(available_song_keys))
-        starting_song = available_song_keys[starting_song_index]
-
-        # Remove Test songs from normal processing
-        if starting_song != "Test":
+        # Try to use the starting_song from YAML if it exists and is in available songs or matches victory song
+        starting_song = getattr(self.thisYaml.settings, "starting_song", None)
+        
+        if starting_song and starting_song == self.victory_song_name:
+            # If starting song matches victory song, use the victory song directly
+            starting_song = self.victory_song_name
+            # Don't remove anything from available_song_keys since victory song isn't in there
+        elif starting_song and starting_song in available_song_keys:
+            # Starting song is in available songs, remove it from the pool
             available_song_keys.remove(starting_song)
+        else:
+            # No specific starting song or it's not available, pick randomly
+            if not available_song_keys:
+                # If no songs available, use victory song as fallback
+                starting_song = self.victory_song_name
+            else:
+                starting_song_index = self.random.randrange(0, len(available_song_keys))
+                starting_song = available_song_keys[starting_song_index]
+                # Remove Test songs and selected starting song from normal processing
+                if starting_song != "Test":
+                    available_song_keys.remove(starting_song)
 
         print(f"Starting song for {self.player_name}: {starting_song}")
         self.multiworld.push_precollected(self.create_item(starting_song))
