@@ -44,11 +44,14 @@ class FunkinUtils:
 
     normal_items: Dict[str, int] = {
         "Shield": STARTING_CODE + 300,
-        "Max HP Up": STARTING_CODE + 310
+        "Max HP Up": STARTING_CODE + 310,
+        "Max HP Down": STARTING_CODE + 320,
+        "Extra Life": STARTING_CODE + 330,
     }
 
     one_time_items: Dict[str, int] = {
-        "Pocket Lens": STARTING_CODE + 900
+        "Pocket Lens": STARTING_CODE + 900,
+        "PONG Dash Mechanic": STARTING_CODE + 910,
     }
 
     filler_items: Dict[str, int] = {
