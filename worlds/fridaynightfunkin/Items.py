@@ -67,6 +67,14 @@ class FunkinItem(Item):
     def __init__(self, name: str, player: int, data: Union[SongData]) -> None:
         super().__init__(name, ItemClassification.progression, data.code, player)
 
+class FunkinUNOMinigameItem(Item):
+    from ..fridaynightfunkin import UNOMinigameColor
+    game: str = "Friday Night Funkin"
+
+    def __init__(self, name: str, code: Optional[int], player: int, color: UNOMinigameColor) -> None:
+        super().__init__(name, ItemClassification.useful, code, player)
+        self.color = color
+
 
 class FunkinFixedItem(Item):
     game: str = "Friday Night Funkin"

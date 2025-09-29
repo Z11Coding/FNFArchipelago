@@ -32,6 +32,11 @@ class LocationData:
         self.originMod = origin_mod
         self.accessRuleFunc = access_rule_func
 
+class UNOMinigameColor:
+    def __init__(self, name: str, color_code: str | int):
+        self.name = name
+        self.color_code = color_code
+
 
 class FunkinWeb(WebWorld):
     tutorials = [Tutorial(
@@ -77,6 +82,23 @@ class FunkinWorld(World):
     fnfUtil = FunkinUtils()
     filler_item_names = list(fnfUtil.filler_items.keys())
     filler_item_weights = list(fnfUtil.filler_item_weights.values())
+
+    available_uno_colors: List[UNOMinigameColor] = [
+        UNOMinigameColor("Red", "FF0000"),
+        UNOMinigameColor("Green", "00FF00"),
+        UNOMinigameColor("Blue", "0000FF"),
+        UNOMinigameColor("Yellow", "FFFF00"),
+        # Non-standard colors
+        UNOMinigameColor("Pink", "FFC0CB"),
+        UNOMinigameColor("Purple", "800080"),
+        UNOMinigameColor("Orange", "FFA500"),
+        UNOMinigameColor("Cyan", "00FFFF"),
+        UNOMinigameColor("Magenta", "FF00FF"),
+        UNOMinigameColor("Lime", "00FF7F"),
+        UNOMinigameColor("Brown", "A52A2A"),
+    ]
+
+    used_uno_colors: List[UNOMinigameColor] = []
 
     @staticmethod
     def stuff():
@@ -1138,6 +1160,22 @@ class FunkinWorld(World):
 
         print('-- FNF LOCATION GEN FINISHED --')
 
+    # def create_uno_filler(self) -> None:
+    #     # Add UNO Color Filler items to the pool if UNO trap is enabled
+    #     if self.check_trap_weight('UNO CHALLENGE') > 0:
+    #         uno_filler_count = max(1, floor(self.location_count * 0.10))  # 10% of total locations
+    #         for _ in range(uno_filler_count):
+    #             # Get a random UNO color, unless none are left.
+    #             if self.fnfUtil.UNO_COLORS:
+    #                 color = self.random.choice(self.fnfUtil.UNO_COLORS)
+    #                 self.fnfUtil.UNO_COLORS.remove(color)
+    #             else:
+    #                 color = None
+    #             from .Items import FunkinUNOMinigameItem
+    #             if color:
+    #                 self.multiworld.itempool.append(FunkinUNOMinigameItem(f'UNO Color Filler', 0, self.player, color))
+    #                 self.used_uno_colors.append(color)
+
 
     def create_items(self) -> None:
         song_keys_in_pool = self.get_songs_map(self.player_name).copy()
@@ -1408,6 +1446,8 @@ class FunkinWorld(World):
             song_details = self.get_player_song_details(self.player_name)
             location_details = self.get_player_location_details(self.player_name)
 
+            # Get all UNO Minigame colors by looking in the multiworld.
+
             # Collect custom week data for songs added by scripts
             custom_weeks_data = self._get_custom_weeks_data()
 
@@ -1433,7 +1473,14 @@ class FunkinWorld(World):
                 "song_modifications": {
                     'song_additions': player_song_additions,
                     'song_exclusions': None  # Placeholder, update as needed
-                }
+                },
+                "unoColorsUsed": [
+                    {
+                        "name": color.name,
+                        "color_code": color.color_code
+                    }
+                    for color in self.used_uno_colors if color is not None
+                ]
             }
     def _get_custom_weeks_data(self):
         """Generate custom week data for songs added by AP scripts"""
