@@ -933,6 +933,25 @@ class FunkinWorld(World):
         # Try to use the victory_song from YAML if it exists and is in available songs
         chosen_song_index = None
         victory_song = getattr(self.thisYaml.settings, "victory_song", None)
+        
+        # Check if victory song from YAML is valid
+        if victory_song and victory_song not in available_song_keys:
+            print(f"\nWarning: Victory song '{victory_song}' specified in YAML for player '{self.player_name}' is not available in their song list.")
+            print("Options:")
+            print("1. Continue generation with a random victory song")
+            print("2. Cancel generation")
+            
+            while True:
+                choice = input(f"What would you like to do for player '{self.player_name}'? (1/2): ").strip()
+                if choice == "1":
+                    print(f"Continuing generation for '{self.player_name}' with a random victory song.")
+                    victory_song = None  # Will be set randomly below
+                    break
+                elif choice == "2":
+                    raise ValueError(f"Player '{self.player_name}' has an invalid victory song '{victory_song}' in their YAML file. Generation cancelled.")
+                else:
+                    print("Invalid choice. Please enter 1 or 2.")
+        
         if victory_song and victory_song in available_song_keys:
             chosen_song_index = available_song_keys.index(victory_song)
         else:
@@ -1065,6 +1084,52 @@ class FunkinWorld(World):
         # Choose and give starting song (precollected)
         # Try to use the starting_song from YAML if it exists and is in available songs or matches victory song
         starting_song = getattr(self.thisYaml.settings, "starting_song", None)
+        starting_song_from_yaml = starting_song  # Keep original for validation
+        
+        # Check if starting song from YAML is invalid (not in available songs AND not the victory song)
+        if (starting_song and 
+            starting_song not in available_song_keys and 
+            starting_song != self.victory_song_name):
+            
+            print(f"\nWarning: Starting song '{starting_song}' specified in YAML for player '{self.player_name}' is not available in their song list.")
+            print("Options:")
+            print("1. Continue generation with a random starting song")
+            print("2. Cancel generation")
+            
+            while True:
+                choice = input(f"What would you like to do for player '{self.player_name}'? (1/2): ").strip()
+                if choice == "1":
+                    print(f"Continuing generation for '{self.player_name}' with a random starting song.")
+                    starting_song = None  # Will be set randomly below
+                    break
+                elif choice == "2":
+                    raise ValueError(f"Player '{self.player_name}' has an invalid starting song '{starting_song}' in their YAML file. Generation cancelled.")
+                else:
+                    print("Invalid choice. Please enter 1 or 2.")
+
+        # Check if starting song and victory song are the same
+        if starting_song and starting_song == self.victory_song_name:
+            print(f"\nWarning: Player '{self.player_name}' has the same song '{starting_song}' set as both starting and victory song.")
+            print("This will instantly BK the game and prevent progression at the beginning.")
+            print("Options:")
+            print("1. Continue generation anyway (game will be instantly won)")
+            print("2. Use a random starting song instead")
+            print("3. Cancel generation")
+            
+            while True:
+                choice = input(f"What would you like to do for player '{self.player_name}'? (1/2/3): ").strip()
+                if choice == "1":
+                    print(f"Continuing generation for '{self.player_name}' with same starting and victory song (instant win).")
+                    # Keep starting_song as victory_song
+                    break
+                elif choice == "2":
+                    print(f"Using a random starting song for '{self.player_name}' instead.")
+                    starting_song = None  # Will be set randomly below
+                    break
+                elif choice == "3":
+                    raise ValueError(f"Player '{self.player_name}' has the same song for starting and victory. Generation cancelled.")
+                else:
+                    print("Invalid choice. Please enter 1, 2, or 3.")
 
         if starting_song and starting_song == self.victory_song_name:
             # If starting song matches victory song, use the victory song directly

@@ -12296,7 +12296,7 @@ class yutautil_APYaml:
 
                 if (len(keyValue) > 2):
                     # Combine all elements after the first one into a single element
-                    keyValue = [keyValue[0], "".join(keyValue[1:])]
+                    keyValue = [keyValue[0], ":".join(keyValue[1:])]
 
                 if (len(keyValue) == 2):
                     key = StringTools.trim((keyValue[0] if 0 < len(keyValue) else None))
