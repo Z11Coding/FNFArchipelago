@@ -820,11 +820,22 @@ class FunkinWorld(World):
 
         print(available_songs)
 
+        songcheck: list[str] = []
+        if self.thisYaml.settings.starting_song:
+            songcheck.append(self.thisYaml.settings.starting_song)
+
+        if self.thisYaml.settings.victory_song:
+            songcheck.append(self.thisYaml.settings.victory_song)
+
         # Apply song limit
         song_limit = max(1, getattr(self.thisYaml.settings, 'song_limit', self.songLimit) or 5)
-        limited_song_list = available_songs if getattr(self.multiworld, 'gen_is_fake', False) else available_songs[:song_limit]
+        limited_song_list = available_songs if getattr(self.multiworld, 'gen_is_fake', False) else available_songs[:song_limit-songcheck.__len__()]
 
         print(f"Processing {len(limited_song_list)} songs for player {self.player_name}: {limited_song_list}")
+
+        for song in songcheck:
+            if limited_song_list and song not in limited_song_list:
+                limited_song_list.append(song)
 
         # Update the song ownership in the existing SongData objects
         for song_name in limited_song_list:
@@ -1058,21 +1069,25 @@ class FunkinWorld(World):
         if starting_song and starting_song == self.victory_song_name:
             # If starting song matches victory song, use the victory song directly
             starting_song = self.victory_song_name
+            print(f'USING VICTORY SONG AS STARTING SONG: {starting_song}')
             # Don't remove anything from available_song_keys since victory song isn't in there
         elif starting_song and starting_song in available_song_keys:
             # Starting song is in available songs, remove it from the pool
             available_song_keys.remove(starting_song)
+            print(f'USING CUSTOM STARTING SONG: {starting_song}')
         else:
             # No specific starting song or it's not available, pick randomly
             if not available_song_keys:
                 # If no songs available, use victory song as fallback
                 starting_song = self.victory_song_name
+                print(f"COULDN'T FIND ANY SONGS! USING {starting_song} AS FALLBACK!")
             else:
                 starting_song_index = self.random.randrange(0, len(available_song_keys))
                 starting_song = available_song_keys[starting_song_index]
                 # Remove Test songs and selected starting song from normal processing
                 if starting_song != "Test":
                     available_song_keys.remove(starting_song)
+                print(f'RANDOMLY SELECTED STARTING SONG: {starting_song}')
 
         print(f"Starting song for {self.player_name}: {starting_song}")
         self.multiworld.push_precollected(self.create_item(starting_song))

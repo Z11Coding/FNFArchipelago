@@ -12382,7 +12382,7 @@ class yutautil_APYaml:
                             else:
                                 raise "Class cast error"
                             return _hx_local_2
-                        if ((_hx_local_3() is not None) or python_lib_Math.isnan(Std.parseFloat(value))):
+                        if ((_hx_local_3() is not None) and not python_lib_Math.isnan(Std.parseFloat(value))):
                             value2 = Std.parseFloat(value)
                             sectionData.h[key] = value2
                         else:
