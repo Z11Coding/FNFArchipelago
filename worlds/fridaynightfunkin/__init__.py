@@ -396,37 +396,31 @@ class FunkinWorld(World):
             item_id_index += 1
 
         # Create all possible locations for all songs
-        # Use a much larger multiplier to prevent ID overlaps between songs
-        location_id_multiplier = 100000  # Ensures each song gets a large range of IDs
+        # Use a reasonable starting point and sequential allocation to prevent overlaps
         used_location_ids = set()  # Track all used location IDs to prevent duplicates
+        location_id_counter = item_id_index + 1  # Start location IDs after item IDs
         
         for song_name, song_data in song_items.items():
-            # Calculate base location ID for this song to prevent overlaps
-            base_location_id = song_data.code * location_id_multiplier
-            
-            # Song completion locations (use first 1000 IDs in the song's range)
+            # Song completion locations
             for j in range(2):
-                location_id = base_location_id + j
-                if location_id in used_location_ids:
-                    print(f"Warning: Duplicate location ID {location_id} detected for song completion {song_name}-{j}")
+                while location_id_counter in used_location_ids:
+                    location_id_counter += 1
+                location_id = location_id_counter
                 song_locations[f"{song_name}-{j}"] = location_id
                 used_location_ids.add(location_id)
+                location_id_counter += 1
 
-            # Note check locations (use next 1000 IDs in the song's range)
+            # Note check locations
             for j in range(3):
-                location_id = base_location_id + 1000 + j
-                if location_id in used_location_ids:
-                    print(f"Warning: Duplicate location ID {location_id} detected for note check Note {j}: {song_name}")
+                while location_id_counter in used_location_ids:
+                    location_id_counter += 1
+                location_id = location_id_counter
                 song_locations[f"Note {j}: {song_name}"] = location_id
                 used_location_ids.add(location_id)
+                location_id_counter += 1
 
         # Create custom locations using LocationData objects - start after song locations
-        custom_location_id_start = max(song_locations.values()) + 1000 if song_locations else item_id_index + 20000
-        current_custom_id = custom_location_id_start
-
-        # Ensure custom location IDs don't conflict with existing ones
-        while current_custom_id in used_location_ids:
-            current_custom_id += 1
+        current_custom_id = location_id_counter + 100  # Small gap after song locations
 
         # Group custom locations by location name to track ownership
         location_ownership = {}
@@ -486,10 +480,9 @@ class FunkinWorld(World):
 
         # Add custom items with their own IDs - ensure no conflicts with existing items
         custom_item_ids = {}
-        # Start custom item IDs well after the highest used item ID
-        custom_item_id_start = max(max(used_item_ids) + 10000, current_custom_id + 1000) if used_item_ids else current_custom_id + 1000
+        # Start custom item IDs after the current highest item ID with a small gap
+        current_item_id = max(used_item_ids) + 100 if used_item_ids else item_id_index + 100
         
-        current_item_id = custom_item_id_start
         for item_name in custom_items:
             # Ensure this custom item ID doesn't conflict with any existing item
             while current_item_id in used_item_ids:
@@ -850,7 +843,7 @@ class FunkinWorld(World):
 
     def _generate_song_locations(self):
         """Location mappings are already generated at class level, just reference them"""
-        # Locations are already created in _setup_class_data, so just log what we have
+        # Locations are already created during class initialization, so just log what we have
         available_locations = []
         for song_name in self.song_items.keys():
             if self.unlock_method in ["Song Completion", "Both"]:
