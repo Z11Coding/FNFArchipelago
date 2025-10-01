@@ -360,9 +360,23 @@ class FunkinWorld(World):
 
         print(f"Found {len(all_songs)} unique songs across all players: {list(all_songs)}")
 
+        # Track all used item IDs to prevent overlaps
+        used_item_ids = set()
+        
+        # Add existing item IDs to the tracking set
+        used_item_ids.add(fnfUtil.SHOW_TICKET_CODE)
+        used_item_ids.update(fnfUtil.filler_items.values())
+        used_item_ids.update(fnfUtil.normal_items.values())
+        used_item_ids.update(fnfUtil.one_time_items.values())
+        used_item_ids.update(fnfUtil.trap_items.values())
+        
         # Create SongData for all songs
         for song in all_songs:
             cur_song_name = song
+            # Ensure song item ID doesn't conflict with existing items
+            while item_id_index in used_item_ids:
+                item_id_index += 1
+                
             item_id = item_id_index
             # isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
             isModded = True
@@ -378,21 +392,41 @@ class FunkinWorld(World):
                 "",  # Will be set per-instance
                 []  # Will be populated per-instance
             )
+            used_item_ids.add(item_id)
             item_id_index += 1
 
         # Create all possible locations for all songs
+        # Use a much larger multiplier to prevent ID overlaps between songs
+        location_id_multiplier = 100000  # Ensures each song gets a large range of IDs
+        used_location_ids = set()  # Track all used location IDs to prevent duplicates
+        
         for song_name, song_data in song_items.items():
-            # Song completion locations
+            # Calculate base location ID for this song to prevent overlaps
+            base_location_id = song_data.code * location_id_multiplier
+            
+            # Song completion locations (use first 1000 IDs in the song's range)
             for j in range(2):
-                song_locations[f"{song_name}-{j}"] = (song_data.code + 1000 * j)
+                location_id = base_location_id + j
+                if location_id in used_location_ids:
+                    print(f"Warning: Duplicate location ID {location_id} detected for song completion {song_name}-{j}")
+                song_locations[f"{song_name}-{j}"] = location_id
+                used_location_ids.add(location_id)
 
-            # Note check locations
+            # Note check locations (use next 1000 IDs in the song's range)
             for j in range(3):
-                song_locations[f"Note {j}: {song_name}"] = (song_data.code + 1000 * j + 10000)
+                location_id = base_location_id + 1000 + j
+                if location_id in used_location_ids:
+                    print(f"Warning: Duplicate location ID {location_id} detected for note check Note {j}: {song_name}")
+                song_locations[f"Note {j}: {song_name}"] = location_id
+                used_location_ids.add(location_id)
 
         # Create custom locations using LocationData objects - start after song locations
         custom_location_id_start = max(song_locations.values()) + 1000 if song_locations else item_id_index + 20000
         current_custom_id = custom_location_id_start
+
+        # Ensure custom location IDs don't conflict with existing ones
+        while current_custom_id in used_location_ids:
+            current_custom_id += 1
 
         # Group custom locations by location name to track ownership
         location_ownership = {}
@@ -400,6 +434,10 @@ class FunkinWorld(World):
             player_owner = location_info.get('player', '')
 
             if location_name not in location_ownership:
+                # Ensure this custom location ID is unique
+                while current_custom_id in used_location_ids:
+                    current_custom_id += 1
+                    
                 location_ownership[location_name] = {
                     'id': current_custom_id,
                     'players': [],
@@ -407,6 +445,7 @@ class FunkinWorld(World):
                     'origin_mod': location_info.get('origin_mod', ''),
                     'access_rule': location_info.get('access_rule')  # Rule is now part of location object
                 }
+                used_location_ids.add(current_custom_id)
                 current_custom_id += 1
 
             # Add player to ownership list
@@ -445,17 +484,29 @@ class FunkinWorld(World):
             # Add to location name-to-id mapping
             custom_locations[location_name] = ownership_info['id']
 
-        # Add custom items with their own IDs - start after custom locations
+        # Add custom items with their own IDs - ensure no conflicts with existing items
         custom_item_ids = {}
-        custom_item_id_start = current_custom_id + 1000
-        for i, item_name in enumerate(custom_items):
-            custom_item_ids[item_name] = custom_item_id_start + i
+        # Start custom item IDs well after the highest used item ID
+        custom_item_id_start = max(max(used_item_ids) + 10000, current_custom_id + 1000) if used_item_ids else current_custom_id + 1000
+        
+        current_item_id = custom_item_id_start
+        for item_name in custom_items:
+            # Ensure this custom item ID doesn't conflict with any existing item
+            while current_item_id in used_item_ids:
+                current_item_id += 1
+            custom_item_ids[item_name] = current_item_id
+            used_item_ids.add(current_item_id)
+            current_item_id += 1
 
         # Add custom trap items with their own IDs - start after custom items
         custom_trap_item_ids = {}
-        custom_trap_id_start = custom_item_id_start + len(custom_items) + 100
-        for i, item_name in enumerate(custom_trap_items):
-            custom_trap_item_ids[item_name] = custom_trap_id_start + i
+        for item_name in custom_trap_items:
+            # Ensure this custom trap item ID doesn't conflict with any existing item
+            while current_item_id in used_item_ids:
+                current_item_id += 1
+            custom_trap_item_ids[item_name] = current_item_id
+            used_item_ids.add(current_item_id)
+            current_item_id += 1
 
         # Build final name-to-ID mappings
         item_name_to_id = dict(ChainMap(
@@ -469,6 +520,23 @@ class FunkinWorld(World):
             custom_trap_item_ids  # Add custom trap items
         ))
 
+        # Validate that all item IDs are unique
+        all_item_ids = list(item_name_to_id.values())
+        unique_item_ids = set(all_item_ids)
+        if len(all_item_ids) != len(unique_item_ids):
+            print(f"ERROR: Found {len(all_item_ids) - len(unique_item_ids)} duplicate item IDs!")
+            # Find and report duplicates
+            seen_ids = set()
+            duplicates = set()
+            for item_name, item_id in item_name_to_id.items():
+                if item_id in seen_ids:
+                    duplicates.add(item_id)
+                    print(f"Duplicate item ID {item_id} used by item: {item_name}")
+                seen_ids.add(item_id)
+            if duplicates:
+                raise ValueError(f"Found duplicate item IDs: {duplicates}")
+        
+        print(f"All item IDs are unique: {len(unique_item_ids)} unique item IDs")
         print(item_name_to_id)
 
         location_name_to_id = dict(ChainMap(
@@ -476,11 +544,29 @@ class FunkinWorld(World):
             custom_locations  # Add custom locations
         ))
 
+        # Validate that all location IDs are unique
+        all_location_ids = list(location_name_to_id.values())
+        unique_location_ids = set(all_location_ids)
+        if len(all_location_ids) != len(unique_location_ids):
+            print(f"ERROR: Found {len(all_location_ids) - len(unique_location_ids)} duplicate location IDs!")
+            # Find and report duplicates
+            seen_ids = set()
+            duplicates = set()
+            for loc_name, loc_id in location_name_to_id.items():
+                if loc_id in seen_ids:
+                    duplicates.add(loc_id)
+                    print(f"Duplicate ID {loc_id} used by location: {loc_name}")
+                seen_ids.add(loc_id)
+            if duplicates:
+                raise ValueError(f"Found duplicate location IDs: {duplicates}")
+
         # Store YAML data for instances to use
         _all_yamls = all_yamls
         _class_data_initialized = True
 
         print(f"Initialized {len(item_name_to_id)} items and {len(location_name_to_id)} locations")
+        print(f"All item IDs are unique: {len(unique_item_ids)} unique item IDs")
+        print(f"All location IDs are unique: {len(unique_location_ids)} unique location IDs")
         print(f"Custom data: {len(custom_items)} items, {len(custom_trap_items)} trap items, {len(custom_locations)} locations")
 
         return {
@@ -598,9 +684,23 @@ class FunkinWorld(World):
 
         print(f"Found {len(all_songs)} unique songs across all players: {list(all_songs)}")
 
+        # Track all used item IDs to prevent overlaps
+        used_item_ids = set()
+        
+        # Add existing item IDs to the tracking set
+        used_item_ids.add(cls.fnfUtil.SHOW_TICKET_CODE)
+        used_item_ids.update(cls.fnfUtil.filler_items.values())
+        used_item_ids.update(cls.fnfUtil.normal_items.values())
+        used_item_ids.update(cls.fnfUtil.one_time_items.values())
+        used_item_ids.update(cls.fnfUtil.trap_items.values())
+        
         # Create SongData for all songs
         for song in all_songs:
             cur_song_name = song
+            # Ensure song item ID doesn't conflict with existing items
+            while cls.item_id_index in used_item_ids:
+                cls.item_id_index += 1
+                
             item_id = cls.item_id_index
             # isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
             isModded = True
@@ -616,17 +716,33 @@ class FunkinWorld(World):
                 "", # Will be set per-instance
                 []  # Will be populated per-instance
             )
+            used_item_ids.add(item_id)
             cls.item_id_index += 1
 
         # Create all possible locations for all songs
+        # Use a much larger multiplier to prevent ID overlaps between songs
+        location_id_multiplier = 100000  # Ensures each song gets a large range of IDs
+        used_location_ids = set()  # Track all used location IDs to prevent duplicates
+        
         for song_name, song_data in cls.song_items.items():
-            # Song completion locations
+            # Calculate base location ID for this song to prevent overlaps
+            base_location_id = song_data.code * location_id_multiplier
+            
+            # Song completion locations (use first 1000 IDs in the song's range)
             for j in range(2):
-                cls.song_locations[f"{song_name}-{j}"] = (song_data.code + 1000 * j)
+                location_id = base_location_id + j
+                if location_id in used_location_ids:
+                    print(f"Warning: Duplicate location ID {location_id} detected for song completion {song_name}-{j}")
+                cls.song_locations[f"{song_name}-{j}"] = location_id
+                used_location_ids.add(location_id)
 
-            # Note check locations
+            # Note check locations (use next 1000 IDs in the song's range)
             for j in range(3):
-                cls.song_locations[f"Note {j}: {song_name}"] = (song_data.code + 1000 * j + 10000)
+                location_id = base_location_id + 1000 + j
+                if location_id in used_location_ids:
+                    print(f"Warning: Duplicate location ID {location_id} detected for note check Note {j}: {song_name}")
+                cls.song_locations[f"Note {j}: {song_name}"] = location_id
+                used_location_ids.add(location_id)
 
         # Build final name-to-ID mappings
         item_name_to_id = dict(ChainMap(
@@ -637,14 +753,48 @@ class FunkinWorld(World):
             cls.fnfUtil.trap_items,
             {name: data.code for name, data in cls.song_items.items()}
         ))
+        
+        # Validate that all item IDs are unique
+        all_item_ids = list(item_name_to_id.values())
+        unique_item_ids = set(all_item_ids)
+        if len(all_item_ids) != len(unique_item_ids):
+            print(f"ERROR: Found {len(all_item_ids) - len(unique_item_ids)} duplicate item IDs!")
+            # Find and report duplicates
+            seen_ids = set()
+            duplicates = set()
+            for item_name, item_id in item_name_to_id.items():
+                if item_id in seen_ids:
+                    duplicates.add(item_id)
+                    print(f"Duplicate item ID {item_id} used by item: {item_name}")
+                seen_ids.add(item_id)
+            if duplicates:
+                raise ValueError(f"Found duplicate item IDs: {duplicates}")
 
         location_name_to_id = dict(ChainMap(cls.song_locations))
+
+        # Validate that all location IDs are unique
+        all_location_ids = list(location_name_to_id.values())
+        unique_location_ids = set(all_location_ids)
+        if len(all_location_ids) != len(unique_location_ids):
+            print(f"ERROR: Found {len(all_location_ids) - len(unique_location_ids)} duplicate location IDs!")
+            # Find and report duplicates
+            seen_ids = set()
+            duplicates = set()
+            for loc_name, loc_id in location_name_to_id.items():
+                if loc_id in seen_ids:
+                    duplicates.add(loc_id)
+                    print(f"Duplicate ID {loc_id} used by location: {loc_name}")
+                seen_ids.add(loc_id)
+            if duplicates:
+                raise ValueError(f"Found duplicate location IDs: {duplicates}")
 
         # Store YAML data for instances to use
         cls._all_yamls = all_yamls
         cls._class_data_initialized = True
 
         print(f"Initialized {len(cls.item_name_to_id)} items and {len(cls.location_name_to_id)} locations")
+        print(f"All item IDs are unique: {len(unique_item_ids)} unique item IDs")
+        print(f"All location IDs are unique: {len(unique_location_ids)} unique location IDs")
 
         return {"items": item_name_to_id, "locations": location_name_to_id}
 
