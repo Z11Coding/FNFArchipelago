@@ -610,9 +610,13 @@ class FunkinWorld(World):
         # Setup class data if not already done
         instance = super(FunkinWorld, cls).__new__(cls)
 
-
+        player_name = ''
         # Find this player's YAML
-        player_name = multiworld.player_name[player]
+        try:
+            player_name = multiworld.player_name[player]
+        except:
+            player_name = cls.all_yamls[player].name
+
         player_yaml = None
 
         for yaml_data in cls.all_yamls:
@@ -779,10 +783,10 @@ class FunkinWorld(World):
         print(available_songs)
 
         songcheck: list[str] = []
-        if self.thisYaml.settings.starting_song:
+        if getattr(self.thisYaml.settings, 'starting_song', ''):
             songcheck.append(self.thisYaml.settings.starting_song)
 
-        if self.thisYaml.settings.victory_song:
+        if getattr(self.thisYaml.settings, 'victory_song', ''):
             songcheck.append(self.thisYaml.settings.victory_song)
 
         # Apply song limit
