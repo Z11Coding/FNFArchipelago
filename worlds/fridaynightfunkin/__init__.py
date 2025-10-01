@@ -1245,149 +1245,147 @@ class FunkinWorld(World):
     def create_items(self) -> None:
         song_keys_in_pool = self.get_songs_map(self.player_name).copy()
         if len(song_keys_in_pool) > 0:
-            item_count = self.get_ticket_count()
-
-            # I'll figure this out eventually
+            item_count = 0  # Track total items added
+            
             # First add all goal song tokens
-            for _ in range(0, item_count):
+            ticket_count = self.get_ticket_count()
+            for _ in range(ticket_count):
                 self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))
+                item_count += 1
 
             # Then add 1 copy of every song
-            item_count += len(song_keys_in_pool)
             for song in song_keys_in_pool:
+                if item_count >= self.location_count:
+                    break
                 self.multiworld.itempool.append(self.create_item(song))
+                item_count += 1
 
-            # Then add all traps, making sure we don't over fill
-            trap_count = min(self.location_count - item_count, self.get_trap_count())
+            # Add one-time items (mandatory items that cannot be turned off)
+            remaining_slots = self.location_count - item_count
+            one_time_items_to_add = min(remaining_slots, len(self.fnfUtil.one_time_items))
+            if one_time_items_to_add > 0:
+                one_time_items_list = list(self.fnfUtil.one_time_items.keys())
+                for i in range(one_time_items_to_add):
+                    self.multiworld.itempool.append(self.create_item(one_time_items_list[i]))
+                    item_count += 1
+
+            # Add traps (making sure we don't overfill)
+            remaining_slots = self.location_count - item_count
+            trap_count = min(remaining_slots, self.get_trap_count())
             trap_list = self.get_available_traps()
             if len(trap_list) > 0 and trap_count > 0:
-                for _ in range(0, trap_count):
+                for _ in range(trap_count):
                     index = self.random.randrange(0, len(trap_list))
                     self.multiworld.itempool.append(self.create_item(trap_list[index]))
+                    item_count += 1
 
-                item_count += trap_count
-
-            #Next, add all of their items
-            items_left = self.location_count - item_count
-            item_count = min(items_left, self.get_item_count())
+            # Add useful items
+            remaining_slots = self.location_count - item_count
+            useful_item_count = min(remaining_slots, self.get_item_count())
             item_list = self.get_available_items()
-            if len(item_list) > 0 and item_count > 0:
-                for _ in range(0, item_count):
+            if len(item_list) > 0 and useful_item_count > 0:
+                for _ in range(useful_item_count):
                     index = self.random.randrange(0, len(item_list))
                     self.multiworld.itempool.append(self.create_item(item_list[index]))
+                    item_count += 1
 
-            # Then, add the One Time Items (Pocket lens) (THESE ITEMS ARE MANDATORY AND CANNOT BE TURNED OFF!)
-            items_left = self.location_count - item_count
-            item_count = min(items_left, self.fnfUtil.one_time_items.__len__())
-            item_list = self.fnfUtil.one_time_items
-            if len(item_list) > 0 and item_count > 0:
-                for item in item_list:
-                    self.multiworld.itempool.append(self.create_item(item))
-
-            # Next, add any items/filler items that are needed by traps
-            items_left = self.location_count - item_count
-            item_count = min(items_left, self.get_filler_trap_count())
+            # Add filler trap items
+            remaining_slots = self.location_count - item_count
+            filler_trap_count = min(remaining_slots, self.get_filler_trap_count())
             filler_list = self.get_available_filler()
-            if len(item_list) > 0 and item_count > 0:
-                for _ in range(0, item_count):
+            if len(filler_list) > 0 and filler_trap_count > 0:
+                for _ in range(filler_trap_count):
                     index = self.random.randrange(0, len(filler_list))
                     self.multiworld.itempool.append(self.create_item(filler_list[index]))
+                    item_count += 1
 
-            # Add custom items to the pool
-            items_left = self.location_count - item_count
-
-            if self.check_trap_weight('UNO Challenge') > 0:
-                uno_filler_count = max(1, floor(self.location_count * 0.10))  # 10% of total locations
+            # Add UNO color fillers if UNO Challenge trap is enabled
+            remaining_slots = self.location_count - item_count
+            if self.check_trap_weight('UNO Challenge') > 0 and remaining_slots > 0:
+                # Calculate UNO filler count as 10% of total locations, but cap it to remaining slots
+                uno_filler_count = min(remaining_slots, max(1, floor(self.location_count * 0.10)))
+                uno_colors_added = 0
                 for _ in range(uno_filler_count):
-                    # Get a random UNO color, unless none are left.
-                    if self.available_uno_colors:
+                    if self.available_uno_colors and uno_colors_added < uno_filler_count:
                         color = self.random.choice(self.available_uno_colors)
                         self.available_uno_colors.remove(color)
-                    else:
-                        color = None
-                    from .Items import FunkinUNOMinigameItem
-                    if color:
+                        from .Items import FunkinUNOMinigameItem
                         self.multiworld.itempool.append(FunkinUNOMinigameItem(f'UNO Color Filler', 0, self.player, color))
                         self.used_uno_colors.append(color)
+                        item_count += 1
+                        uno_colors_added += 1
 
-            # Filter custom items for this player by checking location ownership
-            player_custom_items = []
-            for item_name in self.custom_items_list:
-                # Check if this player has any custom locations that might need this item
-                player_has_custom_locations = any(
-                    loc_data.playerLocationBelongsTo == self.player_name or
-                    self.player_name in loc_data.playerList
-                    for loc_data in self.custom_location_items.values()
-                )
-
-                if player_has_custom_locations:
-                    player_custom_items.append(item_name)
-
-            custom_item_count = min(items_left, len(player_custom_items))
-            if custom_item_count > 0:
-                print(f"Adding {custom_item_count} custom items to pool for {self.player_name}")
-                for i in range(custom_item_count):
-                    custom_item_name = player_custom_items[i % len(player_custom_items)]
-                    self.multiworld.itempool.append(self.create_item(custom_item_name))
-                    item_count += 1
-                    items_left -= 1
-
-            # Add custom trap items to the pool (only if traps are enabled)
-            if self.options.trapAmount.value > 0:
-                # Filter custom trap items for this player
-                player_custom_traps = []
-                for trap_name in self.custom_trap_items_list:
-                    # Check if this player has any custom locations that might need this trap
+            # Add custom items
+            remaining_slots = self.location_count - item_count
+            if remaining_slots > 0:
+                # Filter custom items for this player
+                player_custom_items = []
+                for item_name in self.custom_items_list:
                     player_has_custom_locations = any(
                         loc_data.playerLocationBelongsTo == self.player_name or
                         self.player_name in loc_data.playerList
                         for loc_data in self.custom_location_items.values()
                     )
+                    if player_has_custom_locations:
+                        player_custom_items.append(item_name)
 
+                custom_item_count = min(remaining_slots, len(player_custom_items))
+                if custom_item_count > 0:
+                    print(f"Adding {custom_item_count} custom items to pool for {self.player_name}")
+                    for i in range(custom_item_count):
+                        custom_item_name = player_custom_items[i % len(player_custom_items)]
+                        self.multiworld.itempool.append(self.create_item(custom_item_name))
+                        item_count += 1
+
+            # Add custom trap items (only if traps are enabled)
+            remaining_slots = self.location_count - item_count
+            if self.options.trapAmount.value > 0 and remaining_slots > 0:
+                # Filter custom trap items for this player
+                player_custom_traps = []
+                for trap_name in self.custom_trap_items_list:
+                    player_has_custom_locations = any(
+                        loc_data.playerLocationBelongsTo == self.player_name or
+                        self.player_name in loc_data.playerList
+                        for loc_data in self.custom_location_items.values()
+                    )
                     if player_has_custom_locations:
                         player_custom_traps.append(trap_name)
 
-                custom_trap_count = min(items_left, len(player_custom_traps))
+                custom_trap_count = min(remaining_slots, len(player_custom_traps))
                 if custom_trap_count > 0:
                     print(f"Adding {custom_trap_count} custom trap items to pool for {self.player_name}")
                     for i in range(custom_trap_count):
                         custom_trap_name = player_custom_traps[i % len(player_custom_traps)]
                         self.multiworld.itempool.append(self.create_item(custom_trap_name))
                         item_count += 1
-                        items_left -= 1
 
+            # Fill remaining slots with song duplicates and filler
+            remaining_slots = self.location_count - item_count
+            if remaining_slots > 0:
+                # Fill 20% of remaining slots with useful song duplicates
+                dupe_count = min(remaining_slots, floor(remaining_slots * 0.20))
+                
+                # Add song duplicates if we have songs to duplicate
+                if len(song_keys_in_pool) > 0 and dupe_count > 0:
+                    for i in range(dupe_count):
+                        song_index = i % len(song_keys_in_pool)
+                        item = self.create_item(song_keys_in_pool[song_index])
+                        item.classification = ItemClassification.useful
+                        self.multiworld.itempool.append(item)
+                        item_count += 1
 
-            # At this point, if a player is using traps, it's possible that they have filled all locations
-            if items_left <= 0:
-                return
+                # Fill all remaining slots with filler items
+                remaining_slots = self.location_count - item_count
+                for _ in range(remaining_slots):
+                    self.multiworld.itempool.append(self.create_item(self.get_filler_item_name()))
+                    item_count += 1
 
-            # Fill given percentage of remaining slots as Useful/non-progression dupes.
-            dupe_count = floor(items_left * (20 / 100))
-            items_left -= dupe_count
-
-            # This is for the extraordinary case of needing to fill a lot of items.
-            while dupe_count > len(song_keys_in_pool):
-                for key in song_keys_in_pool:
-                    item = self.create_item(key)
-                    item.classification = ItemClassification.useful
-                    self.multiworld.itempool.append(item)
-
-                dupe_count -= len(song_keys_in_pool)
-                continue
-
-            self.random.shuffle(song_keys_in_pool)
-            for i in range(0, dupe_count):
-                item = self.create_item(song_keys_in_pool[i])
-                item.classification = ItemClassification.useful
-                self.multiworld.itempool.append(item)
-
-            # subtracting this by 10 fixed the items larger than locations problem
-            # istg imma explode
-            filler_count = items_left
-            items_left -= filler_count
-
-            for _ in range(0, filler_count):
-                self.multiworld.itempool.append(self.create_item(self.get_filler_item_name()))
+            # Validate that we have exactly the right number of items
+            if item_count != self.location_count:
+                print(f"ERROR: Item count ({item_count}) doesn't match location count ({self.location_count}) for player {self.player_name}")
+                raise ValueError(f"Item/location count mismatch: {item_count} items vs {self.location_count} locations")
+            
+            print(f"Successfully created {item_count} items for {self.location_count} locations for player {self.player_name}")
 
     def set_rules(self) -> None:
         self.multiworld.completion_condition[self.player] = \
