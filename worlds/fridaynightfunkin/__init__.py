@@ -708,8 +708,8 @@ class FunkinWorld(World):
         # Basic Settings
         self.mods_enabled = self.options.mods_enabled.value
         self.starting_song = self.options.starting_song.value
-        self.unlock_type = self.options.unlock_type.value[self.options.unlock_type.value.__len__()-1]
-        self.unlock_method = self.options.unlock_method.value[self.options.unlock_method.value.__len__()-1]
+        self.unlock_type = self.options.unlock_type.value.copy().pop()
+        self.unlock_method = self.options.unlock_method.value.copy().pop()
 
         # Trap Settings
         self.trapAmount = self.options.trapAmount.value
