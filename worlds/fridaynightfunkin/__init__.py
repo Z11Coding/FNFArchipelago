@@ -706,6 +706,7 @@ class FunkinWorld(World):
         self.trap_items_weights['Song Switch Trap'] = self.options.songSwitchWeight.value
         self.trap_items_weights['Opponent Mode Trap'] = self.options.opponentWeight.value
         self.trap_items_weights['Both Play Trap'] = self.options.bothWeight.value
+        self.trap_items_weights['Ultimate Confusion Trap'] = self.options.ultconfusion.value
         self.trap_items_weights['Fake Transition'] = self.options.fakeTransWeight.value
         self.trap_items_weights['Chart Modifier Trap'] = self.options.chart_modifier_change_chance.value
         self.trap_items_weights['Resistance Trap'] = self.options.resistanceWeight.value

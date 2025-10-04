@@ -40,6 +40,7 @@ class FunkinUtils:
         "Song Switch Trap": STARTING_CODE + 10,
         "Opponent Mode Trap": STARTING_CODE + 11,
         "Both Play Trap": STARTING_CODE + 12,
+        "Ultimate Confusion Trap": STARTING_CODE + 13,
     }
 
     normal_items: Dict[str, int] = {

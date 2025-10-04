@@ -174,6 +174,12 @@ class BothWeight(Range):
     range_end = 10
     default = 5
 
+class UltimateConfusionWeight(Range):
+    """The chances of never figuring out what song you just selected"""
+    display_name = "Ultimate Confusion Trap Weight"
+    range_start = 0
+    range_end = 10
+    default = 5
 
 class TicketPercentage(Range):
     """
@@ -247,7 +253,8 @@ fnf_option_groups = [
         chartModWeight,
         ResistWeight,
         UnoWeight,
-        PongWeight
+        PongWeight,
+        UltimateConfusionWeight
     ]),
     OptionGroup("Items", [
         shieldWeight,
@@ -278,6 +285,7 @@ class FunkinOptions(PerGameCommonOptions):
     resistanceWeight: ResistWeight
     unoWeight: UnoWeight
     pongWeight: PongWeight
+    ultconfusion: UltimateConfusionWeight
     fakeTransWeight: fakeTransWeight
     shieldWeight: shieldWeight
     MHPWeight: MHPWeight
