@@ -318,13 +318,27 @@ class FunkinWorld(World):
             player_name = getattr(yaml_data, 'name', 'Unknown Player')
 
             if not song_list or len(song_list) == 0:
-                print(f"\nWarning: Player '{player_name}' has no song list or an empty song list in their YAML file.")
-                print("Options:")
-                print("1. Continue generation with base game songs")
-                print("2. Skip this player (will cancel generation)")
+                # Check if this is an automated generation (Universal Tracker)
+                is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+                
+                if is_automated:
+                    # Automatically use base game songs for Universal Tracker
+                    print(f"Auto-fixing: Player '{player_name}' has no song list, automatically adding base game songs (Universal Tracker mode)")
+                    choice = "1"  # Automatically choose option 1
+                else:
+                    print(f"\nWarning: Player '{player_name}' has no song list or an empty song list in their YAML file.")
+                    print("Options:")
+                    print("1. Continue generation with base game songs")
+                    print("2. Skip this player (will cancel generation)")
+                    choice = None
 
                 while True:
-                    choice = input(f"What would you like to do for player '{player_name}'? (1/2): ").strip()
+                    if is_automated:
+                        choice = "1"  # Auto-select for automated generation
+                        break
+                    else:
+                        choice = input(f"What would you like to do for player '{player_name}'? (1/2): ").strip()
+                    
                     if choice == "1":
                         print(f"Continuing generation for '{player_name}' with base game songs.")
                         # Add base game songs to the YAML's song list
@@ -336,7 +350,7 @@ class FunkinWorld(World):
                         else:
                             # Create settings and songList if they don't exist
                             if not hasattr(yaml_data, 'settings'):
-                                yaml_data.settings = type('Settings', (), {})()
+                                yaml_data.settings = type('Settings', (), {})()  
                             yaml_data.settings.songList = FNFBaseList.omegaList.copy()
 
                         # Now get the updated song list
@@ -346,7 +360,7 @@ class FunkinWorld(World):
                         raise ValueError(f"Player '{player_name}' has an empty or invalid song list in their YAML file. Generation cannot continue.")
                     else:
                         print("Invalid choice. Please enter 1 or 2.")
-
+                        
             if song_list:
                 for song in song_list:
                     # Clean the song name
@@ -693,8 +707,8 @@ class FunkinWorld(World):
         # Basic Settings
         self.mods_enabled = self.options.mods_enabled.value
         self.starting_song = self.options.starting_song.value
-        self.unlock_type = self.options.unlock_type.value.pop()
-        self.unlock_method = self.options.unlock_method.value.pop()
+        self.unlock_type = self.options.unlock_type.value[self.options.unlock_type.value.__len__()-1]
+        self.unlock_method = self.options.unlock_method.value[self.options.unlock_method.value.__len__()-1]
 
         # Trap Settings
         self.trapAmount = self.options.trapAmount.value
@@ -898,21 +912,39 @@ class FunkinWorld(World):
         
         # Check if victory song from YAML is valid
         if victory_song and victory_song not in available_song_keys:
-            print(f"\nWarning: Victory song '{victory_song}' specified in YAML for player '{self.player_name}' is not available in their song list.")
-            print("Options:")
-            print("1. Continue generation with a random victory song")
-            print("2. Cancel generation")
+            # Check if this is automated generation (Universal Tracker)
+            is_automated = getattr(self.multiworld, 'gen_is_fake', False)
             
-            while True:
-                choice = input(f"What would you like to do for player '{self.player_name}'? (1/2): ").strip()
-                if choice == "1":
-                    print(f"Continuing generation for '{self.player_name}' with a random victory song.")
-                    victory_song = None  # Will be set randomly below
-                    break
-                elif choice == "2":
-                    raise ValueError(f"Player '{self.player_name}' has an invalid victory song '{victory_song}' in their YAML file. Generation cancelled.")
-                else:
-                    print("Invalid choice. Please enter 1 or 2.")
+            if is_automated:
+                # Automatically use random victory song for Universal Tracker
+                print(f"Auto-fixing: Victory song '{victory_song}' not available for player '{self.player_name}', using random victory song (Universal Tracker mode)")
+                victory_song = None  # Will be set randomly below
+            else:
+                print(f"\nWarning: Victory song '{victory_song}' specified in YAML for player '{self.player_name}' is not available in their song list.")
+                print("Options:")
+                print("1. Continue generation with a random victory song")
+                print("2. Cancel generation")
+                
+                while True:
+                    # Check if this is automated generation (Universal Tracker)
+                    is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+                    
+                    if is_automated:
+                        choice = "1"  # Auto-select for automated generation
+                        print(f"Auto-continuing generation for '{self.player_name}' with a random victory song (Universal Tracker mode).")
+                        victory_song = None  # Will be set randomly below
+                        break
+                    else:
+                        choice = input(f"What would you like to do for player '{self.player_name}'? (1/2): ").strip()
+                    
+                    if choice == "1":
+                        print(f"Continuing generation for '{self.player_name}' with a random victory song.")
+                        victory_song = None  # Will be set randomly below
+                        break
+                    elif choice == "2":
+                        raise ValueError(f"Player '{self.player_name}' has an invalid victory song '{victory_song}' in their YAML file. Generation cancelled.")
+                    else:
+                        print("Invalid choice. Please enter 1 or 2.")
         
         if victory_song and victory_song in available_song_keys:
             chosen_song_index = available_song_keys.index(victory_song)
@@ -1053,45 +1085,81 @@ class FunkinWorld(World):
             starting_song not in available_song_keys and 
             starting_song != self.victory_song_name):
             
-            print(f"\nWarning: Starting song '{starting_song}' specified in YAML for player '{self.player_name}' is not available in their song list.")
-            print("Options:")
-            print("1. Continue generation with a random starting song")
-            print("2. Cancel generation")
+            # Check if this is automated generation (Universal Tracker)
+            is_automated = getattr(self.multiworld, 'gen_is_fake', False)
             
-            while True:
-                choice = input(f"What would you like to do for player '{self.player_name}'? (1/2): ").strip()
-                if choice == "1":
-                    print(f"Continuing generation for '{self.player_name}' with a random starting song.")
-                    starting_song = None  # Will be set randomly below
-                    break
-                elif choice == "2":
-                    raise ValueError(f"Player '{self.player_name}' has an invalid starting song '{starting_song}' in their YAML file. Generation cancelled.")
-                else:
-                    print("Invalid choice. Please enter 1 or 2.")
+            if is_automated:
+                # Automatically use random starting song for Universal Tracker
+                print(f"Auto-fixing: Starting song '{starting_song}' not available for player '{self.player_name}', using random starting song (Universal Tracker mode)")
+                starting_song = None  # Will be set randomly below
+            else:
+                print(f"\nWarning: Starting song '{starting_song}' specified in YAML for player '{self.player_name}' is not available in their song list.")
+                print("Options:")
+                print("1. Continue generation with a random starting song")
+                print("2. Cancel generation")
+                
+                while True:
+                    # Check if this is automated generation (Universal Tracker)
+                    is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+                    
+                    if is_automated:
+                        choice = "1"  # Auto-select for automated generation
+                        print(f"Auto-continuing generation for '{self.player_name}' with a random starting song (Universal Tracker mode).")
+                        starting_song = None  # Will be set randomly below
+                        break
+                    else:
+                        choice = input(f"What would you like to do for player '{self.player_name}'? (1/2): ").strip()
+                    
+                    if choice == "1":
+                        print(f"Continuing generation for '{self.player_name}' with a random starting song.")
+                        starting_song = None  # Will be set randomly below
+                        break
+                    elif choice == "2":
+                        raise ValueError(f"Player '{self.player_name}' has an invalid starting song '{starting_song}' in their YAML file. Generation cancelled.")
+                    else:
+                        print("Invalid choice. Please enter 1 or 2.")
 
         # Check if starting song and victory song are the same
         if starting_song and starting_song == self.victory_song_name:
-            print(f"\nWarning: Player '{self.player_name}' has the same song '{starting_song}' set as both starting and victory song.")
-            print("This will instantly BK the game and prevent progression at the beginning.")
-            print("Options:")
-            print("1. Continue generation anyway (game will be instantly won)")
-            print("2. Use a random starting song instead")
-            print("3. Cancel generation")
+            # Check if this is automated generation (Universal Tracker)
+            is_automated = getattr(self.multiworld, 'gen_is_fake', False)
             
-            while True:
-                choice = input(f"What would you like to do for player '{self.player_name}'? (1/2/3): ").strip()
-                if choice == "1":
-                    print(f"Continuing generation for '{self.player_name}' with same starting and victory song (instant win).")
-                    # Keep starting_song as victory_song
-                    break
-                elif choice == "2":
-                    print(f"Using a random starting song for '{self.player_name}' instead.")
-                    starting_song = None  # Will be set randomly below
-                    break
-                elif choice == "3":
-                    raise ValueError(f"Player '{self.player_name}' has the same song for starting and victory. Generation cancelled.")
-                else:
-                    print("Invalid choice. Please enter 1, 2, or 3.")
+            if is_automated:
+                # Automatically use random starting song for Universal Tracker to avoid instant win
+                print(f"Auto-fixing: Player '{self.player_name}' has same starting and victory song, using random starting song (Universal Tracker mode)")
+                starting_song = None  # Will be set randomly below
+            else:
+                print(f"\nWarning: Player '{self.player_name}' has the same song '{starting_song}' set as both starting and victory song.")
+                print("This will instantly BK the game and prevent progression at the beginning.")
+                print("Options:")
+                print("1. Continue generation anyway (game will be instantly won)")
+                print("2. Use a random starting song instead")
+                print("3. Cancel generation")
+                
+                while True:
+                    # Check if this is automated generation (Universal Tracker)
+                    is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+                    
+                    if is_automated:
+                        choice = "2"  # Auto-select option 2 to prevent instant win
+                        print(f"Auto-selecting random starting song for '{self.player_name}' to prevent instant win (Universal Tracker mode).")
+                        starting_song = None  # Will be set randomly below
+                        break
+                    else:
+                        choice = input(f"What would you like to do for player '{self.player_name}'? (1/2/3): ").strip()
+                    
+                    if choice == "1":
+                        print(f"Continuing generation for '{self.player_name}' with same starting and victory song (instant win).")
+                        # Keep starting_song as victory_song
+                        break
+                    elif choice == "2":
+                        print(f"Using a random starting song for '{self.player_name}' instead.")
+                        starting_song = None  # Will be set randomly below
+                        break
+                    elif choice == "3":
+                        raise ValueError(f"Player '{self.player_name}' has the same song for starting and victory. Generation cancelled.")
+                    else:
+                        print("Invalid choice. Please enter 1, 2, or 3.")
 
         if starting_song and starting_song == self.victory_song_name:
             # If starting song matches victory song, use the victory song directly
@@ -1463,34 +1531,42 @@ class FunkinWorld(World):
             if (song_data.playerSongBelongsTo == player_name or
                 player_name in song_data.playerList or
                 not song_data.modded):
+                    # Helper to extract mod name from song name (last parentheses)
+                    def extract_mod_from_song(song_name: str) -> str:
+                        # Match the last pair of parentheses at the end of the string
+                        import re
+                        match = re.search(r'\(([^()]*)\)\s*$', song_name)
+                        if match:
+                            return match.group(1).strip()
+                        return ""
 
-                # Song completion locations
-                if self.unlock_method in ["Song Completion", "Both"]:
-                    for j in range(2):
-                        loc_name = f"{song_name}-{j}"
-                        if loc_name in self.song_locations:
-                            location_details[loc_name] = {
-                                "id": self.song_locations[loc_name],
-                                "type": "song_completion",
-                                "originSong": song_name,
-                                "originMod": "",
-                                "playerOwner": song_data.playerSongBelongsTo,
-                                "sharedWith": song_data.playerList
-                            }
+                    # Song completion locations
+                    if self.unlock_method in ["Song Completion", "Both"]:
+                        for j in range(2):
+                            loc_name = f"{song_name}-{j}"
+                            if loc_name in self.song_locations:
+                                location_details[loc_name] = {
+                                    "id": self.song_locations[loc_name],
+                                    "type": "song_completion",
+                                    "originSong": song_name,
+                                    "originMod": extract_mod_from_song(song_name),
+                                    "playerOwner": song_data.playerSongBelongsTo,
+                                    "sharedWith": song_data.playerList
+                                }
 
-                # Note check locations
-                if self.unlock_method in ["Note Checks", "Both"]:
-                    for j in range(3):
-                        loc_name = f"Note {j}: {song_name}"
-                        if loc_name in self.song_locations:
-                            location_details[loc_name] = {
-                                "id": self.song_locations[loc_name],
-                                "type": "note_check",
-                                "originSong": song_name,
-                                "originMod": "",
-                                "playerOwner": song_data.playerSongBelongsTo,
-                                "sharedWith": song_data.playerList
-                            }
+                    # Note check locations
+                    if self.unlock_method in ["Note Checks", "Both"]:
+                        for j in range(3):
+                            loc_name = f"Note {j}: {song_name}"
+                            if loc_name in self.song_locations:
+                                location_details[loc_name] = {
+                                    "id": self.song_locations[loc_name],
+                                    "type": "note_check",
+                                    "originSong": song_name,
+                                    "originMod": extract_mod_from_song(song_name),
+                                    "playerOwner": song_data.playerSongBelongsTo,
+                                    "sharedWith": song_data.playerList
+                                }
 
         # Add custom locations
         for location_name, location_data in self.custom_location_items.items():
