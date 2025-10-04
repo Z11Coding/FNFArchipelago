@@ -52,7 +52,7 @@ class trapAmount(Range):
     """The amount of traps that will be added to the game"""
     display_name = "Trap Weight"
     range_start = 0
-    range_end = 60
+    range_end = 100
     default = 10
 
 

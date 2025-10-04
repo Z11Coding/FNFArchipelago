@@ -44,18 +44,18 @@ class FunkinUtils:
     }
 
     normal_items: Dict[str, int] = {
-        "Shield": STARTING_CODE + 13,
-        "Max HP Up": STARTING_CODE + 14,
-        "Max HP Down": STARTING_CODE + 15,
-        "Extra Life": STARTING_CODE + 16,
+        "Shield": STARTING_CODE + 14,
+        "Max HP Up": STARTING_CODE + 15,
+        "Max HP Down": STARTING_CODE + 16,
+        "Extra Life": STARTING_CODE + 17,
     }
 
     one_time_items: Dict[str, int] = {
-        "Pocket Lens": STARTING_CODE + 17,
+        "Pocket Lens": STARTING_CODE + 18,
     }
 
     filler_items: Dict[str, int] = {
-        "Nothing": STARTING_CODE + 18,
+        "Nothing": STARTING_CODE + 19,
     }
 
     filler_item_weights: Dict[str, int] = {
@@ -63,8 +63,8 @@ class FunkinUtils:
     }
 
     trap_filler_items: Dict[str, int] = {
-        "UNO Color Filler": STARTING_CODE + 19,
-        "PONG Dash Mechanic": STARTING_CODE + 20,
+        "UNO Color Filler": STARTING_CODE + 20,
+        "PONG Dash Mechanic": STARTING_CODE + 21,
     }
 
     trap_filler_item_weights: Dict[str, int] = {
