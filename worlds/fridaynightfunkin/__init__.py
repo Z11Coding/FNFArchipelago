@@ -522,6 +522,7 @@ class FunkinWorld(World):
             fnfUtil.normal_items,
             fnfUtil.one_time_items,
             fnfUtil.trap_items,
+            fnfUtil.trap_filler_items,
             {name: data.code for name, data in song_items.items()},
             custom_item_ids,  # Add custom items
             custom_trap_item_ids  # Add custom trap items
@@ -731,7 +732,7 @@ class FunkinWorld(World):
         self.items_in_general['Extra Life'] = self.options.extralifeWeight.value
 
         self.filter_items_weights['Nothing'] = self.fnfUtil.filler_item_weights['Nothing']
-        self.filter_items_weights['UNO Color Filler'] = self.fnfUtil.trap_filler_item_weights['UNO Color Filler']
+        self.filter_items_weights['PONG Dash Mechanic'] = self.fnfUtil.trap_filler_item_weights['PONG Dash Mechanic']
 
         # Other Settings
         self.ticket_percentage = self.options.ticket_percentage.value
@@ -1039,7 +1040,12 @@ class FunkinWorld(World):
     def get_available_filler(self) -> List[str]:
         full_filler_list = list(self.fnfUtil.filler_items.keys())
 
-        return [filler for filler in full_filler_list if self.options.trapAmount.value > 0 and self.check_filler_trap_weight(filler) > 0 or filler == "Nothing"]
+        return [filler for filler in full_filler_list]
+
+    def get_available_filler_traps(self) -> List[str]:
+        full_filler_trap_list = list(self.fnfUtil.trap_filler_item_weights.keys())
+
+        return [filler for filler in full_filler_trap_list if self.options.trapAmount.value > 0 and self.check_filler_trap_weight(filler) > 0]
 
     def get_available_items(self) -> List[str]:
         full_item_list = self.fnfUtil.normal_items.keys()
@@ -1334,6 +1340,23 @@ class FunkinWorld(World):
                     self.multiworld.itempool.append(self.create_item(one_time_items_list[i]))
                     item_count += 1
 
+            # Add UNO color fillers if UNO Challenge trap is enabled
+            remaining_slots = self.location_count - item_count
+            if self.check_trap_weight('UNO Challenge') > 0 and remaining_slots > 0:
+                # Calculate UNO filler count as 10% of total locations, but cap it to remaining slots
+                uno_filler_count = min(remaining_slots, max(1, floor(self.location_count * 0.10)))
+                uno_colors_added = 0
+                for _ in range(uno_filler_count):
+                    if self.available_uno_colors and uno_colors_added < uno_filler_count:
+                        color = self.random.choice(self.available_uno_colors)
+                        self.available_uno_colors.remove(color)
+                        from .Items import FunkinUNOMinigameItem
+                        self.multiworld.itempool.append(
+                            FunkinUNOMinigameItem(f'UNO Color Filler', self.fnfUtil.STARTING_CODE + 19, self.player, color))
+                        self.used_uno_colors.append(color)
+                        item_count += 1
+                        uno_colors_added += 1
+
             # Add traps (making sure we don't overfill)
             remaining_slots = self.location_count - item_count
             trap_count = min(remaining_slots, self.get_trap_count())
@@ -1357,28 +1380,12 @@ class FunkinWorld(World):
             # Add filler trap items
             remaining_slots = self.location_count - item_count
             filler_trap_count = min(remaining_slots, self.get_filler_trap_count())
-            filler_list = self.get_available_filler()
+            filler_list = self.get_available_filler_traps()
             if len(filler_list) > 0 and filler_trap_count > 0:
-                for _ in range(filler_trap_count):
-                    index = self.random.randrange(0, len(filler_list))
-                    self.multiworld.itempool.append(self.create_item(filler_list[index]))
-                    item_count += 1
-
-            # Add UNO color fillers if UNO Challenge trap is enabled
-            remaining_slots = self.location_count - item_count
-            if self.check_trap_weight('UNO Challenge') > 0 and remaining_slots > 0:
-                # Calculate UNO filler count as 10% of total locations, but cap it to remaining slots
-                uno_filler_count = min(remaining_slots, max(1, floor(self.location_count * 0.10)))
-                uno_colors_added = 0
-                for _ in range(uno_filler_count):
-                    if self.available_uno_colors and uno_colors_added < uno_filler_count:
-                        color = self.random.choice(self.available_uno_colors)
-                        self.available_uno_colors.remove(color)
-                        from .Items import FunkinUNOMinigameItem
-                        self.multiworld.itempool.append(FunkinUNOMinigameItem(f'UNO Color Filler', 0, self.player, color))
-                        self.used_uno_colors.append(color)
+                for item in filler_list:
+                    for trapitem in range(self.filter_items_weights[item]):
+                        self.multiworld.itempool.append(self.create_item(filler_list[trapitem]))
                         item_count += 1
-                        uno_colors_added += 1
 
             # Add custom items
             remaining_slots = self.location_count - item_count
@@ -1464,7 +1471,10 @@ class FunkinWorld(World):
         return self.items_in_general['Shield'] + self.items_in_general['Max HP Up']
 
     def get_filler_trap_count(self) -> int:
-        return self.filter_items_weights['UNO Color Filler']
+        total = 0
+        for item in self.filter_items_weights.keys():
+            total += 1
+        return total
 
     def get_ticket_count(self) -> int:
         multiplier = self.options.ticket_percentage.value / 100.0
