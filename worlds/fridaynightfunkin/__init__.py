@@ -815,6 +815,16 @@ class FunkinWorld(World):
             if limited_song_list and song not in limited_song_list:
                 limited_song_list.append(song)
 
+        if len(limited_song_list) < song_limit:
+            # Fill up to song_limit with random songs not already in the list
+            missing_count = song_limit - len(limited_song_list)
+            candidates = [s for s in available_songs if s not in limited_song_list]
+            self.random.shuffle(candidates)
+            for song in candidates:
+                if len(limited_song_list) >= song_limit:
+                    break
+            limited_song_list.append(song)
+
         # Update the song ownership in the existing SongData objects
         for song_name in limited_song_list:
             if song_name in self.song_items:
