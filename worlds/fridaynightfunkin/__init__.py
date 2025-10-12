@@ -141,6 +141,7 @@ class FunkinWorld(World):
         custom_location_data = {}
         custom_song_additions = []  # Track songs added by scripts
         custom_song_exclusions = []  # Track songs excluded by scripts
+        custom_song_requirements = []  # Track song requirements from scripts
         vip_exclusive_song_additions:dict[str, list[str]] = {}
 
         print("Loading custom AP logic files...")
@@ -204,8 +205,10 @@ class FunkinWorld(World):
                         # Track song additions and exclusions from scripts
                         player_song_additions = custom_data.get('song_additions', [])
                         player_song_exclusions = custom_data.get('song_exclusions', [])
+                        player_song_requirements = custom_data.get('song_requirements', [])
                         custom_song_additions.extend(player_song_additions)
                         custom_song_exclusions.extend(player_song_exclusions)
+                        custom_song_requirements.extend(player_song_requirements)
                         vip_exclusive_song_additions[player_name] = player_song_additions
 
                         for yaml in all_yamls:
@@ -278,8 +281,10 @@ class FunkinWorld(World):
                             # Track song additions and exclusions from scripts
                             player_song_additions = custom_data.get('song_additions', [])
                             player_song_exclusions = custom_data.get('song_exclusions', [])
+                            player_song_requirements = custom_data.get('song_requirements', [])
                             custom_song_additions.extend(player_song_additions)
                             custom_song_exclusions.extend(player_song_exclusions)
+                            custom_song_requirements.extend(player_song_requirements)
                             vip_exclusive_song_additions[player_name] = player_song_additions
 
                             for yaml in all_yamls:
@@ -320,7 +325,7 @@ class FunkinWorld(World):
             if not song_list or len(song_list) == 0:
                 # Check if this is an automated generation (Universal Tracker)
                 is_automated = getattr(self.multiworld, 'gen_is_fake', False)
-                
+
                 if is_automated:
                     # Automatically use base game songs for Universal Tracker
                     print(f"Auto-fixing: Player '{player_name}' has no song list, automatically adding base game songs (Universal Tracker mode)")
@@ -338,7 +343,7 @@ class FunkinWorld(World):
                         break
                     else:
                         choice = input(f"What would you like to do for player '{player_name}'? (1/2): ").strip()
-                    
+
                     if choice == "1":
                         print(f"Continuing generation for '{player_name}' with base game songs.")
                         # Add base game songs to the YAML's song list
@@ -350,7 +355,7 @@ class FunkinWorld(World):
                         else:
                             # Create settings and songList if they don't exist
                             if not hasattr(yaml_data, 'settings'):
-                                yaml_data.settings = type('Settings', (), {})()  
+                                yaml_data.settings = type('Settings', (), {})()
                             yaml_data.settings.songList = FNFBaseList.omegaList.copy()
 
                         # Now get the updated song list
@@ -360,7 +365,7 @@ class FunkinWorld(World):
                         raise ValueError(f"Player '{player_name}' has an empty or invalid song list in their YAML file. Generation cannot continue.")
                     else:
                         print("Invalid choice. Please enter 1 or 2.")
-                        
+
             if song_list:
                 for song in song_list:
                     # Clean the song name
@@ -376,21 +381,21 @@ class FunkinWorld(World):
 
         # Track all used item IDs to prevent overlaps
         used_item_ids = set()
-        
+
         # Add existing item IDs to the tracking set
         used_item_ids.add(fnfUtil.SHOW_TICKET_CODE)
         used_item_ids.update(fnfUtil.filler_items.values())
         used_item_ids.update(fnfUtil.normal_items.values())
         used_item_ids.update(fnfUtil.one_time_items.values())
         used_item_ids.update(fnfUtil.trap_items.values())
-        
+
         # Create SongData for all songs
         for song in all_songs:
             cur_song_name = song
             # Ensure song item ID doesn't conflict with existing items
             while item_id_index in used_item_ids:
                 item_id_index += 1
-                
+
             item_id = item_id_index
             # isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
             isModded = True
@@ -413,7 +418,7 @@ class FunkinWorld(World):
         # Use a reasonable starting point and sequential allocation to prevent overlaps
         used_location_ids = set()  # Track all used location IDs to prevent duplicates
         location_id_counter = item_id_index + 1  # Start location IDs after item IDs
-        
+
         for song_name, song_data in song_items.items():
             # Song completion locations
             for j in range(2):
@@ -445,7 +450,7 @@ class FunkinWorld(World):
                 # Ensure this custom location ID is unique
                 while current_custom_id in used_location_ids:
                     current_custom_id += 1
-                    
+
                 location_ownership[location_name] = {
                     'id': current_custom_id,
                     'players': [],
@@ -496,7 +501,7 @@ class FunkinWorld(World):
         custom_item_ids = {}
         # Start custom item IDs after the current highest item ID with a small gap
         current_item_id = max(used_item_ids) + 100 if used_item_ids else item_id_index + 100
-        
+
         for item_name in custom_items:
             # Ensure this custom item ID doesn't conflict with any existing item
             while current_item_id in used_item_ids:
@@ -543,7 +548,7 @@ class FunkinWorld(World):
                 seen_ids.add(item_id)
             if duplicates:
                 raise ValueError(f"Found duplicate item IDs: {duplicates}")
-        
+
         print(f"All item IDs are unique: {len(unique_item_ids)} unique item IDs")
         print(item_name_to_id)
 
@@ -587,6 +592,7 @@ class FunkinWorld(World):
             "custom_location_items": custom_location_items,  # New LocationData objects
             "custom_song_additions": custom_song_additions,  # Songs added by scripts
             "custom_song_exclusions": custom_song_exclusions,  # Songs excluded by scripts
+            "custom_song_requirements": custom_song_requirements,  # Song requirements from scripts
             "song_items": song_items,
             "song_locations": song_locations,
             "all_yamls": _all_yamls,
@@ -610,6 +616,7 @@ class FunkinWorld(World):
     custom_location_items: Dict[str, LocationData] = yaml_data.get("custom_location_items", {})
     custom_song_additions = yaml_data.get("custom_song_additions", [])  # Songs added by scripts
     custom_song_exclusions = yaml_data.get("custom_song_exclusions", [])  # Songs excluded by scripts
+    custom_song_requirements = yaml_data.get("custom_song_requirements", [])  # Song requirements from scripts
 
     # Temporary storage for setup
     items_in_general: dict[str, int] = {}
@@ -695,6 +702,7 @@ class FunkinWorld(World):
         # Initialize custom song modification tracking
         self._custom_song_additions = self.custom_song_additions.copy()
         self._custom_song_exclusions = self.custom_song_exclusions.copy()
+        self._custom_song_requirements = self.custom_song_requirements.copy()
 
         # Check if songList is empty and use thisYaml's songList if so
         if not hasattr(self, 'songList') or not self.songList:
@@ -921,12 +929,12 @@ class FunkinWorld(World):
         # Try to use the victory_song from YAML if it exists and is in available songs
         chosen_song_index = None
         victory_song = getattr(self.thisYaml.settings, "victory_song", None)
-        
+
         # Check if victory song from YAML is valid
         if victory_song and victory_song not in available_song_keys:
             # Check if this is automated generation (Universal Tracker)
             is_automated = getattr(self.multiworld, 'gen_is_fake', False)
-            
+
             if is_automated:
                 # Automatically use random victory song for Universal Tracker
                 print(f"Auto-fixing: Victory song '{victory_song}' not available for player '{self.player_name}', using random victory song (Universal Tracker mode)")
@@ -936,11 +944,11 @@ class FunkinWorld(World):
                 print("Options:")
                 print("1. Continue generation with a random victory song")
                 print("2. Cancel generation")
-                
+
                 while True:
                     # Check if this is automated generation (Universal Tracker)
                     is_automated = getattr(self.multiworld, 'gen_is_fake', False)
-                    
+
                     if is_automated:
                         choice = "1"  # Auto-select for automated generation
                         print(f"Auto-continuing generation for '{self.player_name}' with a random victory song (Universal Tracker mode).")
@@ -948,7 +956,7 @@ class FunkinWorld(World):
                         break
                     else:
                         choice = input(f"What would you like to do for player '{self.player_name}'? (1/2): ").strip()
-                    
+
                     if choice == "1":
                         print(f"Continuing generation for '{self.player_name}' with a random victory song.")
                         victory_song = None  # Will be set randomly below
@@ -957,7 +965,7 @@ class FunkinWorld(World):
                         raise ValueError(f"Player '{self.player_name}' has an invalid victory song '{victory_song}' in their YAML file. Generation cancelled.")
                     else:
                         print("Invalid choice. Please enter 1 or 2.")
-        
+
         if victory_song and victory_song in available_song_keys:
             chosen_song_index = available_song_keys.index(victory_song)
         else:
@@ -1096,15 +1104,15 @@ class FunkinWorld(World):
         # Try to use the starting_song from YAML if it exists and is in available songs or matches victory song
         starting_song = getattr(self.thisYaml.settings, "starting_song", None)
         starting_song_from_yaml = starting_song  # Keep original for validation
-        
+
         # Check if starting song from YAML is invalid (not in available songs AND not the victory song)
-        if (starting_song and 
-            starting_song not in available_song_keys and 
+        if (starting_song and
+            starting_song not in available_song_keys and
             starting_song != self.victory_song_name):
-            
+
             # Check if this is automated generation (Universal Tracker)
             is_automated = getattr(self.multiworld, 'gen_is_fake', False)
-            
+
             if is_automated:
                 # Automatically use random starting song for Universal Tracker
                 print(f"Auto-fixing: Starting song '{starting_song}' not available for player '{self.player_name}', using random starting song (Universal Tracker mode)")
@@ -1114,11 +1122,11 @@ class FunkinWorld(World):
                 print("Options:")
                 print("1. Continue generation with a random starting song")
                 print("2. Cancel generation")
-                
+
                 while True:
                     # Check if this is automated generation (Universal Tracker)
                     is_automated = getattr(self.multiworld, 'gen_is_fake', False)
-                    
+
                     if is_automated:
                         choice = "1"  # Auto-select for automated generation
                         print(f"Auto-continuing generation for '{self.player_name}' with a random starting song (Universal Tracker mode).")
@@ -1126,7 +1134,7 @@ class FunkinWorld(World):
                         break
                     else:
                         choice = input(f"What would you like to do for player '{self.player_name}'? (1/2): ").strip()
-                    
+
                     if choice == "1":
                         print(f"Continuing generation for '{self.player_name}' with a random starting song.")
                         starting_song = None  # Will be set randomly below
@@ -1140,7 +1148,7 @@ class FunkinWorld(World):
         if starting_song and starting_song == self.victory_song_name:
             # Check if this is automated generation (Universal Tracker)
             is_automated = getattr(self.multiworld, 'gen_is_fake', False)
-            
+
             if is_automated:
                 # Automatically use random starting song for Universal Tracker to avoid instant win
                 print(f"Auto-fixing: Player '{self.player_name}' has same starting and victory song, using random starting song (Universal Tracker mode)")
@@ -1152,11 +1160,11 @@ class FunkinWorld(World):
                 print("1. Continue generation anyway (game will be instantly won)")
                 print("2. Use a random starting song instead")
                 print("3. Cancel generation")
-                
+
                 while True:
                     # Check if this is automated generation (Universal Tracker)
                     is_automated = getattr(self.multiworld, 'gen_is_fake', False)
-                    
+
                     if is_automated:
                         choice = "2"  # Auto-select option 2 to prevent instant win
                         print(f"Auto-selecting random starting song for '{self.player_name}' to prevent instant win (Universal Tracker mode).")
@@ -1164,7 +1172,7 @@ class FunkinWorld(World):
                         break
                     else:
                         choice = input(f"What would you like to do for player '{self.player_name}'? (1/2/3): ").strip()
-                    
+
                     if choice == "1":
                         print(f"Continuing generation for '{self.player_name}' with same starting and victory song (instant win).")
                         # Keep starting_song as victory_song
@@ -1208,6 +1216,87 @@ class FunkinWorld(World):
         self.songList = available_song_keys.copy()
         self.random.shuffle(self.songList)
 
+    def _get_song_requirement(self, song_name: str, mod_name: str = "") -> dict:
+        """Get the requirement for a specific song, if any. Returns the first matching requirement."""
+        for requirement in self._custom_song_requirements:
+            if (requirement.get('songName') == song_name and
+                requirement.get('targetMod', '') == mod_name):
+                return requirement
+        return None
+
+    def _get_all_song_requirements(self, song_name: str, mod_name: str = "") -> list:
+        """Get ALL requirements for a specific song, handling multiple requirements."""
+        matching_requirements = []
+        for requirement in self._custom_song_requirements:
+            if (requirement.get('songName') == song_name and
+                requirement.get('targetMod', '') == mod_name):
+                matching_requirements.append(requirement)
+        return matching_requirements
+
+    def _create_song_access_rule_with_requirements(self, song_name: str, mod_name: str = "", requirements_list: list = None):
+        """Create an access rule for a song with a pre-filtered list of requirements"""
+        def song_access_rule(state):
+            # Build the full item name (song name with mod name in parentheses if applicable)
+            if mod_name and mod_name.strip():
+                full_song_name = f"{song_name} ({mod_name})"
+            else:
+                full_song_name = song_name
+
+            # Basic song access - check for the full item name
+            has_song = state.has(full_song_name, self.player)
+
+            # Check ALL provided requirements (multiple access rules for the same song+mod)
+            if requirements_list:
+                for requirement in requirements_list:
+                    if 'requiredItems' in requirement:
+                        # Song has additional requirements - ALL must be satisfied for this rule
+                        for req_item in requirement['requiredItems']:
+                            item_name = req_item.get('name', '')
+                            item_count = req_item.get('count', 1)
+                            if item_name and not state.has(item_name, self.player, item_count):
+                                return False  # Missing required item from any requirement rule
+
+            # Victory song special handling
+            if full_song_name == self.victory_song_name:
+                has_tickets = state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())
+                return has_song and has_tickets
+
+            return has_song
+
+        return song_access_rule
+
+    def _create_song_access_rule(self, song_name: str, mod_name: str = ""):
+        """Create an access rule for a song that includes both basic song access and song requirements"""
+        def song_access_rule(state):
+            # Build the full item name (song name with mod name in parentheses if applicable)
+            if mod_name and mod_name.strip():
+                full_song_name = f"{song_name} ({mod_name})"
+            else:
+                full_song_name = song_name
+
+            # Basic song access - check for the full item name
+            has_song = state.has(full_song_name, self.player)
+
+            # Check for ALL additional requirements for this song
+            all_requirements = self._get_all_song_requirements(song_name, mod_name)
+            for requirement in all_requirements:
+                if 'requiredItems' in requirement:
+                    # Song has additional requirements - ALL must be satisfied
+                    for req_item in requirement['requiredItems']:
+                        item_name = req_item.get('name', '')
+                        item_count = req_item.get('count', 1)
+                        if item_name and not state.has(item_name, self.player, item_count):
+                            return False  # Missing required item from any requirement
+
+            # Victory song special handling
+            if full_song_name == self.victory_song_name:
+                has_tickets = state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())
+                return has_song and has_tickets
+
+            return has_song
+
+        return song_access_rule
+
     def create_regions(self):
         menu_region = Region("Freeplay", self.player, self.multiworld)
         self.multiworld.regions += [menu_region]
@@ -1227,36 +1316,70 @@ class FunkinWorld(World):
         # Adds item locations per song to the menu region based on unlock method.
         for i in range(len(all_selected_locations)):
             name = all_selected_locations[i]
+
+            # The name already contains the full song name with mod (if applicable)
+            # We need to find all access rules that apply to this exact song name
+
+            # Collect ALL access rules that apply to this song (multiple rules can exist for the same song+mod)
+            applicable_requirements = []
+
+            # Check song requirements - match against reconstructed "songName (targetMod)" format
+            for requirement in self._custom_song_requirements:
+                req_song_name = requirement.get('songName', '')
+                req_mod_name = requirement.get('targetMod', '')
+
+                # Reconstruct the full name as it would appear in the game
+                if req_mod_name and req_mod_name.strip():
+                    reconstructed_name = f"{req_song_name} ({req_mod_name})"
+                else:
+                    reconstructed_name = req_song_name
+
+                # If this requirement applies to our song, add it to the list
+                if reconstructed_name == name:
+                    applicable_requirements.append(requirement)
+
+            # Get song name and mod name from the applicable requirements
+            song_name_only = ""
+            mod_name = ""
+
+            if applicable_requirements:
+                # Use the song name and mod name from the first requirement (they should all be the same for the same song)
+                song_name_only = applicable_requirements[0].get('songName', '')
+                mod_name = applicable_requirements[0].get('targetMod', '')
+            else:
+                # No requirements found - use the name as-is (it's likely a base game song)
+                song_name_only = name
+                mod_name = ""
+
+            # Create the song access rule that includes ALL applicable requirements
+            song_access_rule = self._create_song_access_rule_with_requirements(song_name_only, mod_name, applicable_requirements)
+
             # for j in range(self.checksPerSong):
             if self.unlock_method == "Song Completion":
                 for j in range(2):
                     loc_name = f"{name}"
                     loc = FunkinLocation(self.player, loc_name + f"-{j}", self.song_locations[loc_name + f"-{j}"], menu_region)
-                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player) and \
-                        (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
+                    loc.access_rule = song_access_rule
                     menu_region.locations.append(loc)
             elif self.unlock_method == "Note Checks":
                 for j in range(3):
                     # print("Note.")
                     loc_name = f"Note {j}: {name}"
                     loc = FunkinLocation(self.player, loc_name, self.song_locations[loc_name], menu_region)
-                    loc.access_rule = lambda state, place=f"{name}": state.has(place, self.player) and \
-                        (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
+                    loc.access_rule = song_access_rule
                     menu_region.locations.append(loc)
             elif self.unlock_method == "Both":
                 for j in range(2):
                     # print("SONG")
                     loc_name = f"{name}"
                     loc = FunkinLocation(self.player, loc_name + f"-{j}", self.song_locations[loc_name + f"-{j}"], menu_region)
-                    loc.access_rule = lambda state, place=loc_name: state.has(place, self.player) and \
-                        (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
+                    loc.access_rule = song_access_rule
                     menu_region.locations.append(loc)
                 for j in range(3):
                     # print("NOTE.")
                     loc_name = f"Note {j}: {name}"
                     loc = FunkinLocation(self.player, loc_name, self.song_locations[loc_name], menu_region)
-                    loc.access_rule = lambda state, place=f"{name}": state.has(place, self.player) and \
-                        (place != self.victory_song_name or state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()))
+                    loc.access_rule = song_access_rule
                     menu_region.locations.append(loc)
             self.location_count = len(menu_region.locations)
 
@@ -1328,7 +1451,7 @@ class FunkinWorld(World):
         song_keys_in_pool = self.get_songs_map(self.player_name).copy()
         if len(song_keys_in_pool) > 0:
             item_count = 0  # Track total items added
-            
+
             # First add all goal song tokens
             ticket_count = self.get_ticket_count()
             for _ in range(ticket_count):
@@ -1447,7 +1570,7 @@ class FunkinWorld(World):
             if remaining_slots > 0:
                 # Fill 20% of remaining slots with useful song duplicates
                 dupe_count = min(remaining_slots, floor(remaining_slots * 0.20))
-                
+
                 # Add song duplicates if we have songs to duplicate
                 if len(song_keys_in_pool) > 0 and dupe_count > 0:
                     for i in range(dupe_count):
@@ -1467,7 +1590,7 @@ class FunkinWorld(World):
             if item_count != self.location_count:
                 print(f"ERROR: Item count ({item_count}) doesn't match location count ({self.location_count}) for player {self.player_name}")
                 raise ValueError(f"Item/location count mismatch: {item_count} items vs {self.location_count} locations")
-            
+
             print(f"Successfully created {item_count} items for {self.location_count} locations for player {self.player_name}")
 
     def set_rules(self) -> None:
@@ -1627,6 +1750,20 @@ class FunkinWorld(World):
             if hasattr(self, "player_song_additions") and isinstance(self.player_song_additions, dict):
                 player_song_additions = self.player_song_additions.get(self.player_name, None)
 
+            # Filter song requirements for this player's songs
+            player_song_requirements = []
+            for requirement in self._custom_song_requirements:
+                song_name = requirement.get('songName', '')
+                target_mod = requirement.get('targetMod', '')
+
+                # Check if this song belongs to this player
+                formatted_song = song_name
+                if target_mod:
+                    formatted_song = f"{song_name} ({target_mod})"
+
+                if formatted_song in player_songs or song_name in player_songs:
+                    player_song_requirements.append(requirement)
+
             return {
                 "deathLink": self.options.deathlink.value,
                 "fullSongCount": len(player_songs),
@@ -1641,6 +1778,7 @@ class FunkinWorld(World):
                 "songData": song_details,  # Detailed song metadata for the client
                 "locationData": location_details,  # Detailed location metadata for the client
                 "customWeeks": custom_weeks_data,  # Custom week generation data for APGameState
+                "songRequirements": player_song_requirements,  # Song access requirements for this player
                 "song_modifications": {
                     'song_additions': player_song_additions,
                     'song_exclusions': None  # Placeholder, update as needed
