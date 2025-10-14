@@ -20,6 +20,8 @@ from .Locations import FunkinLocation
 from .Options import *
 from .FunkinUtils import FunkinUtils
 
+from inputimeout import inputimeout
+
 # Custom location data class similar to SongData
 class LocationData:
     def __init__(self, code: int, location_name: str, player_owner: str, player_list: List[str],
@@ -323,26 +325,23 @@ class FunkinWorld(World):
             player_name = getattr(yaml_data, 'name', 'Unknown Player')
 
             if not song_list or len(song_list) == 0:
-                # Check if this is an automated generation (Universal Tracker)
-                is_automated = getattr(self.multiworld, 'gen_is_fake', False)
-
-                if is_automated:
-                    # Automatically use base game songs for Universal Tracker
-                    print(f"Auto-fixing: Player '{player_name}' has no song list, automatically adding base game songs (Universal Tracker mode)")
-                    choice = "1"  # Automatically choose option 1
-                else:
-                    print(f"\nWarning: Player '{player_name}' has no song list or an empty song list in their YAML file.")
-                    print("Options:")
-                    print("1. Continue generation with base game songs")
-                    print("2. Skip this player (will cancel generation)")
-                    choice = None
+                # For automated systems, we can't access gen_is_fake in static context
+                # So we'll use inputimeout with a short timeout to auto-select for automated systems
+                print(f"\nWarning: Player '{player_name}' has no song list or an empty song list in their YAML file.")
+                print("Will timeout in 30 seconds and auto-select option 1 if no input is provided.")
+                print("Options:")
+                print("1. Continue generation with base game songs")
+                print("2. Skip this player (will cancel generation)")
+                choice = None
 
                 while True:
-                    if is_automated:
-                        choice = "1"  # Auto-select for automated generation
-                        break
-                    else:
-                        choice = input(f"What would you like to do for player '{player_name}'? (1/2): ").strip()
+                    try:
+                        # Use inputimeout with 5 second timeout for automated systems
+                        choice = inputimeout(f"What would you like to do for player '{player_name}'? (1/2): ", timeout=30).strip()
+                    except:
+                        # Timeout occurred (likely automated system) - auto-select option 1
+                        choice = "1"
+                        print(f"Auto-fixing: Player '{player_name}' has no song list, automatically adding base game songs (timeout)")
 
                     if choice == "1":
                         print(f"Continuing generation for '{player_name}' with base game songs.")
