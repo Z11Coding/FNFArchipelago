@@ -22,6 +22,8 @@ from .FunkinUtils import FunkinUtils
 
 import threading
 
+from pprint import pprint
+
 def inputimeout(prompt='', timeout=10):
     """Prompt for input with a timeout. Returns None if timed out."""
     result = [None]
@@ -599,6 +601,10 @@ class FunkinWorld(World):
         print(f"All location IDs are unique: {len(unique_location_ids)} unique location IDs")
         print(f"Custom data: {len(custom_items)} items, {len(custom_trap_items)} trap items, {len(custom_locations)} locations")
 
+        # Print all of the special items, and locations using pprint.
+        pprint({"Custom Items": custom_items, "Custom Trap Items": custom_trap_items, "Custom Locations": list(custom_locations.keys())})
+
+
         return {
             "items": item_name_to_id,
             "locations": location_name_to_id,
@@ -1000,6 +1006,19 @@ class FunkinWorld(World):
     def create_item(self, name: str) -> Item:
         if name == self.fnfUtil.SHOW_TICKET_NAME:
             return FunkinFixedItem(name, ItemClassification.progression_skip_balancing, self.fnfUtil.SHOW_TICKET_CODE, self.player)
+        
+        # Check for custom items (no longer using player prefixes)
+        if name in self.custom_items_list:
+            # Get the custom item ID from the mapping
+            custom_item_id = self.item_name_to_id.get(name)
+            if custom_item_id:
+                # Check if this custom item is required by any song requirement
+                if self._is_item_required_by_songs(name):
+                    # Make it a progression item since it's required for song access
+                    return FunkinFixedItem(name, ItemClassification.progression, custom_item_id, self.player)
+                else:
+                    # Regular useful item
+                    return FunkinFixedItem(name, ItemClassification.useful, custom_item_id, self.player)
 
         filler = self.fnfUtil.filler_items.get(name)
         if filler:
@@ -1011,11 +1030,21 @@ class FunkinWorld(World):
 
         item = self.fnfUtil.normal_items.get(name)
         if item:
-            return FunkinFixedItem(name, ItemClassification.useful, item, self.player)
+            # Check if this normal item is required by any song requirement
+            if self._is_item_required_by_songs(name):
+                # Make it a progression item since it's required for song access
+                return FunkinFixedItem(name, ItemClassification.progression, item, self.player)
+            else:
+                return FunkinFixedItem(name, ItemClassification.useful, item, self.player)
 
         onetimeitem = self.fnfUtil.one_time_items.get(name)
         if onetimeitem:
-            return FunkinFixedItem(name, ItemClassification.useful, onetimeitem, self.player)
+            # Check if this one-time item is required by any song requirement
+            if self._is_item_required_by_songs(name):
+                # Make it a progression item since it's required for song access
+                return FunkinFixedItem(name, ItemClassification.progression, onetimeitem, self.player)
+            else:
+                return FunkinFixedItem(name, ItemClassification.useful, onetimeitem, self.player)
 
         trap = self.fnfUtil.trap_items.get(name)
         if trap:
@@ -1026,14 +1055,12 @@ class FunkinWorld(World):
             # Get the custom trap item ID from the mapping
             custom_trap_id = self.item_name_to_id.get(name)
             if custom_trap_id:
+                # Note: Trap items remain as traps even if required by songs
+                # This is intentional - if a trap is required for progression,
+                # the game design should handle this appropriately
                 return FunkinFixedItem(name, ItemClassification.trap, custom_trap_id, self.player)
 
-        # Check for custom items (no longer using player prefixes)
-        if name in self.custom_items_list:
-            # Get the custom item ID from the mapping
-            custom_item_id = self.item_name_to_id.get(name)
-            if custom_item_id:
-                return FunkinFixedItem(name, ItemClassification.useful, custom_item_id, self.player)
+
 
         # print("Song list for " + self.player_name + " is " + str(self.options.songList.value))
 
@@ -1249,6 +1276,15 @@ class FunkinWorld(World):
                 requirement.get('targetMod', '') == mod_name):
                 matching_requirements.append(requirement)
         return matching_requirements
+
+    def _is_item_required_by_songs(self, item_name: str) -> bool:
+        """Check if an item is required by any song requirement"""
+        for requirement in self._custom_song_requirements:
+            if 'requiredItems' in requirement:
+                for req_item in requirement['requiredItems']:
+                    if req_item.get('name', '') == item_name:
+                        return True
+        return False
 
     def _create_song_access_rule_with_requirements(self, song_name: str, mod_name: str = "", requirements_list: list = None):
         """Create an access rule for a song with a pre-filtered list of requirements"""
