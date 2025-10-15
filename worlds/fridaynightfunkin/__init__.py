@@ -20,7 +20,25 @@ from .Locations import FunkinLocation
 from .Options import *
 from .FunkinUtils import FunkinUtils
 
-from inputimeout import inputimeout
+import threading
+
+def inputimeout(prompt='', timeout=10):
+    """Prompt for input with a timeout. Returns None if timed out."""
+    result = [None]
+
+    def get_input():
+        try:
+            result[0] = input(prompt)
+        except Exception:
+            result[0] = None
+
+    thread = threading.Thread(target=get_input)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        return None
+    return result[0]
 
 # Custom location data class similar to SongData
 class LocationData:
