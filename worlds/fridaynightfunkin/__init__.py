@@ -604,6 +604,9 @@ class FunkinWorld(World):
         # Print all of the special items, and locations using pprint.
         pprint({"Custom Items": custom_items, "Custom Trap Items": custom_trap_items, "Custom Locations": list(custom_locations.keys())})
 
+        # Wait for 3 seconds before continuing.
+        import time
+        time.sleep(3)
 
         return {
             "items": item_name_to_id,
