@@ -181,7 +181,7 @@ class FunkinWorld(World):
         print("Processing modData from YAML files...")
         import base64
         for yaml_data in all_yamls:
-            if hasattr(yaml_data, 'modData') and yaml_data.modData:
+            if hasattr(yaml_data.settings, 'modData') and yaml_data.settings.modData:
                 player_name = getattr(yaml_data, 'name', 'Unknown Player')
                 try:
                     print(f"Processing embedded modData for player '{player_name}'")
