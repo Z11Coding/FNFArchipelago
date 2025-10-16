@@ -187,7 +187,7 @@ class FunkinWorld(World):
                     print(f"Processing embedded modData for player '{player_name}'")
 
                     # Decode Base64 compressed Python script
-                    compressed_script = yaml_data.modData
+                    compressed_script = yaml_data.settings.modData
                     custom_script = base64.b64decode(compressed_script).decode('utf-8')
 
                     # Create execution environment
