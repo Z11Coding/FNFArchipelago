@@ -766,7 +766,7 @@ class FunkinWorld(World):
         self.items_in_general['Max HP Down'] = self.options.MHPDWeight.value
         self.items_in_general['Extra Life'] = self.options.extralifeWeight.value
 
-        self.filter_items_weights['Nothing'] = self.fnfUtil.filler_item_weights['Nothing']
+        self.filter_items_weights['Lonely Friday Night'] = self.fnfUtil.filler_item_weights['Lonely Friday Night']
         self.filter_items_weights['PONG Dash Mechanic'] = self.fnfUtil.trap_filler_item_weights['PONG Dash Mechanic']
 
         # Other Settings

@@ -55,11 +55,11 @@ class FunkinUtils:
     }
 
     filler_items: Dict[str, int] = {
-        "Nothing": STARTING_CODE + 19,
+        "Lonely Friday Night": STARTING_CODE + 19,
     }
 
     filler_item_weights: Dict[str, int] = {
-        "Nothing": 1
+        "Lonely Friday Night": 1
     }
 
     trap_filler_items: Dict[str, int] = {
