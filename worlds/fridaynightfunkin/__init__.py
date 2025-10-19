@@ -766,7 +766,7 @@ class FunkinWorld(World):
         self.items_in_general['Max HP Down'] = self.options.MHPDWeight.value
         self.items_in_general['Extra Life'] = self.options.extralifeWeight.value
 
-        self.filter_items_weights['Nothing'] = self.fnfUtil.filler_item_weights['Nothing']
+        self.filter_items_weights['Lonely Friday Night'] = self.fnfUtil.filler_item_weights['Lonely Friday Night']
         self.filter_items_weights['PONG Dash Mechanic'] = self.fnfUtil.trap_filler_item_weights['PONG Dash Mechanic']
 
         # Other Settings
@@ -1547,37 +1547,7 @@ class FunkinWorld(World):
                         item_count += 1
                         uno_colors_added += 1
 
-            # Add traps (making sure we don't overfill)
-            remaining_slots = self.location_count - item_count
-            trap_count = min(remaining_slots, self.get_trap_count())
-            trap_list = self.get_available_traps()
-            if len(trap_list) > 0 and trap_count > 0:
-                for _ in range(trap_count):
-                    index = self.random.randrange(0, len(trap_list))
-                    self.multiworld.itempool.append(self.create_item(trap_list[index]))
-                    item_count += 1
-
-            # Add useful items
-            remaining_slots = self.location_count - item_count
-            useful_item_count = min(remaining_slots, self.get_item_count())
-            item_list = self.get_available_items()
-            if len(item_list) > 0 and useful_item_count > 0:
-                for _ in range(useful_item_count):
-                    index = self.random.randrange(0, len(item_list))
-                    self.multiworld.itempool.append(self.create_item(item_list[index]))
-                    item_count += 1
-
-            # Add filler trap items
-            remaining_slots = self.location_count - item_count
-            filler_trap_count = min(remaining_slots, self.get_filler_trap_count())
-            filler_list = self.get_available_filler_traps()
-            if len(filler_list) > 0 and filler_trap_count > 0:
-                for item in filler_list:
-                    for trapitem in range(self.filter_items_weights[item]):
-                        self.multiworld.itempool.append(self.create_item(filler_list[trapitem]))
-                        item_count += 1
-
-            # Add custom items
+            # Add custom items first (priority items)
             remaining_slots = self.location_count - item_count
             if remaining_slots > 0:
                 # Filter custom items for this player
@@ -1621,7 +1591,37 @@ class FunkinWorld(World):
                         self.multiworld.itempool.append(self.create_item(custom_trap_name))
                         item_count += 1
 
-            # Fill remaining slots with song duplicates and filler
+            # Add traps (making sure we don't overfill)
+            remaining_slots = self.location_count - item_count
+            trap_count = min(remaining_slots, self.get_trap_count())
+            trap_list = self.get_available_traps()
+            if len(trap_list) > 0 and trap_count > 0:
+                for _ in range(trap_count):
+                    index = self.random.randrange(0, len(trap_list))
+                    self.multiworld.itempool.append(self.create_item(trap_list[index]))
+                    item_count += 1
+
+            # Add useful items
+            remaining_slots = self.location_count - item_count
+            useful_item_count = min(remaining_slots, self.get_item_count())
+            item_list = self.get_available_items()
+            if len(item_list) > 0 and useful_item_count > 0:
+                for _ in range(useful_item_count):
+                    index = self.random.randrange(0, len(item_list))
+                    self.multiworld.itempool.append(self.create_item(item_list[index]))
+                    item_count += 1
+
+            # Add filler trap items
+            remaining_slots = self.location_count - item_count
+            filler_trap_count = min(remaining_slots, self.get_filler_trap_count())
+            filler_list = self.get_available_filler_traps()
+            if len(filler_list) > 0 and filler_trap_count > 0:
+                for item in filler_list:
+                    for trapitem in range(self.filter_items_weights[item]):
+                        self.multiworld.itempool.append(self.create_item(filler_list[trapitem]))
+                        item_count += 1
+
+            # Fill remaining slots with song duplicates and weighted random selection
             remaining_slots = self.location_count - item_count
             if remaining_slots > 0:
                 # Fill 20% of remaining slots with useful song duplicates
@@ -1636,10 +1636,50 @@ class FunkinWorld(World):
                         self.multiworld.itempool.append(item)
                         item_count += 1
 
-                # Fill all remaining slots with filler items
+                # Fill all remaining slots with weighted random selection
                 remaining_slots = self.location_count - item_count
                 for _ in range(remaining_slots):
-                    self.multiworld.itempool.append(self.create_item(self.get_filler_item_name()))
+                    # Create weighted pools for random selection
+                    weighted_items = []
+                    weights = []
+
+                    # Add traps with their weights (if traps are enabled)
+                    if self.options.trapAmount.value > 0:
+                        available_traps = self.get_available_traps()
+                        for trap_name in available_traps:
+                            trap_weight = self.check_trap_weight(trap_name)
+                            if trap_weight > 0:
+                                weighted_items.append(trap_name)
+                                weights.append(trap_weight)
+
+                    # Add useful items with their weights
+                    available_items = self.get_available_items()
+                    for item_name in available_items:
+                        item_weight = self.check_item_weight(item_name)
+                        if item_weight > 0:
+                            weighted_items.append(item_name)
+                            weights.append(item_weight)
+
+                    # Add filler items (including "Lonely Friday Night") with lower weights
+                    filler_items = self.get_available_filler()
+                    for filler_name in filler_items:
+                        # "Lonely Friday Night" gets a very low weight (5% chance relative to normal items)
+                        if filler_name == "Lonely Friday Night":
+                            weighted_items.append(filler_name)
+                            weights.append(max(1, sum(weights) // 20))  # 5% of total weight
+                        else:
+                            # Other fillers get normal weight
+                            weighted_items.append(filler_name)
+                            weights.append(10)  # Standard filler weight
+
+                    # Select item based on weights
+                    if weighted_items and weights:
+                        selected_item = self.random.choices(weighted_items, weights=weights)[0]
+                        self.multiworld.itempool.append(self.create_item(selected_item))
+                    else:
+                        # Fallback to standard filler if no weighted items available
+                        self.multiworld.itempool.append(self.create_item(self.get_filler_item_name()))
+                    
                     item_count += 1
 
             # Validate that we have exactly the right number of items

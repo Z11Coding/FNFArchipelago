@@ -13,7 +13,7 @@ The goal is to beat your Victory Song by unlocking it and collecting enough tick
 
 
 ## Which items can be in another player's world?
-Songs, Items, and Misc. Filler can be scattered around. Sometimes, it's literally nothing!
+Songs, Items, and Misc. Filler can be scattered around. Sometimes, it's literally a "Lonely Friday Night"!
 
 
 ## What is considered a location check in Friday Night Funkin'?
