@@ -126,12 +126,12 @@ class FunkinWorld(World):
         import sys
         import os
         fnfUtil = FunkinUtils()
-        
+
         # You cannot check this. Don't try it.
         # if hasattr(FunkinWorld, '_passthrough_data'):
         #     passthrough = FunkinWorld._passthrough_data
         #     print("Using passthrough data for item/location setup")
-            
+
         #     return {
         #         "items": passthrough.get("item_name_to_id", {}),
         #         "locations": passthrough.get("location_name_to_id", {}),
@@ -272,6 +272,73 @@ class FunkinWorld(World):
                 except Exception as e:
                     print(f"Error processing embedded modData for player '{player_name}': {e}")
                     continue
+
+        # Process sanity data from YAML files (embedded compressed JSON data)
+        print("Processing sanity data from YAML files...")
+        import json
+        sanity_items = []  # Track sanity items for starting song unlock
+
+        for yaml_data in all_yamls:
+            if hasattr(yaml_data.settings, 'sanity') and yaml_data.settings.sanity:
+                player_name = getattr(yaml_data, 'name', 'Unknown Player')
+                try:
+                    print(f"Processing embedded sanity data for player '{player_name}'")
+
+                    # Decode Base64 compressed JSON data
+                    compressed_sanity = yaml_data.settings.sanity
+                    sanity_json = base64.b64decode(compressed_sanity).decode('utf-8')
+                    sanity_data = json.loads(sanity_json)
+
+                    # Process stage sanity data
+                    if 'Stage' in sanity_data:
+                        stage_data = sanity_data['Stage']
+                        print(f"Processing {len(stage_data)} stages for stagesanity")
+
+                        for stage_info in stage_data:
+                            stage_name = stage_info.get('name', '')
+                            stage_songs = stage_info.get('songs', [])
+
+                            if stage_name and stage_songs:
+                                # Create stage item (no location - just an item)
+                                stage_item_name = f"Stage: {stage_name}"
+                                # Don't add sanity items to custom_items - they are separate
+                                sanity_items.append({
+                                    'name': stage_item_name,
+                                    'type': 'stage',
+                                    'stage_name': stage_name,
+                                    'songs': stage_songs,
+                                    'player': player_name
+                                })
+
+                    # Process character sanity data
+                    if 'Character' in sanity_data:
+                        character_data = sanity_data['Character']
+                        print(f"Processing {len(character_data)} characters for charactersanity")
+
+                        for character_info in character_data:
+                            character_name = character_info.get('name', '')
+                            character_songs = character_info.get('songs', [])
+
+                            if character_name and character_songs:
+                                # Create character item (no location - just an item)
+                                character_item_name = f"Character: {character_name}"
+                                # Don't add sanity items to custom_items - they are separate
+                                sanity_items.append({
+                                    'name': character_item_name,
+                                    'type': 'character',
+                                    'character_name': character_name,
+                                    'songs': character_songs,
+                                    'player': player_name
+                                })
+
+                    print(f"Loaded sanity data: {len(sanity_data.get('Stage', []))} stages and {len(sanity_data.get('Character', []))} characters for player '{player_name}'")
+
+                except Exception as e:
+                    print(f"Error processing embedded sanity data for player '{player_name}': {e}")
+                    continue
+
+        # Store sanity items for later use in create_items
+        sanity_items_list = sanity_items
 
         # Look for player-specific custom data files
         for item in os.listdir(folder_path):
@@ -561,6 +628,28 @@ class FunkinWorld(World):
             used_item_ids.add(current_item_id)
             current_item_id += 1
 
+        # Add sanity items with their own IDs - start after custom trap items
+        sanity_item_ids = {}
+        for sanity_item in sanity_items_list:
+            item_name = sanity_item['name']
+            # Ensure this sanity item ID doesn't conflict with any existing item
+            while current_item_id in used_item_ids:
+                current_item_id += 1
+            sanity_item_ids[item_name] = current_item_id
+            used_item_ids.add(current_item_id)
+            current_item_id += 1
+
+        # Add sanity item locations with their own IDs
+        sanity_location_ids = {}
+        for sanity_item in sanity_items_list:
+            item_name = sanity_item['name']
+            location_name = f"Use {item_name}"
+            # Use the sanity item's ID + offset for the location ID
+            sanity_item_id = sanity_item_ids.get(item_name)
+            if sanity_item_id:
+                location_id = sanity_item_id + 10000  # Large offset to avoid conflicts
+                sanity_location_ids[location_name] = location_id
+
         # Build final name-to-ID mappings
         item_name_to_id = dict(ChainMap(
             {fnfUtil.SHOW_TICKET_NAME: fnfUtil.SHOW_TICKET_CODE},
@@ -571,7 +660,8 @@ class FunkinWorld(World):
             fnfUtil.trap_filler_items,
             {name: data.code for name, data in song_items.items()},
             custom_item_ids,  # Add custom items
-            custom_trap_item_ids  # Add custom trap items
+            custom_trap_item_ids,  # Add custom trap items
+            sanity_item_ids  # Add sanity items
         ))
 
         # Validate that all item IDs are unique
@@ -595,7 +685,8 @@ class FunkinWorld(World):
 
         location_name_to_id = dict(ChainMap(
             song_locations,
-            custom_locations  # Add custom locations
+            custom_locations,  # Add custom locations
+            sanity_location_ids  # Add sanity item locations
         ))
 
         # Validate that all location IDs are unique
@@ -621,10 +712,10 @@ class FunkinWorld(World):
         print(f"Initialized {len(item_name_to_id)} items and {len(location_name_to_id)} locations")
         print(f"All item IDs are unique: {len(unique_item_ids)} unique item IDs")
         print(f"All location IDs are unique: {len(unique_location_ids)} unique location IDs")
-        print(f"Custom data: {len(custom_items)} items, {len(custom_trap_items)} trap items, {len(custom_locations)} locations")
+        print(f"Custom data: {len(custom_items)} items, {len(custom_trap_items)} trap items, {len(sanity_items_list)} sanity items, {len(custom_locations)} custom locations, {len(sanity_location_ids)} sanity locations")
 
         # Print all of the special items, and locations using pprint.
-        pprint({"Custom Items": custom_items, "Custom Trap Items": custom_trap_items, "Custom Locations": list(custom_locations.keys())})
+        pprint({"Custom Items": custom_items, "Custom Trap Items": custom_trap_items, "Sanity Items": [item['name'] for item in sanity_items_list], "Custom Locations": list(custom_locations.keys()), "Sanity Locations": list(sanity_location_ids.keys())})
 
         # Wait for 3 seconds before continuing.
         import time
@@ -660,7 +751,9 @@ class FunkinWorld(World):
             "song_items": song_items,
             "song_locations": song_locations,
             "all_yamls": _all_yamls,
-            "vip_songs": vip_exclusive_song_additions
+            "vip_songs": vip_exclusive_song_additions,
+            "sanity_items_list": sanity_items_list,
+            "sanity_location_ids": sanity_location_ids
         }
 
     # These will be populated during class creation in __new__
@@ -690,6 +783,8 @@ class FunkinWorld(World):
     songLimit: int
     item_id_index: int = 0
     songlistforthe83rdtime: list[str] = []
+    sanity_items_list: list[str] = yaml_data.get("sanity_items_list", [])
+    sanity_location_ids: dict[str, int] = yaml_data.get("sanity_location_ids", {})
 
 
     def __new__(cls, multiworld: MultiWorld, player: int):
@@ -709,10 +804,10 @@ class FunkinWorld(World):
                 victory_song = passthrough.get("victoryLocation", "")
                 victory_id = passthrough.get("victoryID", 0)
                 starting_song = passthrough.get("startingSong", "")
-                
+
                 # Populate class-level item_name_to_id mapping from slot data
                 cls.item_name_to_id = {}
-                
+
                 # Add base items from FunkinUtils
                 cls.item_name_to_id[cls.fnfUtil.SHOW_TICKET_NAME] = cls.fnfUtil.SHOW_TICKET_CODE
                 cls.item_name_to_id.update(cls.fnfUtil.filler_items)
@@ -720,20 +815,20 @@ class FunkinWorld(World):
                 cls.item_name_to_id.update(cls.fnfUtil.one_time_items)
                 cls.item_name_to_id.update(cls.fnfUtil.trap_items)
                 cls.item_name_to_id.update(cls.fnfUtil.trap_filler_items)
-                
+
                 # Add song items from slot data
                 for song_name, song_details in song_data_from_slot.items():
                     song_id = song_details.get("id")
                     if song_id:
                         cls.item_name_to_id[song_name] = song_id
-                
-                # Populate class-level location_name_to_id mapping from slot data  
+
+                # Populate class-level location_name_to_id mapping from slot data
                 cls.location_name_to_id = {}
                 for location_name, location_details in location_data_from_slot.items():
                     location_id = location_details.get("id")
                     if location_id:
                         cls.location_name_to_id[location_name] = location_id
-                
+
                 # Populate song_items from slot data
                 cls.song_items = {}
                 for song_name, song_details in song_data_from_slot.items():
@@ -745,13 +840,13 @@ class FunkinWorld(World):
                             song_details.get("playerOwner", ""),
                             song_details.get("sharedWith", [])
                         )
-                
+
                 # Populate song_locations from location data
                 cls.song_locations = {}
                 for location_name, location_details in location_data_from_slot.items():
                     if location_details.get("type") in ["song_completion", "note_check"]:
                         cls.song_locations[location_name] = location_details.get("id")
-                
+
                 # Populate custom location items from slot data
                 cls.custom_location_items = {}
                 for location_name, location_details in location_data_from_slot.items():
@@ -765,11 +860,13 @@ class FunkinWorld(World):
                             location_details.get("originMod", ""),
                             None  # Access rule will be set during region creation
                         )
-                
+
                 # Populate custom items and trap items from slot data
                 cls.custom_items_list = []
                 cls.custom_trap_items_list = []
-                
+                cls.sanity_items_list = []
+                cls.sanity_location_ids = {}
+
                 # Extract custom items from songData (items that aren't songs)
                 for item_name, item_details in song_data_from_slot.items():
                     # Check if this is a custom item (not a song)
@@ -779,15 +876,33 @@ class FunkinWorld(World):
                         item_name not in cls.fnfUtil.one_time_items and
                         item_name not in cls.fnfUtil.trap_items and
                         item_name != cls.fnfUtil.SHOW_TICKET_NAME):
-                        
+
                         # Check if it's a trap item based on name patterns or classification
-                        if ("trap" in item_name.lower() or 
+                        if ("trap" in item_name.lower() or
                             "curse" in item_name.lower() or
                             item_details.get("classification") == "trap"):
                             cls.custom_trap_items_list.append(item_name)
+                        # Check if it's a sanity item based on name patterns
+                        elif (item_name.startswith("Stage: ") or item_name.startswith("Character: ")):
+                            # Create sanity item data structure for passthrough
+                            sanity_item_data = {
+                                'name': item_name,
+                                'type': 'stage' if item_name.startswith("Stage: ") else 'character',
+                                'songs': item_details.get('songs', []),
+                                'player': item_details.get('playerOwner', '')
+                            }
+                            cls.sanity_items_list.append(sanity_item_data)
+                            # Also add to item_name_to_id mapping
+                            cls.item_name_to_id[item_name] = item_details.get("id")
+                            
+                            # Create corresponding sanity location
+                            sanity_location_name = f"Use {item_name}"
+                            sanity_location_id = item_details.get("id") + 10000  # Same offset as in stuff()
+                            cls.sanity_location_ids[sanity_location_name] = sanity_location_id
+                            cls.location_name_to_id[sanity_location_name] = sanity_location_id
                         else:
                             cls.custom_items_list.append(item_name)
-                
+
                 # Create minimal YAML data for passthrough mode
                 # Extract player names and songs from slot data to create dummy YAMLs
                 players_found = set()
@@ -796,7 +911,7 @@ class FunkinWorld(World):
                         players_found.add(song_details.get("playerOwner"))
                     for shared_player in song_details.get("sharedWith", []):
                         players_found.add(shared_player)
-                
+
                 all_yamls_list = []
                 for player_name in players_found:
                     # Create a dummy YAML for each player found in slot data
@@ -808,27 +923,27 @@ class FunkinWorld(World):
                             # Extract songs that belong to this player
                             player_songs = []
                             for song_name, song_details in song_data_from_slot.items():
-                                if (song_details.get("playerOwner") == name or 
+                                if (song_details.get("playerOwner") == name or
                                     name in song_details.get("sharedWith", [])):
                                     if song_details.get("type") != "custom":  # Only actual songs
                                         player_songs.append(song_name)
                             self.settings.songList = player_songs
                             self.settings.song_limit = len(player_songs)
                             # Add victory and starting song from passthrough data if this player owns the victory song
-                            if victory_song and any(song_details.get("playerOwner") == name 
-                                                  for song_name, song_details in song_data_from_slot.items() 
+                            if victory_song and any(song_details.get("playerOwner") == name
+                                                  for song_name, song_details in song_data_from_slot.items()
                                                   if song_name == victory_song):
                                 self.settings.victory_song = victory_song
-                            if starting_song and any(song_details.get("playerOwner") == name 
-                                                   for song_name, song_details in song_data_from_slot.items() 
+                            if starting_song and any(song_details.get("playerOwner") == name
+                                                   for song_name, song_details in song_data_from_slot.items()
                                                    if song_name == starting_song):
                                 self.settings.starting_song = starting_song
-                            
+
                         def getSongList(self):
                             return self.settings.songList
-                    
+
                     all_yamls_list.append(PassthroughYAML(player_name))
-                
+
                 # Store all passthrough data for stuff() method to use
                 cls._passthrough_data = {
                     "item_name_to_id": cls.item_name_to_id,
@@ -838,6 +953,8 @@ class FunkinWorld(World):
                     "custom_location_items": cls.custom_location_items,
                     "custom_items": cls.custom_items_list,
                     "custom_trap_items": cls.custom_trap_items_list,
+                    "sanity_items_list": cls.sanity_items_list,
+                    "sanity_location_ids": getattr(cls, 'sanity_location_ids', {}),
                     "custom_song_requirements": song_requirements,
                     "custom_song_additions": [],  # Will be populated if needed
                     "custom_song_exclusions": [],  # Will be populated if needed
@@ -847,11 +964,13 @@ class FunkinWorld(World):
                     "victory_id": victory_id,
                     "starting_song": starting_song
                 }
-                
+
                 print(f"Passthrough: Loaded {len(cls.item_name_to_id)} items, {len(cls.location_name_to_id)} locations")
                 print(f"Passthrough: Found {len(cls.song_items)} songs")
                 print(f"Passthrough: Found {len(cls.custom_items_list)} custom items: {cls.custom_items_list}")
                 print(f"Passthrough: Found {len(cls.custom_trap_items_list)} custom traps: {cls.custom_trap_items_list}")
+                print(f"Passthrough: Found {len(cls.sanity_items_list)} sanity items: {[item['name'] for item in cls.sanity_items_list]}")
+                print(f"Passthrough: Found {len(cls.sanity_location_ids)} sanity locations: {list(cls.sanity_location_ids.keys())}")
                 print(f"Passthrough: Found {len(cls.custom_location_items)} custom locations")
                 print(f"Passthrough: Loaded {len(song_requirements)} song requirements")
                 print(f"Passthrough: Victory song: {victory_song} (ID: {victory_id})")
@@ -937,13 +1056,13 @@ class FunkinWorld(World):
             victory_song = passthrough_data.get("victory_song", "")
             victory_id = passthrough_data.get("victory_id", 0)
             starting_song = passthrough_data.get("starting_song", "")
-            
+
             # Set victory song information from passthrough
             if victory_song:
                 self.victory_song_name = victory_song
                 self.victory_song_id = victory_id
                 print(f"Passthrough: Set victory song to {victory_song} (ID: {victory_id}) for {self.player_name}")
-            
+
             # Set starting song information from passthrough
             if starting_song:
                 self.starting_song_name = starting_song
@@ -1169,11 +1288,11 @@ class FunkinWorld(World):
             available_song_keys, song_ids = get_player_specific_ids(self.player_name, self.song_items)
             if not available_song_keys:
                 raise ValueError(f"No songs available for player {self.player_name}")
-            
+
             # Remove victory song from available pool if it's there
             if self.victory_song_name in available_song_keys:
                 available_song_keys.remove(self.victory_song_name)
-            
+
             # Create song pool and give starting song
             self.create_song_pool(available_song_keys)
             return
@@ -1244,7 +1363,7 @@ class FunkinWorld(World):
     def create_item(self, name: str) -> Item:
         if name == self.fnfUtil.SHOW_TICKET_NAME:
             return FunkinFixedItem(name, ItemClassification.progression_skip_balancing, self.fnfUtil.SHOW_TICKET_CODE, self.player)
-        
+
         # Check for custom items (no longer using player prefixes)
         if name in self.custom_items_list:
             # Get the custom item ID from the mapping
@@ -1297,6 +1416,18 @@ class FunkinWorld(World):
                 # This is intentional - if a trap is required for progression,
                 # the game design should handle this appropriately
                 return FunkinFixedItem(name, ItemClassification.trap, custom_trap_id, self.player)
+
+        # Check for sanity items (stages and characters)
+        sanity_item = next((item for item in self.sanity_items_list if item['name'] == name), None)
+        if sanity_item:
+            # Get the sanity item ID from the mapping
+            sanity_item_id = self.item_name_to_id.get(name)
+            if sanity_item_id:
+                # Sanity items are usually useful but could be progression if required by songs
+                if self._is_item_required_by_songs(name):
+                    return FunkinFixedItem(name, ItemClassification.progression, sanity_item_id, self.player)
+                else:
+                    return FunkinFixedItem(name, ItemClassification.useful, sanity_item_id, self.player)
 
 
 
@@ -1380,7 +1511,7 @@ class FunkinWorld(World):
         else:
             # Try to use the starting_song from YAML if it exists and is in available songs or matches victory song
             starting_song = getattr(self.thisYaml.settings, "starting_song", None)
-        
+
         starting_song_from_yaml = starting_song  # Keep original for validation
 
         # Check if starting song from YAML is invalid (not in available songs AND not the victory song)
@@ -1491,6 +1622,29 @@ class FunkinWorld(World):
         self.starting_song_name = starting_song  # Store starting song for slot data
         self.multiworld.push_precollected(self.create_item(starting_song))
 
+        # Check if starting song requires any sanity items and precollect them
+        if hasattr(self, 'sanity_items_list') and self.sanity_items_list and starting_song:
+            for sanity_item in self.sanity_items_list:
+                # Check if starting song uses this stage or character
+                for song_obj in sanity_item['songs']:
+                    # song_obj should have 'song' and optionally 'mod' fields
+                    if isinstance(song_obj, dict):
+                        sanity_song_name = song_obj.get('song', '')
+                        sanity_mod_name = song_obj.get('mod', None)  # None if mod field doesn't exist
+
+                    # Build the expected full song name from sanity data
+                    if sanity_mod_name:  # Only if mod exists and is not None/empty
+                        expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
+                    else:
+                        expected_full_song_name = sanity_song_name
+
+                    # Check if this matches the starting song
+                    if expected_full_song_name == starting_song:
+                        # Starting song requires this sanity item - precollect it
+                        print(f"Starting song '{starting_song}' requires sanity item '{sanity_item['name']}' - precollecting it")
+                        self.multiworld.push_precollected(self.create_item(sanity_item['name']))
+                        break  # Found matching song, move to next sanity item
+
         # The remaining songs become the item pool
         self.songList = available_song_keys.copy()
         self.random.shuffle(self.songList)
@@ -1533,6 +1687,28 @@ class FunkinWorld(World):
             # Basic song access - check for the full item name
             has_song = state.has(full_song_name, self.player)
 
+            # Check for sanity requirements (stages and characters)
+            if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
+                for sanity_item in self.sanity_items_list:
+                    # Check if this song uses this stage or character
+                    for song_obj in sanity_item['songs']:
+                        # song_obj should have 'song' and optionally 'mod' fields
+                        if isinstance(song_obj, dict):
+                            sanity_song_name = song_obj.get('song', '')
+                            sanity_mod_name = song_obj.get('mod', None)  # None if mod field doesn't exist
+                        
+                        # Build the expected full song name from sanity data
+                        if sanity_mod_name:  # Only if mod exists and is not None/empty
+                            expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
+                        else:
+                            expected_full_song_name = sanity_song_name
+
+                        # Check if this matches the current song's full name
+                        if expected_full_song_name == full_song_name:
+                            # This song requires the sanity item
+                            if not state.has(sanity_item['name'], self.player):
+                                return False
+
             # Check ALL provided requirements (multiple access rules for the same song+mod)
             if requirements_list:
                 for requirement in requirements_list:
@@ -1565,6 +1741,28 @@ class FunkinWorld(World):
             # Basic song access - check for the full item name
             has_song = state.has(full_song_name, self.player)
 
+            # Check for sanity requirements (stages and characters)
+            if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
+                for sanity_item in self.sanity_items_list:
+                    # Check if this song uses this stage or character
+                    for song_obj in sanity_item['songs']:
+                        # song_obj should have 'song' and optionally 'mod' fields
+                        if isinstance(song_obj, dict):
+                            sanity_song_name = song_obj.get('song', '')
+                            sanity_mod_name = song_obj.get('mod', None)  # None if mod field doesn't exist
+
+                        # Build the expected full song name from sanity data
+                        if sanity_mod_name:  # Only if mod exists and is not None/empty
+                            expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
+                        else:
+                            expected_full_song_name = sanity_song_name
+
+                        # Check if this matches the current song's full name
+                        if expected_full_song_name == full_song_name:
+                            # This song requires the sanity item
+                            if not state.has(sanity_item['name'], self.player):
+                                return False
+
             # Check for ALL additional requirements for this song
             all_requirements = self._get_all_song_requirements(song_name, mod_name)
             for requirement in all_requirements:
@@ -1584,6 +1782,58 @@ class FunkinWorld(World):
             return has_song
 
         return song_access_rule
+
+    def _get_valid_sanity_items_for_player(self):
+        """Get list of valid sanity items for this player, filtered by song availability"""
+        if not hasattr(self, 'sanity_items_list') or not self.sanity_items_list:
+            return []
+            
+        # Get available songs for this player to validate sanity items
+        available_songs = self.get_songs_map(self.player_name)
+        
+        # Filter sanity items to only include those whose songs exist
+        valid_sanity_items = []
+        for sanity_item in self.sanity_items_list:
+            # Check if this sanity item belongs to this player
+            if sanity_item.get('player') == self.player_name:
+                # Check if any songs for this sanity item exist in available songs
+                required_songs = sanity_item.get('songs', [])
+                
+                # Build list of full song names from the sanity item's songs
+                sanity_song_names = []
+                for song_obj in required_songs:
+                    # song_obj should have 'song' and optionally 'mod' fields
+                    if isinstance(song_obj, dict):
+                        song_name = song_obj.get('song', '')
+                        mod_name = song_obj.get('mod', None)
+                    
+                    # Build the expected full song name
+                    if mod_name:
+                        expected_full_song_name = f"{song_name} ({mod_name})"
+                    else:
+                        expected_full_song_name = song_name
+                    
+                    sanity_song_names.append(expected_full_song_name)
+                
+                # Check if ANY of the sanity item's songs exist in available songs
+                if any(song_name in available_songs for song_name in sanity_song_names):
+                    valid_sanity_items.append(sanity_item)
+                    
+        return valid_sanity_items
+        
+    def _calculate_sanity_items_to_use(self, remaining_item_slots):
+        """Calculate how many sanity items will actually be used in the pool"""
+        valid_sanity_items = self._get_valid_sanity_items_for_player()
+        if not valid_sanity_items:
+            return []
+            
+        # Shuffle for consistency with item creation
+        shuffled_sanity_items = list(valid_sanity_items)
+        self.random.shuffle(shuffled_sanity_items)
+        
+        # Return only the ones that will fit in the pool
+        sanity_item_count = min(remaining_item_slots, len(shuffled_sanity_items))
+        return shuffled_sanity_items[:sanity_item_count]
 
     def create_regions(self):
         menu_region = Region("Freeplay", self.player, self.multiworld)
@@ -1713,7 +1963,124 @@ class FunkinWorld(World):
                 menu_region.locations.append(custom_loc)
                 print(f"Added custom location for {self.player_name}: {location_name}")
 
-        # Update location count
+        # Add sanity item locations (stages and characters)
+        print("Adding sanity item locations...")
+        if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
+            # Calculate approximately how many sanity items will fit in the item pool
+            # This is an estimate based on the item creation order
+            estimated_item_count = 0
+            
+            # Tickets
+            estimated_item_count += self.get_ticket_count()
+            
+            # Songs
+            song_keys_in_pool = self.get_songs_map(self.player_name)
+            estimated_item_count += len(song_keys_in_pool)
+            
+            # One-time items
+            estimated_item_count += min(self.location_count - estimated_item_count, len(self.fnfUtil.one_time_items))
+            
+            # UNO fillers (if enabled)
+            if self.check_trap_weight('UNO Challenge') > 0:
+                uno_filler_count = min(self.location_count - estimated_item_count, max(1, floor(self.location_count * 0.10)))
+                estimated_item_count += uno_filler_count
+                
+            # PONG filler (if enabled)
+            if self.check_trap_weight('PONG Challenge') > 0:
+                estimated_item_count += 1
+                
+            # Custom items
+            estimated_item_count += min(self.location_count - estimated_item_count, len(self.custom_items_list))
+            
+            # Custom trap items (if traps enabled)
+            if self.options.trapAmount.value > 0:
+                estimated_item_count += min(self.location_count - estimated_item_count, len(self.custom_trap_items_list))
+            
+            # Estimate remaining slots for sanity items
+            estimated_remaining_for_sanity = max(0, self.location_count - estimated_item_count)
+            
+            # Get the sanity items that will actually be used (limited by remaining slots)
+            sanity_items_to_use = self._calculate_sanity_items_to_use(estimated_remaining_for_sanity)
+            
+            print(f"Estimated remaining slots for sanity items: {estimated_remaining_for_sanity}")
+            print(f"Creating {len(sanity_items_to_use)} sanity locations (out of {len(self._get_valid_sanity_items_for_player())} valid)")
+            
+            # Only create locations for sanity items that will be used
+            for sanity_item in sanity_items_to_use:
+                # Get available songs for validation
+                available_songs = self.get_songs_map(self.player_name)
+                required_songs = sanity_item.get('songs', [])
+                
+                # Build list of full song names that use this sanity item
+                using_songs = []
+                for song_obj in required_songs:
+                    # song_obj should have 'song' and optionally 'mod' fields
+                    if isinstance(song_obj, dict):
+                        sanity_song_name = song_obj.get('song', '')
+                        sanity_mod_name = song_obj.get('mod', None)
+
+                    # Build the expected full song name
+                    if sanity_mod_name:
+                        expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
+                    else:
+                        expected_full_song_name = sanity_song_name
+
+                    # Check if this song is available to this player
+                    if expected_full_song_name in available_songs:
+                        using_songs.append(expected_full_song_name)
+
+                # Create location (we already know this sanity item is valid)
+                sanity_item_name = sanity_item['name']
+                location_name = f"Use {sanity_item_name}"
+                
+                # Get the sanity item's ID and create a location ID by adding an offset
+                sanity_item_id = self.item_name_to_id.get(sanity_item_name)
+                if sanity_item_id:
+                    # Use a different offset for sanity locations to avoid conflicts
+                    location_id = sanity_item_id + 10000  # Large offset to avoid conflicts
+                    
+                    # Create the sanity location
+                    sanity_loc = FunkinLocation(self.player, location_name, location_id, menu_region)
+                    
+                    # Create access rule: requires the sanity item AND ability to complete at least one song that uses it
+                    # The player must have the sanity item to access songs, then complete a song to unlock this location
+                    def create_sanity_access_rule(item_name, sanity_item_data):
+                        def sanity_access_rule(state):
+                            # Must have the sanity item
+                            has_sanity_item = state.has(item_name, self.player)
+                            
+                            # Must be able to complete at least one song that uses this sanity item
+                            # Check if player can access any song that uses this sanity item
+                            can_complete_using_song = False
+                            for song_obj in sanity_item_data.get('songs', []):
+                                # song_obj should have 'song' and optionally 'mod' fields
+                                if isinstance(song_obj, dict):
+                                    song_name = song_obj.get('song', '')
+                                    mod_name = song_obj.get('mod', '')
+                                
+                                # Build the full song name
+                                if mod_name and mod_name.strip():
+                                    full_song_name = f"{song_name} ({mod_name})"
+                                else:
+                                    full_song_name = song_name
+                                
+                                # Check if player owns this song (basic ownership check for fill compatibility)
+                                if state.has(full_song_name, self.player):
+                                    can_complete_using_song = True
+                                    break
+                            
+                            return has_sanity_item and can_complete_using_song
+                        return sanity_access_rule
+                    
+                    sanity_loc.access_rule = create_sanity_access_rule(sanity_item_name, sanity_item)
+                    
+                    menu_region.locations.append(sanity_loc)
+                    print(f"Added sanity location for {self.player_name}: {location_name} (requires {sanity_item_name} + any of {using_songs})")
+                    
+                    # Add to location name to ID mapping
+                    self.location_name_to_id[location_name] = location_id
+                else:
+                    print(f"Warning: Could not find item ID for sanity item {sanity_item_name}")        # Update location count
         self.location_count = len(menu_region.locations)
 
         print('-- FNF LOCATION GEN FINISHED --')
@@ -1811,7 +2178,27 @@ class FunkinWorld(World):
                         self.multiworld.itempool.append(self.create_item(custom_trap_name))
                         item_count += 1
 
-            # Add traps (making sure we don't overfill)
+            # Add sanity items (stages and characters) - shuffle and pre-collect overflow
+            remaining_slots = self.location_count - item_count
+            if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
+                # Use the same logic as location creation to ensure consistency
+                sanity_items_to_use = self._calculate_sanity_items_to_use(remaining_slots)
+                
+                if sanity_items_to_use:
+                    print(f"Adding {len(sanity_items_to_use)} sanity items to pool for {self.player_name}")
+                    for sanity_item in sanity_items_to_use:
+                        self.multiworld.itempool.append(self.create_item(sanity_item['name']))
+                        item_count += 1
+                    
+                    # Check if there were any valid sanity items that didn't fit
+                    all_valid_sanity_items = self._get_valid_sanity_items_for_player()
+                    overflow_count = len(all_valid_sanity_items) - len(sanity_items_to_use)
+                    if overflow_count > 0:
+                        print(f"Note: {overflow_count} valid sanity items didn't fit in pool (would need more locations)")
+                    
+                    print(f"Total sanity items processed: {len(sanity_items_to_use)} (pool: {len(sanity_items_to_use)}, overflow: {overflow_count})")
+            
+            # Update remaining slots after sanity items
             remaining_slots = self.location_count - item_count
             trap_count = min(remaining_slots, self.get_trap_count())
             trap_list = self.get_available_traps()
@@ -1838,7 +2225,7 @@ class FunkinWorld(World):
             if len(filler_list) > 0 and filler_trap_count > 0:
                 for item in filler_list:
                     for trapitem in range(self.filter_items_weights[item]):
-                        self.multiworld.itempool.append(self.create_item(filler_list[trapitem]))
+                        self.multiworld.itempool.append(self.create_item(item))  # Fixed: use 'item' not 'filler_list[trapitem]'
                         item_count += 1
 
             # Fill remaining slots with song duplicates and weighted random selection
@@ -1899,7 +2286,7 @@ class FunkinWorld(World):
                     else:
                         # Fallback to standard filler if no weighted items available
                         self.multiworld.itempool.append(self.create_item(self.get_filler_item_name()))
-                    
+
                     item_count += 1
 
             # Validate that we have exactly the right number of items
@@ -2080,6 +2467,33 @@ class FunkinWorld(World):
                 if formatted_song in player_songs or song_name in player_songs:
                     player_song_requirements.append(requirement)
 
+            # Get sanity items for this player
+            player_sanity_items = {}
+            if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
+                for sanity_item in self.sanity_items_list:
+                    if sanity_item.get('player') == self.player_name:
+                        item_name = sanity_item['name']
+                        item_id = self.item_name_to_id.get(item_name)
+                        if item_id:
+                            player_sanity_items[item_name] = {
+                                'id': item_id,
+                                'type': sanity_item.get('type', ''),
+                                'songs': sanity_item.get('songs', []),
+                                'player': sanity_item.get('player', '')
+                            }
+
+            # Get sanity locations for this player  
+            player_sanity_locations = {}
+            if hasattr(self, 'sanity_location_ids') and self.sanity_location_ids:
+                for location_name, location_id in self.sanity_location_ids.items():
+                    # Check if this sanity location belongs to this player by checking the corresponding sanity item
+                    sanity_item_name = location_name.replace("Use ", "")
+                    if sanity_item_name in player_sanity_items:
+                        player_sanity_locations[location_name] = {
+                            'id': location_id,
+                            'sanity_item': sanity_item_name
+                        }
+
             return {
                 "deathLink": self.options.deathlink.value,
                 "fullSongCount": len(player_songs),
@@ -2094,6 +2508,8 @@ class FunkinWorld(World):
                 "selectedSongs": player_songs,  # List of songs selected for this player
                 "songData": song_details,  # Detailed song metadata for the client
                 "locationData": location_details,  # Detailed location metadata for the client
+                "sanityData": player_sanity_items,  # Sanity items for this player
+                "sanityLocationData": player_sanity_locations,  # Sanity locations for this player
                 "customWeeks": custom_weeks_data,  # Custom week generation data for APGameState
                 "songRequirements": player_song_requirements,  # Song access requirements for this player
                 "song_modifications": {
