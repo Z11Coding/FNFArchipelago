@@ -289,8 +289,12 @@ class FunkinWorld(World):
                     sanity_json = base64.b64decode(compressed_sanity).decode('utf-8')
                     sanity_data = json.loads(sanity_json)
 
-                    # Process stage sanity data
-                    if 'Stage' in sanity_data:
+                    # Check if stagesanity and charactersanity are enabled for this player
+                    stagesanity_enabled = getattr(yaml_data.settings, 'stagesanity', False)
+                    charactersanity_enabled = getattr(yaml_data.settings, 'charactersanity', False)
+
+                    # Process stage sanity data - only if stagesanity is enabled
+                    if 'Stage' in sanity_data and stagesanity_enabled:
                         stage_data = sanity_data['Stage']
                         print(f"Processing {len(stage_data)} stages for stagesanity")
 
@@ -309,9 +313,11 @@ class FunkinWorld(World):
                                     'songs': stage_songs,
                                     'player': player_name
                                 })
+                    elif 'Stage' in sanity_data and not stagesanity_enabled:
+                        print(f"Skipping {len(sanity_data['Stage'])} stages for player '{player_name}' because stagesanity is disabled")
 
-                    # Process character sanity data
-                    if 'Character' in sanity_data:
+                    # Process character sanity data - only if charactersanity is enabled
+                    if 'Character' in sanity_data and charactersanity_enabled:
                         character_data = sanity_data['Character']
                         print(f"Processing {len(character_data)} characters for charactersanity")
 
@@ -330,8 +336,13 @@ class FunkinWorld(World):
                                     'songs': character_songs,
                                     'player': player_name
                                 })
+                    elif 'Character' in sanity_data and not charactersanity_enabled:
+                        print(f"Skipping {len(sanity_data['Character'])} characters for player '{player_name}' because charactersanity is disabled")
 
-                    print(f"Loaded sanity data: {len(sanity_data.get('Stage', []))} stages and {len(sanity_data.get('Character', []))} characters for player '{player_name}'")
+                    # Updated logging to show actual processed counts
+                    stages_processed = len([item for item in sanity_items if item['type'] == 'stage' and item['player'] == player_name])
+                    characters_processed = len([item for item in sanity_items if item['type'] == 'character' and item['player'] == player_name])
+                    print(f"Loaded sanity data: {stages_processed} stages and {characters_processed} characters for player '{player_name}'")
 
                 except Exception as e:
                     print(f"Error processing embedded sanity data for player '{player_name}': {e}")
@@ -894,7 +905,7 @@ class FunkinWorld(World):
                             cls.sanity_items_list.append(sanity_item_data)
                             # Also add to item_name_to_id mapping
                             cls.item_name_to_id[item_name] = item_details.get("id")
-                            
+
                             # Create corresponding sanity location
                             sanity_location_name = f"Use {item_name}"
                             sanity_location_id = item_details.get("id") + 10000  # Same offset as in stuff()
@@ -1372,7 +1383,7 @@ class FunkinWorld(World):
                 # Check if this custom item is required by any song requirement
                 if self._is_item_required_by_songs(name):
                     # Make it a progression item since it's required for song access
-                    return FunkinFixedItem(name, ItemClassification.progression, custom_item_id, self.player)
+                    return FunkinFixedItem(name, ItemClassification.progression_skip_balancing, custom_item_id, self.player)
                 else:
                     # Regular useful item
                     return FunkinFixedItem(name, ItemClassification.useful, custom_item_id, self.player)
@@ -1423,11 +1434,7 @@ class FunkinWorld(World):
             # Get the sanity item ID from the mapping
             sanity_item_id = self.item_name_to_id.get(name)
             if sanity_item_id:
-                # Sanity items are usually useful but could be progression if required by songs
-                if self._is_item_required_by_songs(name):
-                    return FunkinFixedItem(name, ItemClassification.progression, sanity_item_id, self.player)
-                else:
-                    return FunkinFixedItem(name, ItemClassification.useful, sanity_item_id, self.player)
+                return FunkinFixedItem(name, ItemClassification.progression_skip_balancing, sanity_item_id, self.player)
 
 
 
@@ -1645,6 +1652,7 @@ class FunkinWorld(World):
                         self.multiworld.push_precollected(self.create_item(sanity_item['name']))
                         break  # Found matching song, move to next sanity item
 
+
         # The remaining songs become the item pool
         self.songList = available_song_keys.copy()
         self.random.shuffle(self.songList)
@@ -1696,7 +1704,7 @@ class FunkinWorld(World):
                         if isinstance(song_obj, dict):
                             sanity_song_name = song_obj.get('song', '')
                             sanity_mod_name = song_obj.get('mod', None)  # None if mod field doesn't exist
-                        
+
                         # Build the expected full song name from sanity data
                         if sanity_mod_name:  # Only if mod exists and is not None/empty
                             expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
@@ -1787,10 +1795,10 @@ class FunkinWorld(World):
         """Get list of valid sanity items for this player, filtered by song availability"""
         if not hasattr(self, 'sanity_items_list') or not self.sanity_items_list:
             return []
-            
+
         # Get available songs for this player to validate sanity items
         available_songs = self.get_songs_map(self.player_name)
-        
+
         # Filter sanity items to only include those whose songs exist
         valid_sanity_items = []
         for sanity_item in self.sanity_items_list:
@@ -1798,7 +1806,7 @@ class FunkinWorld(World):
             if sanity_item.get('player') == self.player_name:
                 # Check if any songs for this sanity item exist in available songs
                 required_songs = sanity_item.get('songs', [])
-                
+
                 # Build list of full song names from the sanity item's songs
                 sanity_song_names = []
                 for song_obj in required_songs:
@@ -1806,34 +1814,160 @@ class FunkinWorld(World):
                     if isinstance(song_obj, dict):
                         song_name = song_obj.get('song', '')
                         mod_name = song_obj.get('mod', None)
-                    
+
                     # Build the expected full song name
                     if mod_name:
                         expected_full_song_name = f"{song_name} ({mod_name})"
                     else:
                         expected_full_song_name = song_name
-                    
+
                     sanity_song_names.append(expected_full_song_name)
-                
+
                 # Check if ANY of the sanity item's songs exist in available songs
                 if any(song_name in available_songs for song_name in sanity_song_names):
                     valid_sanity_items.append(sanity_item)
-                    
+
         return valid_sanity_items
-        
+
     def _calculate_sanity_items_to_use(self, remaining_item_slots):
         """Calculate how many sanity items will actually be used in the pool"""
         valid_sanity_items = self._get_valid_sanity_items_for_player()
         if not valid_sanity_items:
             return []
-            
+
         # Shuffle for consistency with item creation
         shuffled_sanity_items = list(valid_sanity_items)
         self.random.shuffle(shuffled_sanity_items)
-        
+
         # Return only the ones that will fit in the pool
         sanity_item_count = min(remaining_item_slots, len(shuffled_sanity_items))
         return shuffled_sanity_items[:sanity_item_count]
+
+    def _get_sanity_settings(self):
+        """Get sanity-related settings from the player's YAML configuration"""
+        settings = {
+            'enable_sanity_locations': True,  # Default: enable sanity locations
+            'sanity_completion_type': 'on_getting',  # Default: clear on getting the item
+            'sanity_types': []  # Default: no specific sanity types
+        }
+
+        # Check if player YAML has sanity settings
+        if hasattr(self, 'thisYaml') and hasattr(self.thisYaml, 'settings'):
+            yaml_settings = self.thisYaml.settings
+
+            # Check for sanity location enable/disable
+            if hasattr(yaml_settings, 'enable_sanity_locations'):
+                settings['enable_sanity_locations'] = bool(yaml_settings.enable_sanity_locations)
+
+            # Check for sanity completion type
+            if hasattr(yaml_settings, 'sanity_completion_type'):
+                completion_type = str(yaml_settings.sanity_completion_type).lower()
+                if completion_type in ['on_getting', 'on_playing', 'on_beating']:
+                    settings['sanity_completion_type'] = completion_type
+                else:
+                    print(f"Warning: Invalid sanity_completion_type '{completion_type}' for player {self.player_name}. Using default 'on_getting'.")
+
+            if yaml_settings.charactersanity:
+                settings['sanity_types'].append('characters')
+            if yaml_settings.stagesanity:
+                settings['sanity_types'].append('stages')
+
+        return settings
+
+    def _create_sanity_access_rule(self, item_name, sanity_item_data, completion_type):
+        """Create access rule for sanity locations based on completion type"""
+        def sanity_access_rule(state):
+            # Must always have the sanity item
+            has_sanity_item = state.has(item_name, self.player)
+
+            if completion_type == 'on_getting':
+                # Simple: just need the sanity item
+                return has_sanity_item
+
+            elif completion_type == 'on_playing':
+                # Need sanity item + own any related song (can play it)
+                if not has_sanity_item:
+                    return False
+
+                # Check if player owns any song that uses this sanity item
+                for song_obj in sanity_item_data.get('songs', []):
+                    if isinstance(song_obj, dict):
+                        song_name = song_obj.get('song', '')
+                        mod_name = song_obj.get('mod', '')
+
+                    # Build the full song name
+                    if mod_name and mod_name.strip():
+                        full_song_name = f"{song_name} ({mod_name})"
+                    else:
+                        full_song_name = song_name
+
+                    # Check if player owns this song
+                    if state.has(full_song_name, self.player):
+                        return True
+
+                return False
+
+            elif completion_type == 'on_beating':
+                # Need sanity item + can beat any related song (full song access rules)
+                if not has_sanity_item:
+                    return False
+
+                # Check if player can beat any song that uses this sanity item
+                # This requires checking the full access rules for each song
+                for song_obj in sanity_item_data.get('songs', []):
+                    if isinstance(song_obj, dict):
+                        song_name = song_obj.get('song', '')
+                        mod_name = song_obj.get('mod', '')
+
+                    # Build the full song name
+                    if mod_name and mod_name.strip():
+                        full_song_name = f"{song_name} ({mod_name})"
+                    else:
+                        full_song_name = song_name
+
+                    # Check if this song exists in the player's available songs
+                    available_songs = self.get_songs_map(self.player_name)
+                    if full_song_name not in available_songs:
+                        continue
+
+                    # Create a song access rule for this specific song and check if it passes
+                    # We need to find the song requirements
+                    song_requirements = self._get_all_song_requirements(song_name, mod_name)
+
+                    # Check basic song access
+                    has_song = state.has(full_song_name, self.player)
+                    if not has_song:
+                        continue
+
+                    # Check additional requirements for this song
+                    can_beat_song = True
+                    for requirement in song_requirements:
+                        if 'requiredItems' in requirement:
+                            for req_item in requirement['requiredItems']:
+                                req_item_name = req_item.get('name', '')
+                                req_item_count = req_item.get('count', 1)
+                                if req_item_name and not state.has(req_item_name, self.player, req_item_count):
+                                    can_beat_song = False
+                                    break
+                        if not can_beat_song:
+                            break
+
+                    # Check if this is the victory song (requires tickets)
+                    if full_song_name == self.victory_song_name:
+                        has_tickets = state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())
+                        can_beat_song = can_beat_song and has_tickets
+
+                    # If we can beat this song, the sanity location is accessible
+                    if can_beat_song:
+                        return True
+
+                return False
+
+            else:
+                # Unknown completion type, default to just requiring the item
+                return has_sanity_item
+
+        return sanity_access_rule
 
     def create_regions(self):
         menu_region = Region("Freeplay", self.player, self.multiworld)
@@ -1963,54 +2097,60 @@ class FunkinWorld(World):
                 menu_region.locations.append(custom_loc)
                 print(f"Added custom location for {self.player_name}: {location_name}")
 
-        # Add sanity item locations (stages and characters)
-        print("Adding sanity item locations...")
-        if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
+        # Add sanity item locations (stages and characters) with customizable options
+        sanity_settings = self._get_sanity_settings()
+        print(f"Sanity settings for {self.player_name}: {sanity_settings}")
+
+        if (sanity_settings['enable_sanity_locations'] and
+            hasattr(self, 'sanity_items_list') and self.sanity_items_list):
+            print("Adding sanity item locations...")
+
             # Calculate approximately how many sanity items will fit in the item pool
             # This is an estimate based on the item creation order
             estimated_item_count = 0
-            
+
             # Tickets
             estimated_item_count += self.get_ticket_count()
-            
+
             # Songs
             song_keys_in_pool = self.get_songs_map(self.player_name)
             estimated_item_count += len(song_keys_in_pool)
-            
+
             # One-time items
             estimated_item_count += min(self.location_count - estimated_item_count, len(self.fnfUtil.one_time_items))
-            
+
             # UNO fillers (if enabled)
             if self.check_trap_weight('UNO Challenge') > 0:
                 uno_filler_count = min(self.location_count - estimated_item_count, max(1, floor(self.location_count * 0.10)))
                 estimated_item_count += uno_filler_count
-                
+
             # PONG filler (if enabled)
             if self.check_trap_weight('PONG Challenge') > 0:
                 estimated_item_count += 1
-                
+
             # Custom items
             estimated_item_count += min(self.location_count - estimated_item_count, len(self.custom_items_list))
-            
+
             # Custom trap items (if traps enabled)
             if self.options.trapAmount.value > 0:
                 estimated_item_count += min(self.location_count - estimated_item_count, len(self.custom_trap_items_list))
-            
+
             # Estimate remaining slots for sanity items
             estimated_remaining_for_sanity = max(0, self.location_count - estimated_item_count)
-            
+
             # Get the sanity items that will actually be used (limited by remaining slots)
             sanity_items_to_use = self._calculate_sanity_items_to_use(estimated_remaining_for_sanity)
-            
+
             print(f"Estimated remaining slots for sanity items: {estimated_remaining_for_sanity}")
             print(f"Creating {len(sanity_items_to_use)} sanity locations (out of {len(self._get_valid_sanity_items_for_player())} valid)")
-            
+            print(f"Sanity completion type: {sanity_settings['sanity_completion_type']}")
+
             # Only create locations for sanity items that will be used
             for sanity_item in sanity_items_to_use:
                 # Get available songs for validation
                 available_songs = self.get_songs_map(self.player_name)
                 required_songs = sanity_item.get('songs', [])
-                
+
                 # Build list of full song names that use this sanity item
                 using_songs = []
                 for song_obj in required_songs:
@@ -2032,55 +2172,44 @@ class FunkinWorld(World):
                 # Create location (we already know this sanity item is valid)
                 sanity_item_name = sanity_item['name']
                 location_name = f"Use {sanity_item_name}"
-                
+
                 # Get the sanity item's ID and create a location ID by adding an offset
                 sanity_item_id = self.item_name_to_id.get(sanity_item_name)
                 if sanity_item_id:
                     # Use a different offset for sanity locations to avoid conflicts
-                    location_id = sanity_item_id + 10000  # Large offset to avoid conflicts
-                    
+                    location_id = sanity_item_id + 1000  # Large offset to avoid conflicts
+
                     # Create the sanity location
                     sanity_loc = FunkinLocation(self.player, location_name, location_id, menu_region)
-                    
-                    # Create access rule: requires the sanity item AND ability to complete at least one song that uses it
-                    # The player must have the sanity item to access songs, then complete a song to unlock this location
-                    def create_sanity_access_rule(item_name, sanity_item_data):
-                        def sanity_access_rule(state):
-                            # Must have the sanity item
-                            has_sanity_item = state.has(item_name, self.player)
-                            
-                            # Must be able to complete at least one song that uses this sanity item
-                            # Check if player can access any song that uses this sanity item
-                            can_complete_using_song = False
-                            for song_obj in sanity_item_data.get('songs', []):
-                                # song_obj should have 'song' and optionally 'mod' fields
-                                if isinstance(song_obj, dict):
-                                    song_name = song_obj.get('song', '')
-                                    mod_name = song_obj.get('mod', '')
-                                
-                                # Build the full song name
-                                if mod_name and mod_name.strip():
-                                    full_song_name = f"{song_name} ({mod_name})"
-                                else:
-                                    full_song_name = song_name
-                                
-                                # Check if player owns this song (basic ownership check for fill compatibility)
-                                if state.has(full_song_name, self.player):
-                                    can_complete_using_song = True
-                                    break
-                            
-                            return has_sanity_item and can_complete_using_song
-                        return sanity_access_rule
-                    
-                    sanity_loc.access_rule = create_sanity_access_rule(sanity_item_name, sanity_item)
-                    
+
+                    # Create access rule based on completion type
+                    completion_type = sanity_settings['sanity_completion_type']
+                    sanity_loc.access_rule = self._create_sanity_access_rule(
+                        sanity_item_name, sanity_item, completion_type
+                    )
+
                     menu_region.locations.append(sanity_loc)
-                    print(f"Added sanity location for {self.player_name}: {location_name} (requires {sanity_item_name} + any of {using_songs})")
-                    
+
+                    # Create description of access requirements for logging
+                    if completion_type == 'on_getting':
+                        access_desc = f"requires {sanity_item_name} only"
+                    elif completion_type == 'on_playing':
+                        access_desc = f"requires {sanity_item_name} + owning any of {using_songs}"
+                    elif completion_type == 'on_beating':
+                        access_desc = f"requires {sanity_item_name} + ability to beat any of {using_songs}"
+                    else:
+                        access_desc = f"requires {sanity_item_name} (unknown completion type)"
+
+                    print(f"Added sanity location for {self.player_name}: {location_name} ({access_desc})")
+
                     # Add to location name to ID mapping
                     self.location_name_to_id[location_name] = location_id
                 else:
-                    print(f"Warning: Could not find item ID for sanity item {sanity_item_name}")        # Update location count
+                    print(f"Warning: Could not find item ID for sanity item {sanity_item_name}")
+        elif not sanity_settings['enable_sanity_locations']:
+            print(f"Sanity locations disabled for {self.player_name}")
+        else:
+            print(f"No sanity items available for {self.player_name}")
         self.location_count = len(menu_region.locations)
 
         print('-- FNF LOCATION GEN FINISHED --')
@@ -2104,16 +2233,22 @@ class FunkinWorld(World):
 
     def create_items(self) -> None:
         song_keys_in_pool = self.get_songs_map(self.player_name).copy()
+        print(f"=== ITEM CREATION DEBUG for {self.player_name} ===")
+        print(f"Location count: {self.location_count}")
+        print(f"Songs in pool: {len(song_keys_in_pool)} - {song_keys_in_pool}")
+
         if len(song_keys_in_pool) > 0:
             item_count = 0  # Track total items added
 
             # First add all goal song tokens
             ticket_count = self.get_ticket_count()
+            print(f"Adding {ticket_count} tickets")
             for _ in range(ticket_count):
                 self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))
                 item_count += 1
 
             # Then add 1 copy of every song
+            print(f"Adding {len(song_keys_in_pool)} songs")
             for song in song_keys_in_pool:
                 if item_count >= self.location_count:
                     break
@@ -2123,6 +2258,7 @@ class FunkinWorld(World):
             # Add one-time items (mandatory items that cannot be turned off)
             remaining_slots = self.location_count - item_count
             one_time_items_to_add = min(remaining_slots, len(self.fnfUtil.one_time_items))
+            print(f"Adding {one_time_items_to_add} one-time items (remaining slots: {remaining_slots})")
             if one_time_items_to_add > 0:
                 one_time_items_list = list(self.fnfUtil.one_time_items.keys())
                 for i in range(one_time_items_to_add):
@@ -2134,6 +2270,7 @@ class FunkinWorld(World):
             if self.check_trap_weight('UNO Challenge') > 0 and remaining_slots > 0:
                 # Calculate UNO filler count as 10% of total locations, but cap it to remaining slots
                 uno_filler_count = min(remaining_slots, max(1, floor(self.location_count * 0.10)))
+                print(f"Adding {uno_filler_count} UNO fillers (remaining slots: {remaining_slots})")
                 uno_colors_added = 0
                 for _ in range(uno_filler_count):
                     if self.available_uno_colors and uno_colors_added < uno_filler_count:
@@ -2147,6 +2284,7 @@ class FunkinWorld(World):
                         uno_colors_added += 1
 
             if self.check_trap_weight('PONG Challenge') > 0:
+                print(f"Adding 1 PONG item")
                 self.multiworld.itempool.append(self.create_item('PONG Dash Mechanic'))
                 item_count += 1
 
@@ -2157,6 +2295,7 @@ class FunkinWorld(World):
                 player_custom_items = list(self.custom_items_list)
 
                 custom_item_count = min(remaining_slots, len(player_custom_items))
+                print(f"Adding {custom_item_count} custom items: {player_custom_items[:custom_item_count]} (remaining slots: {remaining_slots})")
                 if custom_item_count > 0:
                     print(f"Adding {custom_item_count} custom items to pool for {self.player_name}")
                     for i in range(custom_item_count):
@@ -2171,6 +2310,7 @@ class FunkinWorld(World):
                 player_custom_traps = list(self.custom_trap_items_list)
 
                 custom_trap_count = min(remaining_slots, len(player_custom_traps))
+                print(f"Adding {custom_trap_count} custom traps: {player_custom_traps[:custom_trap_count]} (remaining slots: {remaining_slots})")
                 if custom_trap_count > 0:
                     print(f"Adding {custom_trap_count} custom trap items to pool for {self.player_name}")
                     for i in range(custom_trap_count):
@@ -2178,11 +2318,37 @@ class FunkinWorld(World):
                         self.multiworld.itempool.append(self.create_item(custom_trap_name))
                         item_count += 1
 
-            # Add sanity items (stages and characters) - shuffle and pre-collect overflow
+            # Add sanity items (stages and characters) - these are always added regardless of location settings
             remaining_slots = self.location_count - item_count
+            
             if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
-                # Use the same logic as location creation to ensure consistency
+                # Get sanity settings to check if locations are enabled (for validation purposes)
+                sanity_settings = self._get_sanity_settings()
+                
+                # Get the sanity items that will be used (always add items, regardless of location setting)
                 sanity_items_to_use = self._calculate_sanity_items_to_use(remaining_slots)
+                
+                # Validate that we have the expected number of sanity locations for these items
+                # Only if locations are enabled
+                expected_sanity_locations = 0
+                if sanity_settings['enable_sanity_locations']:
+                    for sanity_item in sanity_items_to_use:
+                        sanity_item_name = sanity_item['name']
+                        location_name = f"Use {sanity_item_name}"
+                        if location_name in self.location_name_to_id:
+                            expected_sanity_locations += 1
+                
+                if sanity_settings['enable_sanity_locations']:
+                    print(f"Sanity item validation: {len(sanity_items_to_use)} items, {expected_sanity_locations} locations (mode: {sanity_settings['sanity_completion_type']})")
+                    
+                    if len(sanity_items_to_use) != expected_sanity_locations:
+                        print(f"WARNING: Sanity item/location mismatch! Items: {len(sanity_items_to_use)}, Locations: {expected_sanity_locations}")
+                        # Use the smaller number to prevent fill failures
+                        actual_items_to_add = min(len(sanity_items_to_use), expected_sanity_locations)
+                        sanity_items_to_use = sanity_items_to_use[:actual_items_to_add]
+                        print(f"Adjusted to {actual_items_to_add} sanity items to match available locations")
+                else:
+                    print(f"Sanity items: {len(sanity_items_to_use)} items (locations disabled)")
                 
                 if sanity_items_to_use:
                     print(f"Adding {len(sanity_items_to_use)} sanity items to pool for {self.player_name}")
@@ -2197,8 +2363,8 @@ class FunkinWorld(World):
                         print(f"Note: {overflow_count} valid sanity items didn't fit in pool (would need more locations)")
                     
                     print(f"Total sanity items processed: {len(sanity_items_to_use)} (pool: {len(sanity_items_to_use)}, overflow: {overflow_count})")
-            
-            # Update remaining slots after sanity items
+            else:
+                print(f"No sanity items available for {self.player_name}")            # Update remaining slots after sanity items
             remaining_slots = self.location_count - item_count
             trap_count = min(remaining_slots, self.get_trap_count())
             trap_list = self.get_available_traps()
@@ -2292,14 +2458,31 @@ class FunkinWorld(World):
             # Validate that we have exactly the right number of items
             if item_count != self.location_count:
                 print(f"ERROR: Item count ({item_count}) doesn't match location count ({self.location_count}) for player {self.player_name}")
+                print(f"Item breakdown:")
+                print(f"  - Tickets: {ticket_count}")
+                print(f"  - Songs: {len(song_keys_in_pool)}")
+                print(f"  - One-time items: {one_time_items_to_add}")
+                print(f"  - Custom items: {len([item for item in self.multiworld.itempool if hasattr(item, 'name') and item.name in self.custom_items_list])}")
+                print(f"  - Custom traps: {len([item for item in self.multiworld.itempool if hasattr(item, 'name') and item.name in self.custom_trap_items_list])}")
+                print(f"  - Sanity items: {len([item for item in self.multiworld.itempool if hasattr(item, 'name') and any(sanity['name'] == item.name for sanity in getattr(self, 'sanity_items_list', []))])}")
+                print(f"  - Other items: {item_count - ticket_count - len(song_keys_in_pool) - one_time_items_to_add}")
                 raise ValueError(f"Item/location count mismatch: {item_count} items vs {self.location_count} locations")
 
             print(f"Successfully created {item_count} items for {self.location_count} locations for player {self.player_name}")
+            print(f"=== END ITEM CREATION DEBUG ===\n")
 
     def set_rules(self) -> None:
+        print(f"=== SETTING COMPLETION CONDITION for {self.player_name} ===")
+        print(f"Victory song: {self.victory_song_name}")
+        print(f"Required tickets: {self.get_ticket_win_count()}")
+        print(f"Total tickets in pool: {self.get_ticket_count()}")
+
         self.multiworld.completion_condition[self.player] = \
             lambda state: state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()) and \
                   state.has(self.victory_song_name, self.player, 1)
+
+        print(f"Completion condition set: Need {self.get_ticket_win_count()} tickets AND '{self.victory_song_name}' song")
+        print(f"=== END COMPLETION CONDITION ===\n")
 
     def get_trap_count(self) -> int:
         return self.options.trapAmount.value
@@ -2482,7 +2665,7 @@ class FunkinWorld(World):
                                 'player': sanity_item.get('player', '')
                             }
 
-            # Get sanity locations for this player  
+            # Get sanity locations for this player
             player_sanity_locations = {}
             if hasattr(self, 'sanity_location_ids') and self.sanity_location_ids:
                 for location_name, location_id in self.sanity_location_ids.items():
@@ -2510,6 +2693,7 @@ class FunkinWorld(World):
                 "locationData": location_details,  # Detailed location metadata for the client
                 "sanityData": player_sanity_items,  # Sanity items for this player
                 "sanityLocationData": player_sanity_locations,  # Sanity locations for this player
+                "sanitySettings": self._get_sanity_settings(),  # Sanity settings for this player
                 "customWeeks": custom_weeks_data,  # Custom week generation data for APGameState
                 "songRequirements": player_song_requirements,  # Song access requirements for this player
                 "song_modifications": {
