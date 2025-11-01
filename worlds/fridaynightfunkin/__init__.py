@@ -1383,10 +1383,10 @@ class FunkinWorld(World):
                 # Check if this custom item is required by any song requirement
                 if self._is_item_required_by_songs(name):
                     # Make it a progression item since it's required for song access
-                    return FunkinFixedItem(name, ItemClassification.progression_skip_balancing, custom_item_id, self.player)
+                    return FunkinFixedItem(name, ItemClassification.progression_deprioritized_skip_balancing, custom_item_id, self.player)
                 else:
                     # Regular useful item
-                    return FunkinFixedItem(name, ItemClassification.useful, custom_item_id, self.player)
+                    return FunkinFixedItem(name, ItemClassification.deprioritized, custom_item_id, self.player)
 
         filler = self.fnfUtil.filler_items.get(name)
         if filler:
@@ -1630,27 +1630,110 @@ class FunkinWorld(World):
         self.multiworld.push_precollected(self.create_item(starting_song))
 
         # Check if starting song requires any sanity items and precollect them
+        # This needs to account for sanity completion type settings and NEW: difficulty-aware accessibility
         if hasattr(self, 'sanity_items_list') and self.sanity_items_list and starting_song:
+            # Get sanity settings to understand completion requirements
+            sanity_settings = self._get_sanity_settings()
+            completion_type = sanity_settings.get('sanity_completion_type', 'on_getting')
+
+            print(f"Checking sanity requirements for starting song with completion type: {completion_type}")
+
+            # For difficulty-aware accessibility, we need to determine which sanity items are absolutely required
+            # A sanity item is required if ALL difficulties of the starting song use it
+            starting_song_difficulties = {}  # Map of difficulty -> {characters: set, stages: set}
+
+            # First, collect all difficulties for the starting song and what they require
             for sanity_item in self.sanity_items_list:
-                # Check if starting song uses this stage or character
+                if sanity_item.get('player') != self.player_name:
+                    continue  # Skip sanity items for other players
+
+                sanity_type = sanity_item.get('type', '')
+                sanity_name = sanity_item.get('name', '')
+
                 for song_obj in sanity_item['songs']:
-                    # song_obj should have 'song' and optionally 'mod' fields
                     if isinstance(song_obj, dict):
                         sanity_song_name = song_obj.get('song', '')
-                        sanity_mod_name = song_obj.get('mod', None)  # None if mod field doesn't exist
+                        sanity_mod_name = song_obj.get('mod', None)
+                        song_difficulties = song_obj.get('difficulties', [])  # NEW: difficulty list
 
-                    # Build the expected full song name from sanity data
-                    if sanity_mod_name:  # Only if mod exists and is not None/empty
-                        expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
-                    else:
-                        expected_full_song_name = sanity_song_name
+                        # Build the expected full song name from sanity data
+                        if sanity_mod_name:
+                            expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
+                        else:
+                            expected_full_song_name = sanity_song_name
 
-                    # Check if this matches the starting song
-                    if expected_full_song_name == starting_song:
-                        # Starting song requires this sanity item - precollect it
-                        print(f"Starting song '{starting_song}' requires sanity item '{sanity_item['name']}' - precollecting it")
-                        self.multiworld.push_precollected(self.create_item(sanity_item['name']))
-                        break  # Found matching song, move to next sanity item
+                        # Check if this matches the starting song
+                        if expected_full_song_name == starting_song:
+                            # Track which difficulties use this sanity item
+                            for difficulty in song_difficulties:
+                                if difficulty not in starting_song_difficulties:
+                                    starting_song_difficulties[difficulty] = {'characters': set(), 'stages': set()}
+
+                                if sanity_type == 'character':
+                                    character_name = sanity_item.get('character_name', sanity_name.replace('Character: ', ''))
+                                    starting_song_difficulties[difficulty]['characters'].add(character_name)
+                                elif sanity_type == 'stage':
+                                    stage_name = sanity_item.get('stage_name', sanity_name.replace('Stage: ', ''))
+                                    starting_song_difficulties[difficulty]['stages'].add(stage_name)
+
+            # Now determine which sanity items are required for ALL difficulties (must be precollected)
+            if starting_song_difficulties:
+                all_difficulties = list(starting_song_difficulties.keys())
+                required_characters = set()
+                required_stages = set()
+
+                if all_difficulties:
+                    # Start with requirements from first difficulty
+                    first_difficulty = all_difficulties[0]
+                    required_characters = starting_song_difficulties[first_difficulty]['characters'].copy()
+                    required_stages = starting_song_difficulties[first_difficulty]['stages'].copy()
+
+                    # Intersect with requirements from other difficulties (items required by ALL difficulties)
+                    for difficulty in all_difficulties[1:]:
+                        required_characters &= starting_song_difficulties[difficulty]['characters']
+                        required_stages &= starting_song_difficulties[difficulty]['stages']
+
+                # Precollect sanity items that are required by ALL difficulties
+                for character_name in required_characters:
+                    character_item_name = f"Character: {character_name}"
+                    print(f"Starting song '{starting_song}' requires character '{character_name}' for ALL difficulties - precollecting it")
+                    self.multiworld.push_precollected(self.create_item(character_item_name))
+
+                for stage_name in required_stages:
+                    stage_item_name = f"Stage: {stage_name}"
+                    print(f"Starting song '{starting_song}' requires stage '{stage_name}' for ALL difficulties - precollecting it")
+                    self.multiworld.push_precollected(self.create_item(stage_item_name))
+
+                    # For on_beating completion type, we also need to ensure the player can actually beat the starting song
+                    # This means precollecting any additional song requirements for the starting song
+                    if completion_type == 'on_beating':
+                        print(f"Sanity completion type is 'on_beating' - checking additional song requirements for starting song")
+
+                        # Parse the starting song name to get song name and mod name
+                        if ' (' in starting_song and starting_song.endswith(')'):
+                            # Has mod name in parentheses
+                            song_name_part = starting_song.split(' (')[0]
+                            mod_name_part = starting_song.split(' (')[1].rstrip(')')
+                        else:
+                            # No mod name
+                            song_name_part = starting_song
+                            mod_name_part = ""
+
+                        # Get all requirements for this starting song
+                        starting_song_requirements = self._get_all_song_requirements(song_name_part, mod_name_part)
+
+                        # Precollect all required items for the starting song
+                        for requirement in starting_song_requirements:
+                            if 'requiredItems' in requirement:
+                                for req_item in requirement['requiredItems']:
+                                    req_item_name = req_item.get('name', '')
+                                    req_item_count = req_item.get('count', 1)
+
+                                    if req_item_name:
+                                        print(f"Starting song requirement: precollecting {req_item_count}x '{req_item_name}' for 'on_beating' sanity access")
+                                        # Precollect the required amount
+                                        for _ in range(req_item_count):
+                                            self.multiworld.push_precollected(self.create_item(req_item_name))
 
 
         # The remaining songs become the item pool
@@ -1695,27 +1778,79 @@ class FunkinWorld(World):
             # Basic song access - check for the full item name
             has_song = state.has(full_song_name, self.player)
 
-            # Check for sanity requirements (stages and characters)
+            # Check for sanity requirements (stages and characters) - NEW: Difficulty-aware accessibility
             if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
+                # For difficulty-aware accessibility, we need to check if ANY difficulty of this song is playable
+                # A song is accessible if at least one difficulty can be played with available characters/stages
+
+                # Group all sanity items that affect this song by type
+                song_difficulties_info = {}  # Map of difficulty -> {characters: set, stages: set}
+
+                # First pass: collect all sanity items that affect this song and build difficulty info
                 for sanity_item in self.sanity_items_list:
-                    # Check if this song uses this stage or character
+                    if sanity_item.get('player') != self.player_name:
+                        continue  # Skip sanity items for other players
+
+                    sanity_type = sanity_item.get('type', '')
+                    sanity_name = sanity_item.get('name', '')
+
+                    # Check each song in this sanity item
                     for song_obj in sanity_item['songs']:
-                        # song_obj should have 'song' and optionally 'mod' fields
                         if isinstance(song_obj, dict):
                             sanity_song_name = song_obj.get('song', '')
-                            sanity_mod_name = song_obj.get('mod', None)  # None if mod field doesn't exist
+                            sanity_mod_name = song_obj.get('mod', None)
+                            song_difficulties = song_obj.get('difficulties', [])  # NEW: difficulty list
 
-                        # Build the expected full song name from sanity data
-                        if sanity_mod_name:  # Only if mod exists and is not None/empty
-                            expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
-                        else:
-                            expected_full_song_name = sanity_song_name
+                            # Build the expected full song name from sanity data
+                            if sanity_mod_name:
+                                expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
+                            else:
+                                expected_full_song_name = sanity_song_name
 
-                        # Check if this matches the current song's full name
-                        if expected_full_song_name == full_song_name:
-                            # This song requires the sanity item
-                            if not state.has(sanity_item['name'], self.player):
-                                return False
+                            # Check if this matches the current song's full name
+                            if expected_full_song_name == full_song_name:
+                                # This sanity item affects this song - track which difficulties use it
+                                for difficulty in song_difficulties:
+                                    if difficulty not in song_difficulties_info:
+                                        song_difficulties_info[difficulty] = {'characters': set(), 'stages': set()}
+
+                                    if sanity_type == 'character':
+                                        character_name = sanity_item.get('character_name', sanity_name.replace('Character: ', ''))
+                                        song_difficulties_info[difficulty]['characters'].add(character_name)
+                                    elif sanity_type == 'stage':
+                                        stage_name = sanity_item.get('stage_name', sanity_name.replace('Stage: ', ''))
+                                        song_difficulties_info[difficulty]['stages'].add(stage_name)
+
+                # Second pass: check if ANY difficulty is playable with available sanity items
+                if song_difficulties_info:
+                    # Check each difficulty to see if it's playable
+                    any_difficulty_playable = False
+
+                    for difficulty, requirements in song_difficulties_info.items():
+                        difficulty_playable = True
+
+                        # Check if all required characters for this difficulty are unlocked
+                        for character_name in requirements['characters']:
+                            character_item_name = f"Character: {character_name}"
+                            if not state.has(character_item_name, self.player):
+                                difficulty_playable = False
+                                break
+
+                        # Check if all required stages for this difficulty are unlocked
+                        if difficulty_playable:
+                            for stage_name in requirements['stages']:
+                                stage_item_name = f"Stage: {stage_name}"
+                                if not state.has(stage_item_name, self.player):
+                                    difficulty_playable = False
+                                    break
+
+                        if difficulty_playable:
+                            any_difficulty_playable = True
+                            break  # At least one difficulty is playable
+
+                    # If no difficulty is playable, block access to the song
+                    if not any_difficulty_playable:
+                        return False
 
             # Check ALL provided requirements (multiple access rules for the same song+mod)
             if requirements_list:
@@ -1737,59 +1872,7 @@ class FunkinWorld(World):
 
         return song_access_rule
 
-    def _create_song_access_rule(self, song_name: str, mod_name: str = ""):
-        """Create an access rule for a song that includes both basic song access and song requirements"""
-        def song_access_rule(state):
-            # Build the full item name (song name with mod name in parentheses if applicable)
-            if mod_name and mod_name.strip():
-                full_song_name = f"{song_name} ({mod_name})"
-            else:
-                full_song_name = song_name
 
-            # Basic song access - check for the full item name
-            has_song = state.has(full_song_name, self.player)
-
-            # Check for sanity requirements (stages and characters)
-            if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
-                for sanity_item in self.sanity_items_list:
-                    # Check if this song uses this stage or character
-                    for song_obj in sanity_item['songs']:
-                        # song_obj should have 'song' and optionally 'mod' fields
-                        if isinstance(song_obj, dict):
-                            sanity_song_name = song_obj.get('song', '')
-                            sanity_mod_name = song_obj.get('mod', None)  # None if mod field doesn't exist
-
-                        # Build the expected full song name from sanity data
-                        if sanity_mod_name:  # Only if mod exists and is not None/empty
-                            expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
-                        else:
-                            expected_full_song_name = sanity_song_name
-
-                        # Check if this matches the current song's full name
-                        if expected_full_song_name == full_song_name:
-                            # This song requires the sanity item
-                            if not state.has(sanity_item['name'], self.player):
-                                return False
-
-            # Check for ALL additional requirements for this song
-            all_requirements = self._get_all_song_requirements(song_name, mod_name)
-            for requirement in all_requirements:
-                if 'requiredItems' in requirement:
-                    # Song has additional requirements - ALL must be satisfied
-                    for req_item in requirement['requiredItems']:
-                        item_name = req_item.get('name', '')
-                        item_count = req_item.get('count', 1)
-                        if item_name and not state.has(item_name, self.player, item_count):
-                            return False  # Missing required item from any requirement
-
-            # Victory song special handling
-            if full_song_name == self.victory_song_name:
-                has_tickets = state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count())
-                return has_song and has_tickets
-
-            return has_song
-
-        return song_access_rule
 
     def _get_valid_sanity_items_for_player(self):
         """Get list of valid sanity items for this player, filtered by song availability"""
@@ -2320,14 +2403,14 @@ class FunkinWorld(World):
 
             # Add sanity items (stages and characters) - these are always added regardless of location settings
             remaining_slots = self.location_count - item_count
-            
+
             if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
                 # Get sanity settings to check if locations are enabled (for validation purposes)
                 sanity_settings = self._get_sanity_settings()
-                
+
                 # Get the sanity items that will be used (always add items, regardless of location setting)
                 sanity_items_to_use = self._calculate_sanity_items_to_use(remaining_slots)
-                
+
                 # Validate that we have the expected number of sanity locations for these items
                 # Only if locations are enabled
                 expected_sanity_locations = 0
@@ -2337,10 +2420,10 @@ class FunkinWorld(World):
                         location_name = f"Use {sanity_item_name}"
                         if location_name in self.location_name_to_id:
                             expected_sanity_locations += 1
-                
+
                 if sanity_settings['enable_sanity_locations']:
                     print(f"Sanity item validation: {len(sanity_items_to_use)} items, {expected_sanity_locations} locations (mode: {sanity_settings['sanity_completion_type']})")
-                    
+
                     if len(sanity_items_to_use) != expected_sanity_locations:
                         print(f"WARNING: Sanity item/location mismatch! Items: {len(sanity_items_to_use)}, Locations: {expected_sanity_locations}")
                         # Use the smaller number to prevent fill failures
@@ -2349,19 +2432,23 @@ class FunkinWorld(World):
                         print(f"Adjusted to {actual_items_to_add} sanity items to match available locations")
                 else:
                     print(f"Sanity items: {len(sanity_items_to_use)} items (locations disabled)")
-                
+
                 if sanity_items_to_use:
                     print(f"Adding {len(sanity_items_to_use)} sanity items to pool for {self.player_name}")
                     for sanity_item in sanity_items_to_use:
                         self.multiworld.itempool.append(self.create_item(sanity_item['name']))
                         item_count += 1
-                    
+
                     # Check if there were any valid sanity items that didn't fit
                     all_valid_sanity_items = self._get_valid_sanity_items_for_player()
                     overflow_count = len(all_valid_sanity_items) - len(sanity_items_to_use)
                     if overflow_count > 0:
                         print(f"Note: {overflow_count} valid sanity items didn't fit in pool (would need more locations)")
-                    
+                        class SanityOverflowException(Exception):
+                            pass
+                        print("It's recommended to have at least 3 checks per song.")
+                        raise SanityOverflowException(f"Sanity item overflow: {overflow_count} items could not be added for player {self.player_name}")
+
                     print(f"Total sanity items processed: {len(sanity_items_to_use)} (pool: {len(sanity_items_to_use)}, overflow: {overflow_count})")
             else:
                 print(f"No sanity items available for {self.player_name}")            # Update remaining slots after sanity items
@@ -2505,9 +2592,9 @@ class FunkinWorld(World):
         multiplier = self.options.ticket_win_percentage.value / 100.0
         ticket_count = self.get_ticket_count()
         return max(1, floor(ticket_count * multiplier))
+    
 
-
-    def write_spoiler(self, spoiler_handle: TextIO) -> None:
+    def write_spoiler_header(self, spoiler_handle):
         spoiler_handle.write("\n\n")
         spoiler_handle.write(f"--- FNF SPOILER INFO FOR [{self.player_name}] ---\n")
         spoiler_handle.write(f"Victory Song: {self.victory_song_name}\n")
@@ -2515,6 +2602,100 @@ class FunkinWorld(World):
         spoiler_handle.write(f"Total Ticket Count: {self.get_ticket_count()}\n")
         spoiler_handle.write(f"Total Song Count: {len(self.get_songs_map(self.player_name))}\n")
         spoiler_handle.write(f"Songs selected: {self.get_songs_map(self.player_name)}\n")
+
+    def write_spoiler(self, spoiler_handle: TextIO) -> None:
+        # Give song requirements in human-readable format
+        spoiler_handle.write(f"\n-- Song Requirements for [{self.player_name}] --\n")
+        
+        if not self._custom_song_requirements:
+            spoiler_handle.write("No custom song requirements.\n")
+            return
+            
+        for requirement in self._custom_song_requirements:
+            song_name = requirement.get('songName', 'Unknown Song')
+            target_mod = requirement.get('targetMod', '')
+            
+            # Build the full song name
+            if target_mod and target_mod.strip():
+                full_song_name = f"{song_name} ({target_mod})"
+            else:
+                full_song_name = song_name
+            
+            spoiler_handle.write(f"\nSong: {full_song_name}\n")
+            
+            # Check if this song has required items
+            if 'requiredItems' in requirement and requirement['requiredItems']:
+                spoiler_handle.write("  Required Items:\n")
+                for req_item in requirement['requiredItems']:
+                    item_name = req_item.get('name', 'Unknown Item')
+                    item_count = req_item.get('count', 1)
+                    
+                    if item_count > 1:
+                        spoiler_handle.write(f"    - {item_name} (x{item_count})\n")
+                    else:
+                        spoiler_handle.write(f"    - {item_name}\n")
+            else:
+                spoiler_handle.write("  No additional items required.\n")
+            
+            # Add any other requirement details if they exist
+            other_requirements = []
+            for key, value in requirement.items():
+                if key not in ['songName', 'targetMod', 'requiredItems'] and value:
+                    other_requirements.append(f"{key}: {value}")
+            
+            if other_requirements:
+                spoiler_handle.write("  Other Requirements:\n")
+                for req in other_requirements:
+                    spoiler_handle.write(f"    - {req}\n")
+        
+        # Add sanity requirements if they exist
+        if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
+            spoiler_handle.write(f"\n-- Sanity Requirements for [{self.player_name}] --\n")
+            
+            # Get sanity settings
+            sanity_settings = self._get_sanity_settings()
+            completion_type = sanity_settings.get('sanity_completion_type', 'on_getting')
+            
+            spoiler_handle.write(f"Sanity Completion Type: {completion_type}\n")
+            spoiler_handle.write(f"Sanity Locations Enabled: {sanity_settings.get('enable_sanity_locations', False)}\n\n")
+            
+            # List all sanity items for this player
+            player_sanity_items = [item for item in self.sanity_items_list if item.get('player') == self.player_name]
+            
+            if player_sanity_items:
+                spoiler_handle.write("Sanity Items:\n")
+                for sanity_item in player_sanity_items:
+                    sanity_name = sanity_item.get('name', 'Unknown Sanity Item')
+                    sanity_type = sanity_item.get('type', 'unknown')
+                    
+                    spoiler_handle.write(f"  {sanity_name} ({sanity_type})\n")
+                    
+                    # List songs that use this sanity item
+                    songs = sanity_item.get('songs', [])
+                    if songs:
+                        spoiler_handle.write("    Used in songs:\n")
+                        for song_obj in songs:
+                            if isinstance(song_obj, dict):
+                                song_name = song_obj.get('song', '')
+                                mod_name = song_obj.get('mod', None)
+                                difficulties = song_obj.get('difficulties', [])
+                                
+                                # Build song name
+                                if mod_name:
+                                    full_name = f"{song_name} ({mod_name})"
+                                else:
+                                    full_name = song_name
+                                
+                                # Show difficulties if specified
+                                if difficulties:
+                                    diff_str = ", ".join(difficulties)
+                                    spoiler_handle.write(f"      - {full_name} (difficulties: {diff_str})\n")
+                                else:
+                                    spoiler_handle.write(f"      - {full_name} (all difficulties)\n")
+                    else:
+                        spoiler_handle.write("    No songs specified.\n")
+            else:
+                spoiler_handle.write("No sanity items for this player.\n")
 
     # def extend_hint_information(self, hint_data):
     #     return super().extend_hint_information(hint_data)
