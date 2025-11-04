@@ -41,12 +41,12 @@ class FunkinUtils:
         "Opponent Mode Trap": STARTING_CODE + 11,
         "Both Play Trap": STARTING_CODE + 12,
         "Ultimate Confusion Trap": STARTING_CODE + 13,
+        "Max HP Down": STARTING_CODE + 16,
     }
 
     normal_items: Dict[str, int] = {
         "Shield": STARTING_CODE + 14,
         "Max HP Up": STARTING_CODE + 15,
-        "Max HP Down": STARTING_CODE + 16,
         "Extra Life": STARTING_CODE + 17,
     }
 
