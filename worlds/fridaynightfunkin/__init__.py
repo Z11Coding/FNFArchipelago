@@ -42,6 +42,19 @@ def inputimeout(prompt='', timeout=10):
         return None
     return result[0]
 
+# Custom error for location ID mismatches
+class LocationIDMismatchError(Exception):
+    """Raised when location IDs don't match between stuff() initialization and runtime creation"""
+    def __init__(self, location_name: str, expected_id: int, actual_id: int, player_name: str):
+        self.location_name = location_name
+        self.expected_id = expected_id
+        self.actual_id = actual_id
+        self.player_name = player_name
+        super().__init__(f"Location ID mismatch for '{location_name}' (player: {player_name}): "
+                        f"expected ID {expected_id} but got ID {actual_id}. "
+                        f"This indicates the location generation is not deterministic between "
+                        f"stuff() initialization and runtime creation.")
+
 # Custom location data class similar to SongData
 class LocationData:
     def __init__(self, code: int, location_name: str, player_owner: str, player_list: List[str],
@@ -128,6 +141,7 @@ class FunkinWorld(World):
         fnfUtil = FunkinUtils()
 
         # You cannot check this. Don't try it.
+        # COMMENTED OUT: Passthrough data functionality disabled
         # if hasattr(FunkinWorld, '_passthrough_data'):
         #     passthrough = FunkinWorld._passthrough_data
         #     print("Using passthrough data for item/location setup")
@@ -658,7 +672,7 @@ class FunkinWorld(World):
             # Use the sanity item's ID + offset for the location ID
             sanity_item_id = sanity_item_ids.get(item_name)
             if sanity_item_id:
-                location_id = sanity_item_id + 10000  # Large offset to avoid conflicts
+                location_id = sanity_item_id + 1000 # Large offset to avoid conflicts
                 sanity_location_ids[location_name] = location_id
 
         # Build final name-to-ID mappings
@@ -802,192 +816,14 @@ class FunkinWorld(World):
         # Setup class data if not already done
         instance = super(FunkinWorld, cls).__new__(cls)
 
-        if hasattr(multiworld, "re_gen_passthrough") and multiworld.re_gen_passthrough:
-            print("Re-generation passthrough detected, Using Slot Data to populate ID mappings.")
-            if "Friday Night Funkin'" in multiworld.re_gen_passthrough:
-                passthrough = multiworld.re_gen_passthrough["Friday Night Funkin'"]
+        # COMMENTED OUT: Passthrough functionality disabled
+        # if hasattr(multiworld, "re_gen_passthrough") and multiworld.re_gen_passthrough:
+        #     print("Re-generation passthrough detected, Using Slot Data to populate ID mappings.")
+        #     if "Friday Night Funkin'" in multiworld.re_gen_passthrough:
+                # COMMENTED OUT: Passthrough functionality disabled
+                # passthrough = multiworld.re_gen_passthrough["Friday Night Funkin'"]
 
-                # Extract data from passthrough slot data
-                song_data_from_slot = passthrough.get("songData", {})
-                location_data_from_slot = passthrough.get("locationData", {})
-                song_requirements = passthrough.get("songRequirements", [])
-                custom_weeks = passthrough.get("customWeeks", {})
-                victory_song = passthrough.get("victoryLocation", "")
-                victory_id = passthrough.get("victoryID", 0)
-                starting_song = passthrough.get("startingSong", "")
-
-                # Populate class-level item_name_to_id mapping from slot data
-                cls.item_name_to_id = {}
-
-                # Add base items from FunkinUtils
-                cls.item_name_to_id[cls.fnfUtil.SHOW_TICKET_NAME] = cls.fnfUtil.SHOW_TICKET_CODE
-                cls.item_name_to_id.update(cls.fnfUtil.filler_items)
-                cls.item_name_to_id.update(cls.fnfUtil.normal_items)
-                cls.item_name_to_id.update(cls.fnfUtil.one_time_items)
-                cls.item_name_to_id.update(cls.fnfUtil.trap_items)
-                cls.item_name_to_id.update(cls.fnfUtil.trap_filler_items)
-
-                # Add song items from slot data
-                for song_name, song_details in song_data_from_slot.items():
-                    song_id = song_details.get("id")
-                    if song_id:
-                        cls.item_name_to_id[song_name] = song_id
-
-                # Populate class-level location_name_to_id mapping from slot data
-                cls.location_name_to_id = {}
-                for location_name, location_details in location_data_from_slot.items():
-                    location_id = location_details.get("id")
-                    if location_id:
-                        cls.location_name_to_id[location_name] = location_id
-
-                # Populate song_items from slot data
-                cls.song_items = {}
-                for song_name, song_details in song_data_from_slot.items():
-                    if song_details.get("type") != "custom":  # Only process actual songs, not custom items
-                        cls.song_items[song_name] = SongData(
-                            song_details.get("id"),
-                            song_details.get("modded", True),
-                            song_details.get("songName", song_name),
-                            song_details.get("playerOwner", ""),
-                            song_details.get("sharedWith", [])
-                        )
-
-                # Populate song_locations from location data
-                cls.song_locations = {}
-                for location_name, location_details in location_data_from_slot.items():
-                    if location_details.get("type") in ["song_completion", "note_check"]:
-                        cls.song_locations[location_name] = location_details.get("id")
-
-                # Populate custom location items from slot data
-                cls.custom_location_items = {}
-                for location_name, location_details in location_data_from_slot.items():
-                    if location_details.get("type") == "custom":
-                        cls.custom_location_items[location_name] = LocationData(
-                            location_details.get("id"),
-                            location_name,
-                            location_details.get("playerOwner", ""),
-                            location_details.get("sharedWith", []),
-                            location_details.get("originSong", ""),
-                            location_details.get("originMod", ""),
-                            None  # Access rule will be set during region creation
-                        )
-
-                # Populate custom items and trap items from slot data
-                cls.custom_items_list = []
-                cls.custom_trap_items_list = []
-                cls.sanity_items_list = []
-                cls.sanity_location_ids = {}
-
-                # Extract custom items from songData (items that aren't songs)
-                for item_name, item_details in song_data_from_slot.items():
-                    # Check if this is a custom item (not a song)
-                    if (not any(song_name == item_name for song_name in cls.song_items) and
-                        item_name not in cls.fnfUtil.filler_items and
-                        item_name not in cls.fnfUtil.normal_items and
-                        item_name not in cls.fnfUtil.one_time_items and
-                        item_name not in cls.fnfUtil.trap_items and
-                        item_name != cls.fnfUtil.SHOW_TICKET_NAME):
-
-                        # Check if it's a trap item based on name patterns or classification
-                        if ("trap" in item_name.lower() or
-                            "curse" in item_name.lower() or
-                            item_details.get("classification") == "trap"):
-                            cls.custom_trap_items_list.append(item_name)
-                        # Check if it's a sanity item based on name patterns
-                        elif (item_name.startswith("Stage: ") or item_name.startswith("Character: ")):
-                            # Create sanity item data structure for passthrough
-                            sanity_item_data = {
-                                'name': item_name,
-                                'type': 'stage' if item_name.startswith("Stage: ") else 'character',
-                                'songs': item_details.get('songs', []),
-                                'player': item_details.get('playerOwner', '')
-                            }
-                            cls.sanity_items_list.append(sanity_item_data)
-                            # Also add to item_name_to_id mapping
-                            cls.item_name_to_id[item_name] = item_details.get("id")
-
-                            # Create corresponding sanity location
-                            sanity_location_name = f"Use {item_name}"
-                            sanity_location_id = item_details.get("id") + 10000  # Same offset as in stuff()
-                            cls.sanity_location_ids[sanity_location_name] = sanity_location_id
-                            cls.location_name_to_id[sanity_location_name] = sanity_location_id
-                        else:
-                            cls.custom_items_list.append(item_name)
-
-                # Create minimal YAML data for passthrough mode
-                # Extract player names and songs from slot data to create dummy YAMLs
-                players_found = set()
-                for song_name, song_details in song_data_from_slot.items():
-                    if song_details.get("playerOwner"):
-                        players_found.add(song_details.get("playerOwner"))
-                    for shared_player in song_details.get("sharedWith", []):
-                        players_found.add(shared_player)
-
-                all_yamls_list = []
-                for player_name in players_found:
-                    # Create a dummy YAML for each player found in slot data
-                    class PassthroughYAML:
-                        def __init__(self, name):
-                            self.name = name
-                            self.game = "Friday Night Funkin"
-                            self.settings = type('Settings', (), {})()
-                            # Extract songs that belong to this player
-                            player_songs = []
-                            for song_name, song_details in song_data_from_slot.items():
-                                if (song_details.get("playerOwner") == name or
-                                    name in song_details.get("sharedWith", [])):
-                                    if song_details.get("type") != "custom":  # Only actual songs
-                                        player_songs.append(song_name)
-                            self.settings.songList = player_songs
-                            self.settings.song_limit = len(player_songs)
-                            # Add victory and starting song from passthrough data if this player owns the victory song
-                            if victory_song and any(song_details.get("playerOwner") == name
-                                                  for song_name, song_details in song_data_from_slot.items()
-                                                  if song_name == victory_song):
-                                self.settings.victory_song = victory_song
-                            if starting_song and any(song_details.get("playerOwner") == name
-                                                   for song_name, song_details in song_data_from_slot.items()
-                                                   if song_name == starting_song):
-                                self.settings.starting_song = starting_song
-
-                        def getSongList(self):
-                            return self.settings.songList
-
-                    all_yamls_list.append(PassthroughYAML(player_name))
-
-                # Store all passthrough data for stuff() method to use
-                cls._passthrough_data = {
-                    "item_name_to_id": cls.item_name_to_id,
-                    "location_name_to_id": cls.location_name_to_id,
-                    "song_items": cls.song_items,
-                    "song_locations": cls.song_locations,
-                    "custom_location_items": cls.custom_location_items,
-                    "custom_items": cls.custom_items_list,
-                    "custom_trap_items": cls.custom_trap_items_list,
-                    "sanity_items_list": cls.sanity_items_list,
-                    "sanity_location_ids": getattr(cls, 'sanity_location_ids', {}),
-                    "custom_song_requirements": song_requirements,
-                    "custom_song_additions": [],  # Will be populated if needed
-                    "custom_song_exclusions": [],  # Will be populated if needed
-                    "all_yamls": all_yamls_list,
-                    "player_song_additions": {},  # Extract from song_modifications if available
-                    "victory_song": victory_song,
-                    "victory_id": victory_id,
-                    "starting_song": starting_song
-                }
-
-                print(f"Passthrough: Loaded {len(cls.item_name_to_id)} items, {len(cls.location_name_to_id)} locations")
-                print(f"Passthrough: Found {len(cls.song_items)} songs")
-                print(f"Passthrough: Found {len(cls.custom_items_list)} custom items: {cls.custom_items_list}")
-                print(f"Passthrough: Found {len(cls.custom_trap_items_list)} custom traps: {cls.custom_trap_items_list}")
-                print(f"Passthrough: Found {len(cls.sanity_items_list)} sanity items: {[item['name'] for item in cls.sanity_items_list]}")
-                print(f"Passthrough: Found {len(cls.sanity_location_ids)} sanity locations: {list(cls.sanity_location_ids.keys())}")
-                print(f"Passthrough: Found {len(cls.custom_location_items)} custom locations")
-                print(f"Passthrough: Loaded {len(song_requirements)} song requirements")
-                print(f"Passthrough: Victory song: {victory_song} (ID: {victory_id})")
-                print(f"Passthrough: Starting song: {starting_song}")
-                print(f"Passthrough: Created {len(all_yamls_list)} player YAMLs from slot data")
-                cls.all_yamls = all_yamls_list
+                # COMMENTED OUT: All passthrough logic disabled
 
         player_name = ''
         # Find this player's YAML
@@ -1061,23 +897,24 @@ class FunkinWorld(World):
         self._custom_song_exclusions = self.custom_song_exclusions.copy()
         self._custom_song_requirements = self.custom_song_requirements.copy()
 
-        # Handle passthrough data for victory and starting songs
-        if hasattr(self.__class__, '_passthrough_data'):
-            passthrough_data = self.__class__._passthrough_data
-            victory_song = passthrough_data.get("victory_song", "")
-            victory_id = passthrough_data.get("victory_id", 0)
-            starting_song = passthrough_data.get("starting_song", "")
+        # COMMENTED OUT: Passthrough functionality disabled
+        # # Handle passthrough data for victory and starting songs
+        # if hasattr(self.__class__, '_passthrough_data'):
+        #     passthrough_data = self.__class__._passthrough_data
+        #     victory_song = passthrough_data.get("victory_song", "")
+        #     victory_id = passthrough_data.get("victory_id", 0)
+        #     starting_song = passthrough_data.get("starting_song", "")
 
-            # Set victory song information from passthrough
-            if victory_song:
-                self.victory_song_name = victory_song
-                self.victory_song_id = victory_id
-                print(f"Passthrough: Set victory song to {victory_song} (ID: {victory_id}) for {self.player_name}")
+        #     # Set victory song information from passthrough
+        #     if victory_song:
+        #         self.victory_song_name = victory_song
+        #         self.victory_song_id = victory_id
+        #         print(f"Passthrough: Set victory song to {victory_song} (ID: {victory_id}) for {self.player_name}")
 
-            # Set starting song information from passthrough
-            if starting_song:
-                self.starting_song_name = starting_song
-                print(f"Passthrough: Set starting song to {starting_song} for {self.player_name}")
+        #     # Set starting song information from passthrough
+        #     if starting_song:
+        #         self.starting_song_name = starting_song
+        #         print(f"Passthrough: Set starting song to {starting_song} for {self.player_name}")
 
         # Check if songList is empty and use thisYaml's songList if so
         if not hasattr(self, 'songList') or not self.songList:
@@ -2138,7 +1975,20 @@ class FunkinWorld(World):
                     menu_region.locations.append(loc)
             self.location_count = len(menu_region.locations)
 
+            # Update location mappings for song and note locations (these seem stable)
             self.location_name_to_id.update({loc.name: loc.address for loc in menu_region.locations if loc.name not in self.location_name_to_id})
+
+            # COMMENTED OUT: Alternative verification approach if updates become problematic
+            # # Validate that location IDs match what was pre-calculated in stuff()
+            # for loc in menu_region.locations:
+            #     if loc.name in self.location_name_to_id:
+            #         expected_id = self.location_name_to_id[loc.name]
+            #         if loc.address != expected_id:
+            #             raise LocationIDMismatchError(loc.name, expected_id, loc.address, self.player_name)
+            #     else:
+            #         # This should never happen if stuff() was comprehensive
+            #         raise LocationIDMismatchError(loc.name, -1, loc.address, self.player_name)
+            # print(f"Verified {len(menu_region.locations)} location IDs match pre-calculated values")
 
             # print(self.location_name_to_id)
 
@@ -2285,8 +2135,16 @@ class FunkinWorld(World):
 
                     print(f"Added sanity location for {self.player_name}: {location_name} ({access_desc})")
 
-                    # Add to location name to ID mapping
-                    self.location_name_to_id[location_name] = location_id
+                    # Validate that sanity location ID matches what was pre-calculated in stuff()
+                    if location_name in self.location_name_to_id:
+                        expected_id = self.location_name_to_id[location_name]
+                        if location_id != expected_id:
+                            raise LocationIDMismatchError(location_name, expected_id, location_id, self.player_name)
+                    else:
+                        # This should never happen if stuff() was comprehensive
+                        raise LocationIDMismatchError(location_name, -1, location_id, self.player_name)
+                    
+                    print(f"Verified sanity location {location_name} ID matches pre-calculated value: {location_id}")
                 else:
                     print(f"Warning: Could not find item ID for sanity item {sanity_item_name}")
         elif not sanity_settings['enable_sanity_locations']:
