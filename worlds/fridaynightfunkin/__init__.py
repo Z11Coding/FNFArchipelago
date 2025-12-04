@@ -2823,6 +2823,7 @@ class FunkinWorld(World):
                 ],
                 "hardmode": self.options.hard_mode.value,  # So that Hard Mode can activate
             }
+        
     def _get_custom_weeks_data(self):
         """Generate custom week data for songs added by AP scripts"""
         custom_weeks = {}

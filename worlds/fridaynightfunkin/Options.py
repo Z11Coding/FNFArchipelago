@@ -236,7 +236,7 @@ class PermaTraps(Toggle):
 class HardMode(Toggle):
     """If you want to make elements of the game checks so that you don't have them until you get them"""
     display_name = "Hard Mode"
-    default = True
+    default = False
 
 class Shop(Toggle):
     """If you want to add the shop mechanic"""
