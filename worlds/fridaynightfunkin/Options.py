@@ -223,6 +223,26 @@ class AllowDuplicateSongs(Toggle):
     display_name = "Allow Duplicate Songs"
     default = False
 
+class StarterDebuffs(Toggle):
+    """If you want to add 5 debuffs that make the game near impossible to play immediately"""
+    display_name = "Starter Debuffs"
+    default = False
+
+class PermaTraps(Toggle):
+    """If you want to add 5 traps that stick until you get the anti-trap item to get rid of it"""
+    display_name = "Perma-Traps"
+    default = False
+
+class HardMode(Toggle):
+    """If you want to make elements of the game checks so that you don't have them until you get them"""
+    display_name = "Hard Mode"
+    default = True
+
+class Shop(Toggle):
+    """If you want to add the shop mechanic"""
+    display_name = "Enable Shop"
+    default = False
+
 
 fnf_option_groups = [
     OptionGroup("Base Settings", [
@@ -261,6 +281,12 @@ fnf_option_groups = [
         MHPWeight,
         ExtraLifeWeight
     ]),
+    OptionGroup("Z11's Optional Hell", [
+        StarterDebuffs,
+        PermaTraps,
+        HardMode,
+        Shop
+    ]),
 ]
 
 
@@ -297,3 +323,7 @@ class FunkinOptions(PerGameCommonOptions):
     graderequirement: gradeNeeded
     accrequirement: accuracyNeeded
     allowDupes: AllowDuplicateSongs
+    starter_debuffs: StarterDebuffs
+    perma_traps: PermaTraps
+    hard_mode: HardMode
+    shop: Shop

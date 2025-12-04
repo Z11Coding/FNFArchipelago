@@ -71,6 +71,32 @@ class FunkinUtils:
         "PONG Dash Mechanic": 1
     }
 
+    z11_permatrap_items: Dict[str, int] = {
+        "Sore Throat Trap": STARTING_CODE + 22,
+        "Vocal Inverter Trap": STARTING_CODE + 23,
+        "Blindness Trap": STARTING_CODE + 24,
+        "Mechanical Hell Trap": STARTING_CODE + 25,
+        "Metronome Madness Trap": STARTING_CODE + 26,
+    }
+
+    z11_antitrap_items: Dict[str, int] = {
+        "Throat Medicine": STARTING_CODE + 27,
+        "Voice Inverter": STARTING_CODE + 28,
+        "Contact Lenses": STARTING_CODE + 29,
+        "The Simplifier 3000": STARTING_CODE + 30,
+        "Metronome Stabilizer": STARTING_CODE + 31,
+    }
+
+    z11_hardmode_items: Dict[str, int] = {
+        "Strums": STARTING_CODE + 32,
+        "BF's Mic": STARTING_CODE + 33,
+        "GF": STARTING_CODE + 34,
+        "Speakers": STARTING_CODE + 35,
+        "Stage Access Key": STARTING_CODE + 36,
+        "HUD": STARTING_CODE + 37,
+        "Pause Menu": STARTING_CODE + 38,
+    }
+
     mapthing:Dict[str, List[str]] = {}
     mod_data: Dict[str, List[str]] = {}
     playerNames:List[str] = []

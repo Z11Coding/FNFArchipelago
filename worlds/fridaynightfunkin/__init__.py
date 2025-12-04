@@ -518,9 +518,13 @@ class FunkinWorld(World):
         # Add existing item IDs to the tracking set
         used_item_ids.add(fnfUtil.SHOW_TICKET_CODE)
         used_item_ids.update(fnfUtil.filler_items.values())
+        used_item_ids.update(fnfUtil.trap_filler_items.values())
         used_item_ids.update(fnfUtil.normal_items.values())
         used_item_ids.update(fnfUtil.one_time_items.values())
         used_item_ids.update(fnfUtil.trap_items.values())
+        used_item_ids.update(fnfUtil.z11_permatrap_items.values())
+        used_item_ids.update(fnfUtil.z11_antitrap_items.values())
+        used_item_ids.update(fnfUtil.z11_hardmode_items.values())
 
         # Create SongData for all songs
         for song in all_songs:
@@ -686,7 +690,10 @@ class FunkinWorld(World):
             {name: data.code for name, data in song_items.items()},
             custom_item_ids,  # Add custom items
             custom_trap_item_ids,  # Add custom trap items
-            sanity_item_ids  # Add sanity items
+            sanity_item_ids,  # Add sanity items
+            fnfUtil.z11_permatrap_items,
+            fnfUtil.z11_antitrap_items,
+            fnfUtil.z11_hardmode_items,
         ))
 
         # Validate that all item IDs are unique
@@ -1220,10 +1227,10 @@ class FunkinWorld(World):
                 # Check if this custom item is required by any song requirement
                 if self._is_item_required_by_songs(name):
                     # Make it a progression item since it's required for song access
-                    return FunkinFixedItem(name, ItemClassification.progression_deprioritized_skip_balancing, custom_item_id, self.player)
+                    return FunkinFixedItem(name, ItemClassification.progression_skip_balancing, custom_item_id, self.player)
                 else:
                     # Regular useful item
-                    return FunkinFixedItem(name, ItemClassification.deprioritized, custom_item_id, self.player)
+                    return FunkinFixedItem(name, ItemClassification.useful, custom_item_id, self.player)
 
         filler = self.fnfUtil.filler_items.get(name)
         if filler:
@@ -1254,6 +1261,18 @@ class FunkinWorld(World):
         trap = self.fnfUtil.trap_items.get(name)
         if trap:
             return FunkinFixedItem(name, ItemClassification.trap, trap, self.player)
+
+        z11PermaDebuff = self.fnfUtil.z11_permatrap_items.get(name)
+        if z11PermaDebuff:
+            return FunkinFixedItem(name, ItemClassification.trap, z11PermaDebuff, self.player)
+
+        z11AntiTrap = self.fnfUtil.z11_antitrap_items.get(name)
+        if z11AntiTrap:
+            return FunkinFixedItem(name, ItemClassification.useful, z11AntiTrap, self.player)
+
+        z11HardMode = self.fnfUtil.z11_hardmode_items.get(name)
+        if z11HardMode:
+            return FunkinFixedItem(name, ItemClassification.progression, z11HardMode, self.player)
 
         # Check for custom trap items
         if name in self.custom_trap_items_list:
@@ -1787,9 +1806,9 @@ class FunkinWorld(World):
                 else:
                     print(f"Warning: Invalid sanity_completion_type '{completion_type}' for player {self.player_name}. Using default 'on_getting'.")
 
-            if yaml_settings.charactersanity:
+            if hasattr(yaml_settings, 'charactersanity') and yaml_settings.charactersanity:
                 settings['sanity_types'].append('characters')
-            if yaml_settings.stagesanity:
+            if hasattr(yaml_settings, 'stagesanity') and yaml_settings.stagesanity:
                 settings['sanity_types'].append('stages')
 
         return settings
@@ -1973,6 +1992,8 @@ class FunkinWorld(World):
                     loc = FunkinLocation(self.player, loc_name, self.song_locations[loc_name], menu_region)
                     loc.access_rule = song_access_rule
                     menu_region.locations.append(loc)
+
+
             self.location_count = len(menu_region.locations)
 
             # Update location mappings for song and note locations (these seem stable)
@@ -2060,6 +2081,20 @@ class FunkinWorld(World):
             # PONG filler (if enabled)
             if self.check_trap_weight('PONG Challenge') > 0:
                 estimated_item_count += 1
+
+            # Starting Debuffs/Perma Traps
+            if self.options.starter_debuffs.value or self.options.perma_traps.value:
+                estimated_item_count += min(self.location_count - estimated_item_count, len(self.fnfUtil.z11_permatrap_items))
+
+            # Anti-Debuff/Trap Items
+            if self.options.starter_debuffs.value or self.options.perma_traps.value:
+                estimated_item_count += min(self.location_count - estimated_item_count, len(self.fnfUtil.z11_antitrap_items))
+
+            # Hard Mode
+            if self.options.hard_mode.value:
+                estimated_item_count += min(self.location_count - estimated_item_count, len(self.fnfUtil.z11_hardmode_items))
+
+            estimated_item_count += min(self.location_count - estimated_item_count, len(self.custom_items_list))
 
             # Custom items
             estimated_item_count += min(self.location_count - estimated_item_count, len(self.custom_items_list))
@@ -2196,6 +2231,44 @@ class FunkinWorld(World):
                 self.multiworld.itempool.append(self.create_item(song))
                 item_count += 1
 
+            # now check the Z11 optional hell, starting with starter debuffs
+            # this takes priority over all else, so that everything that needs to be added actually gets added
+            remaining_slots = self.location_count - item_count
+            half_remaining = remaining_slots/2
+            if self.options.starter_debuffs.value:
+                for trap in self.fnfUtil.z11_permatrap_items:
+                    self.multiworld.push_precollected(self.create_item(trap))
+                # Then add the anti-traps
+                for antitrap in self.fnfUtil.z11_antitrap_items:
+                    self.multiworld.itempool.append(self.create_item(antitrap))
+                    item_count += 1
+            elif self.options.perma_traps.value:  # Then check the perma_traps. This way, the Starter Debuffs are prioritized just in case both are on somehow
+                for trap in self.fnfUtil.z11_permatrap_items:
+                    remaining_slots = self.location_count - item_count
+                    if half_remaining > remaining_slots:
+                        self.multiworld.itempool.append(self.create_item(trap))
+                        item_count += 1
+                    else: break
+                # Then add the anti-traps
+                for antitrap in self.fnfUtil.z11_antitrap_items:
+                    remaining_slots = self.location_count - item_count
+                    if remaining_slots > 0:
+                        self.multiworld.itempool.append(self.create_item(antitrap))
+                        item_count += 1
+                    else: break
+
+            remaining_slots = self.location_count - item_count
+            # then check to see if Hard Mode is enabled, so that we can randomize the elements
+            if self.options.hard_mode.value:
+                for element in self.fnfUtil.z11_hardmode_items:
+                    self.multiworld.itempool.append(self.create_item(element))
+                    item_count += 1
+
+            remaining_slots = self.location_count - item_count
+            # lastly, do shop things, which is nothing for now
+            if self.options.shop.value:
+                print('shop things would be done here')
+
             # Add one-time items (mandatory items that cannot be turned off)
             remaining_slots = self.location_count - item_count
             one_time_items_to_add = min(remaining_slots, len(self.fnfUtil.one_time_items))
@@ -2310,6 +2383,8 @@ class FunkinWorld(World):
                     print(f"Total sanity items processed: {len(sanity_items_to_use)} (pool: {len(sanity_items_to_use)}, overflow: {overflow_count})")
             else:
                 print(f"No sanity items available for {self.player_name}")            # Update remaining slots after sanity items
+
+            # Add traps
             remaining_slots = self.location_count - item_count
             trap_count = min(remaining_slots, self.get_trap_count())
             trap_list = self.get_available_traps()
@@ -2745,7 +2820,8 @@ class FunkinWorld(World):
                         "color_code": color.color_code
                     }
                     for color in self.used_uno_colors if color is not None
-                ]
+                ],
+                "hardmode": self.options.hard_mode.value,  # So that Hard Mode can activate
             }
     def _get_custom_weeks_data(self):
         """Generate custom week data for songs added by AP scripts"""
