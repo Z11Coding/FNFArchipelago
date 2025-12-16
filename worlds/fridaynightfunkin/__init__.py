@@ -817,6 +817,7 @@ class FunkinWorld(World):
     songlistforthe83rdtime: list[str] = []
     sanity_items_list: list[str] = yaml_data.get("sanity_items_list", [])
     sanity_location_ids: dict[str, int] = yaml_data.get("sanity_location_ids", {})
+    _weighted_yaml_warning_shown: bool = False
 
 
     def __new__(cls, multiworld: MultiWorld, player: int):
@@ -930,6 +931,61 @@ class FunkinWorld(World):
                 self.songList = yaml_song_list.copy()
             else:
                 self.songList = []
+        
+        # Check for weighted/template YAMLs and warn user (only show warning once)
+        if not FunkinWorld._weighted_yaml_warning_shown:
+            weighted_players = []
+            for yaml_data in self.all_yamls:
+                if hasattr(yaml_data, 'isWeightedFormat') and yaml_data.isWeightedFormat:
+                    player_name = getattr(yaml_data, 'name', 'Unknown Player')
+                    weighted_players.append(player_name)
+            
+            if weighted_players:
+                FunkinWorld._weighted_yaml_warning_shown = True
+                # Check if this is automated generation (Universal Tracker)
+                is_automated = getattr(multiworld, 'gen_is_fake', False)
+                
+                if not is_automated:
+                    # Format the warning message naturally based on number of players
+                    if len(weighted_players) == 1:
+                        player_list = weighted_players[0]
+                        verb = "was"
+                    else:
+                        # Format list naturally: "Player1, Player2, and Player3" or "Player1 and Player2"
+                        if len(weighted_players) == 2:
+                            player_list = f"{weighted_players[0]} and {weighted_players[1]}"
+                        else:
+                            player_list = ", ".join(weighted_players[:-1]) + f", and {weighted_players[-1]}"
+                        verb = "were"
+                    
+                    print(f"\n⚠️  WARNING: Template/Weighted YAML Detected ⚠️")
+                    print(f"It is not recommended to use a Template or Weighted YAML when generating a game for Friday Night Funkin'.")
+                    print(f"The player{'s' if len(weighted_players) > 1 else ''} {player_list} {verb} detected using weighted/template YAMLs.")
+                    print(f"\nIt is recommended to use Mixtape Engine to generate settings.")
+                    print(f"\nOptions:")
+                    print(f"1. Continue generation anyway (not recommended)")
+                    print(f"2. Cancel generation and create proper player YAMLs")
+                    
+                    while True:
+                        try:
+                            choice = inputimeout(f"Would you like to continue? (1/2): ", timeout=30)
+                            if choice is None:
+                                # Timeout - auto-select continue for automated systems
+                                print("Auto-continuing generation (timeout)")
+                                break
+                        except:
+                            choice = "1"
+                            print("Auto-continuing generation")
+                        
+                        if choice == "1":
+                            print("Continuing generation with weighted/template YAMLs (not recommended)")
+                            break
+                        elif choice == "2":
+                            raise ValueError(f"Generation cancelled due to weighted/template YAML usage. Please create proper player YAML files using Mixtape Engine or convert your weighted YAMLs to simple format.")
+                        else:
+                            print("Invalid choice. Please enter 1 or 2.")
+                else:
+                    print(f"Note: Detected {len(weighted_players)} weighted/template YAML(s) in automated mode, continuing generation")
 
     def generate_early(self):
         # Basic Settings

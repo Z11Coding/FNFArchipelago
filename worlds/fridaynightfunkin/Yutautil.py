@@ -12105,18 +12105,22 @@ sys_thread__Thread_Thread_Impl_.processEvents()
 
 class yutautil_APYaml:
     _hx_class_name = "yutautil.APYaml"
-    __slots__ = ("game", "name", "description", "settings")
-    _hx_fields = ["game", "name", "description", "settings"]
-    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled", "_findSongListInSettings"]
+    __slots__ = ("game", "name", "description", "settings", "isWeightedFormat")
+    _hx_fields = ["game", "name", "description", "settings", "isWeightedFormat"]
+    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled", "_findSongListInSettings", "_detectWeightedFormat"]
 
     def __init__(self,yamlContent):
         self.settings = None
         self.description = None
         self.name = None
         self.game = None
+        self.isWeightedFormat = False
         jsonContent = self.convertYamlToJson(yamlContent)
         parsedData = haxe_format_JsonParser(jsonContent).doParse()
         self.settings = Reflect.field(parsedData,"Friday Night Funkin")
+        
+        # Detect if this is a weighted/template format
+        self._detectWeightedFormat()
         
         # If settings doesn't have a songList, check all fields in settings for one
         if self.settings is not None and Reflect.field(self.settings, "songList") is None:
@@ -12429,6 +12433,7 @@ class yutautil_APYaml:
                             foundSongList = storedSongList  # Use the stored songList from the section
                             print(f"Found songList section '{section_key}', moving contents to 'Friday Night Funkin' section")
                             # Remove the songList section since we're moving its contents
+                            self.isWeightedFormat = True  # Mark as weighted since songList was nested
                             del jsonObject.h[section_key]
                             break
                         
@@ -12438,6 +12443,7 @@ class yutautil_APYaml:
                             foundSongList = section.h["songList"]
                             # Remove it from the current section
                             del section.h["songList"]
+                            self.isWeightedFormat = True  # Mark as weighted since songList was nested
                             print(f"Found songList in section '{section_key}', moving to 'Friday Night Funkin' section")
                             break
                 
@@ -12470,12 +12476,58 @@ class yutautil_APYaml:
     def isModsEnabled(self):
         return Reflect.field(self.settings,"mods_enabled")
 
+    def _detectWeightedFormat(self):
+        """Detect if this YAML uses weighted/template format by checking for nested weight objects"""
+        if self.settings is None:
+            return
+        
+        # List of common settings that would have weighted values in template YAMLs
+        weighted_settings = [
+            "song_limit", "mods_enabled", "progression_balancing", "accessibility", 
+            "check_count", "unlock_type", "unlock_method", "trapAmount", "graderequirement",
+            "accrequirement", "ticket_percentage", "ticket_win_percentage"
+        ]
+        
+        try:
+            # Check if any of these settings are objects with weight-like properties
+            for setting_name in weighted_settings:
+                setting_value = Reflect.field(self.settings, setting_name)
+                if setting_value is not None:
+                    # Check if this is a dictionary/object with weight properties
+                    if hasattr(setting_value, 'h') and isinstance(setting_value.h, dict):
+                        # Look for common weight indicators
+                        weight_keys = setting_value.h.keys()
+                        weight_indicators = ["random", "random-low", "random-high"]
+                        
+                        # If we find weight indicators, this is likely a weighted format
+                        if any(indicator in weight_keys for indicator in weight_indicators):
+                            self.isWeightedFormat = True
+                            return
+                        
+                        # Also check if we have numeric keys (weight values)
+                        numeric_keys = [k for k in weight_keys if k.replace('.', '').replace('-', '').isdigit()]
+                        if len(numeric_keys) > 1:  # Multiple numeric options suggest weighting
+                            self.isWeightedFormat = True
+                            return
+                        
+                        # Check for boolean string keys that suggest options
+                        boolean_strings = ['true', 'false']
+                        boolean_keys = [k for k in weight_keys if k in boolean_strings]
+                        if len(boolean_keys) > 1:  # Both true and false options suggest weighting
+                            self.isWeightedFormat = True
+                            return
+        except Exception as e:
+            # If we can't detect properly, assume it's not weighted
+            print(f"Warning: Could not detect YAML format for {self.name}: {e}")
+            pass
+
     @staticmethod
     def _hx_empty_init(_hx_o):
         _hx_o.game = None
         _hx_o.name = None
         _hx_o.description = None
         _hx_o.settings = None
+        _hx_o.isWeightedFormat = False
 yutautil_APYaml._hx_class = yutautil_APYaml
 _hx_classes["yutautil.APYaml"] = yutautil_APYaml
 
