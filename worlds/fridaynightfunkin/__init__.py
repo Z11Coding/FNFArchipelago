@@ -2068,7 +2068,34 @@ class FunkinWorld(World):
         
         # Create victory location with forced Girlfriend's Love item
         victory_location_name = f"Victory Goal: {self.victory_song_name}"
-        victory_location = FunkinLocation(self.player, victory_location_name, None, menu_region)
+        
+        # Find the highest location ID currently in use to assign the next available ID
+        max_location_id = 0
+        
+        # Check song locations
+        for loc_id in self.song_locations.values():
+            if loc_id and loc_id > max_location_id:
+                max_location_id = loc_id
+                
+        # Check custom locations
+        for location_data in self.custom_location_items.values():
+            if location_data.code and location_data.code > max_location_id:
+                max_location_id = location_data.code
+                
+        # Check existing location mappings
+        for loc_id in self.location_name_to_id.values():
+            if loc_id and loc_id > max_location_id:
+                max_location_id = loc_id
+                
+        # Check sanity location IDs (they use item_id + 1000 offset)
+        if hasattr(self, 'sanity_location_ids'):
+            for loc_id in self.sanity_location_ids.values():
+                if loc_id and loc_id > max_location_id:
+                    max_location_id = loc_id
+        
+        # Assign the next available ID
+        victory_location_id = max_location_id + 1
+        victory_location = FunkinLocation(self.player, victory_location_name, victory_location_id, menu_region)
         
         # Use the same access rule logic as other song locations
         # Collect ALL access rules that apply to the victory song
