@@ -679,6 +679,11 @@ class FunkinWorld(World):
                 location_id = sanity_item_id + 1000 # Large offset to avoid conflicts
                 sanity_location_ids[location_name] = location_id
 
+        # Add victory location with a fixed ID - this is the generic victory goal location
+        victory_location_id = max(used_location_ids) + 1 if used_location_ids else location_id_counter + 1
+        victory_location_ids = {"Victory Goal": victory_location_id}
+        used_location_ids.add(victory_location_id)
+
         # Build final name-to-ID mappings
         item_name_to_id = dict(ChainMap(
             {fnfUtil.SHOW_TICKET_NAME: fnfUtil.SHOW_TICKET_CODE},
@@ -719,7 +724,8 @@ class FunkinWorld(World):
         location_name_to_id = dict(ChainMap(
             song_locations,
             custom_locations,  # Add custom locations
-            sanity_location_ids  # Add sanity item locations
+            sanity_location_ids,  # Add sanity item locations
+            victory_location_ids  # Add victory location
         ))
 
         # Validate that all location IDs are unique
@@ -2067,34 +2073,9 @@ class FunkinWorld(World):
                     menu_region.locations.append(loc)
         
         # Create victory location with forced Girlfriend's Love item
-        victory_location_name = f"Victory Goal: {self.victory_song_name}"
-        
-        # Find the highest location ID currently in use to assign the next available ID
-        max_location_id = 0
-        
-        # Check song locations
-        for loc_id in self.song_locations.values():
-            if loc_id and loc_id > max_location_id:
-                max_location_id = loc_id
-                
-        # Check custom locations
-        for location_data in self.custom_location_items.values():
-            if location_data.code and location_data.code > max_location_id:
-                max_location_id = location_data.code
-                
-        # Check existing location mappings
-        for loc_id in self.location_name_to_id.values():
-            if loc_id and loc_id > max_location_id:
-                max_location_id = loc_id
-                
-        # Check sanity location IDs (they use item_id + 1000 offset)
-        if hasattr(self, 'sanity_location_ids'):
-            for loc_id in self.sanity_location_ids.values():
-                if loc_id and loc_id > max_location_id:
-                    max_location_id = loc_id
-        
-        # Assign the next available ID
-        victory_location_id = max_location_id + 1
+        victory_location_name = "Victory Goal"
+        # Use the pre-assigned victory location ID from stuff()
+        victory_location_id = self.location_name_to_id[victory_location_name]
         victory_location = FunkinLocation(self.player, victory_location_name, victory_location_id, menu_region)
         
         # Use the same access rule logic as other song locations
