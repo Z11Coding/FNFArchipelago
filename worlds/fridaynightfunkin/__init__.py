@@ -2070,47 +2070,40 @@ class FunkinWorld(World):
         victory_location_name = f"Victory Goal: {self.victory_song_name}"
         victory_location = FunkinLocation(self.player, victory_location_name, None, menu_region)
         
-        # Set access rule to match the victory song's access conditions
-        # Find the victory song's access requirements
-        victory_song_access_rule = None
-        victory_song_only = ""
-        victory_mod = ""
-        
-        # Check if victory song has specific requirements from custom song requirements
+        # Use the same access rule logic as other song locations
+        # Collect ALL access rules that apply to the victory song
+        applicable_requirements = []
+
+        # Check song requirements - match against reconstructed "songName (targetMod)" format
         for requirement in self._custom_song_requirements:
             req_song_name = requirement.get('songName', '')
             req_mod_name = requirement.get('targetMod', '')
-            
+
             # Reconstruct the full name as it would appear in the game
             if req_mod_name and req_mod_name.strip():
                 reconstructed_name = f"{req_song_name} ({req_mod_name})"
             else:
                 reconstructed_name = req_song_name
-                
+
+            # If this requirement applies to our victory song, add it to the list
             if reconstructed_name == self.victory_song_name:
-                victory_song_only = req_song_name
-                victory_mod = req_mod_name
-                break
-        
-        # If no custom requirements found, extract song and mod from victory song name
-        if not victory_song_only:
-            if " (" in self.victory_song_name and self.victory_song_name.endswith(")"):
-                parts = self.victory_song_name.rsplit(" (", 1)
-                victory_song_only = parts[0]
-                victory_mod = parts[1][:-1]  # Remove closing parenthesis
-            else:
-                victory_song_only = self.victory_song_name
-                victory_mod = ""
-        
-        # Create the same access rule that would be used for the victory song's locations
-        applicable_requirements = []
-        for requirement in self._custom_song_requirements:
-            req_song_name = requirement.get('songName', '')
-            req_mod_name = requirement.get('targetMod', '')
-            if req_song_name == victory_song_only and req_mod_name == victory_mod:
                 applicable_requirements.append(requirement)
-        
-        victory_song_access_rule = self._create_song_access_rule_with_requirements(victory_song_only, victory_mod, applicable_requirements)
+
+        # Get song name and mod name from the applicable requirements
+        song_name_only = ""
+        mod_name = ""
+
+        if applicable_requirements:
+            # Use the song name and mod name from the first requirement (they should all be the same for the same song)
+            song_name_only = applicable_requirements[0].get('songName', '')
+            mod_name = applicable_requirements[0].get('targetMod', '')
+        else:
+            # No requirements found - use the name as-is (it's likely a base game song)
+            song_name_only = self.victory_song_name
+            mod_name = ""
+
+        # Create the song access rule that includes ALL applicable requirements
+        victory_song_access_rule = self._create_song_access_rule_with_requirements(song_name_only, mod_name, applicable_requirements)
         victory_location.access_rule = victory_song_access_rule
         
         # Place the victory item at the victory location
@@ -2121,12 +2114,12 @@ class FunkinWorld(World):
         print(f"Created victory location '{victory_location_name}' for {self.player_name}")
 
 
-            self.location_count = len(menu_region.locations)
+        self.location_count = len(menu_region.locations)
 
-            # Update location mappings for song and note locations (these seem stable)
-            self.location_name_to_id.update({loc.name: loc.address for loc in menu_region.locations if loc.name not in self.location_name_to_id})
+        # Update location mappings for song and note locations (these seem stable)
+        self.location_name_to_id.update({loc.name: loc.address for loc in menu_region.locations if loc.name not in self.location_name_to_id})
 
-            # COMMENTED OUT: Alternative verification approach if updates become problematic
+        # COMMENTED OUT: Alternative verification approach if updates become problematic
             # # Validate that location IDs match what was pre-calculated in stuff()
             # for loc in menu_region.locations:
             #     if loc.name in self.location_name_to_id:
