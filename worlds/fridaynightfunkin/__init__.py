@@ -682,6 +682,7 @@ class FunkinWorld(World):
         # Build final name-to-ID mappings
         item_name_to_id = dict(ChainMap(
             {fnfUtil.SHOW_TICKET_NAME: fnfUtil.SHOW_TICKET_CODE},
+            {fnfUtil.GIRLFRIENDS_LOVE_NAME: fnfUtil.GIRLFRIENDS_LOVE_CODE},
             fnfUtil.filler_items,
             fnfUtil.normal_items,
             fnfUtil.one_time_items,
@@ -1191,6 +1192,17 @@ class FunkinWorld(World):
 
 
     def _setup_victory_song_and_pool(self):
+        """Select a victory song and set up the item pool"""
+        # Get songs that belong to this player
+        player_songs = self.get_songs_map(self.player_name)
+        
+        if not player_songs:
+            # Fallback to any available song
+            player_songs = list(self.song_items.keys())[:1] if self.song_items else ["Tutorial"]
+        
+        # Select a random victory song
+        self.victory_song_name = self.random.choice(list(player_songs))
+        print(f"Selected victory song for {self.player_name}: {self.victory_song_name}")
         """Choose victory song and set up the song pool"""
         # Check if victory song is already set from passthrough data
         if hasattr(self, 'victory_song_name') and self.victory_song_name:
@@ -1367,6 +1379,11 @@ class FunkinWorld(World):
 
     def create_filler_item(self) -> Item:
         return FunkinFixedItem(self.get_filler_item_name(), ItemClassification.filler, None, self.player)
+
+    def create_victory_item(self) -> Item:
+        """Create the victory item (Girlfriend's Love)"""
+        from .Items import FunkinVictoryItem
+        return FunkinVictoryItem(self.fnfUtil.GIRLFRIENDS_LOVE_NAME, self.fnfUtil.GIRLFRIENDS_LOVE_CODE, self.player)
 
     def get_available_traps(self) -> List[str]:
         full_trap_list = list(self.fnfUtil.trap_items.keys())
@@ -2048,6 +2065,60 @@ class FunkinWorld(World):
                     loc = FunkinLocation(self.player, loc_name, self.song_locations[loc_name], menu_region)
                     loc.access_rule = song_access_rule
                     menu_region.locations.append(loc)
+        
+        # Create victory location with forced Girlfriend's Love item
+        victory_location_name = f"Victory Goal: {self.victory_song_name}"
+        victory_location = FunkinLocation(self.player, victory_location_name, None, menu_region)
+        
+        # Set access rule to match the victory song's access conditions
+        # Find the victory song's access requirements
+        victory_song_access_rule = None
+        victory_song_only = ""
+        victory_mod = ""
+        
+        # Check if victory song has specific requirements from custom song requirements
+        for requirement in self._custom_song_requirements:
+            req_song_name = requirement.get('songName', '')
+            req_mod_name = requirement.get('targetMod', '')
+            
+            # Reconstruct the full name as it would appear in the game
+            if req_mod_name and req_mod_name.strip():
+                reconstructed_name = f"{req_song_name} ({req_mod_name})"
+            else:
+                reconstructed_name = req_song_name
+                
+            if reconstructed_name == self.victory_song_name:
+                victory_song_only = req_song_name
+                victory_mod = req_mod_name
+                break
+        
+        # If no custom requirements found, extract song and mod from victory song name
+        if not victory_song_only:
+            if " (" in self.victory_song_name and self.victory_song_name.endswith(")"):
+                parts = self.victory_song_name.rsplit(" (", 1)
+                victory_song_only = parts[0]
+                victory_mod = parts[1][:-1]  # Remove closing parenthesis
+            else:
+                victory_song_only = self.victory_song_name
+                victory_mod = ""
+        
+        # Create the same access rule that would be used for the victory song's locations
+        applicable_requirements = []
+        for requirement in self._custom_song_requirements:
+            req_song_name = requirement.get('songName', '')
+            req_mod_name = requirement.get('targetMod', '')
+            if req_song_name == victory_song_only and req_mod_name == victory_mod:
+                applicable_requirements.append(requirement)
+        
+        victory_song_access_rule = self._create_song_access_rule_with_requirements(victory_song_only, victory_mod, applicable_requirements)
+        victory_location.access_rule = victory_song_access_rule
+        
+        # Place the victory item at the victory location
+        victory_item = self.create_victory_item()
+        victory_location.place_locked_item(victory_item)
+        
+        menu_region.locations.append(victory_location)
+        print(f"Created victory location '{victory_location_name}' for {self.player_name}")
 
 
             self.location_count = len(menu_region.locations)
@@ -2553,11 +2624,13 @@ class FunkinWorld(World):
         print(f"Required tickets: {self.get_ticket_win_count()}")
         print(f"Total tickets in pool: {self.get_ticket_count()}")
 
+        # Player wins when they have required tickets, victory song, AND Girlfriend's Love
         self.multiworld.completion_condition[self.player] = \
             lambda state: state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()) and \
-                  state.has(self.victory_song_name, self.player, 1)
+                  state.has(self.victory_song_name, self.player, 1) and \
+                  state.has(self.fnfUtil.GIRLFRIENDS_LOVE_NAME, self.player)
 
-        print(f"Completion condition set: Need {self.get_ticket_win_count()} tickets AND '{self.victory_song_name}' song")
+        print(f"Completion condition set: Need {self.get_ticket_win_count()} tickets AND '{self.victory_song_name}' song AND '{self.fnfUtil.GIRLFRIENDS_LOVE_NAME}'")
         print(f"=== END COMPLETION CONDITION ===\n")
 
     def get_trap_count(self) -> int:

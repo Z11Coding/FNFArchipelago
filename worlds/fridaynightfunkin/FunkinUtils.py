@@ -19,6 +19,10 @@ class FunkinUtils:
     SHOW_TICKET_NAME: str = "Ticket"
     SHOW_TICKET_CODE: int = STARTING_CODE
 
+    # Victory item constants
+    GIRLFRIENDS_LOVE_NAME: str = "Girlfriend's Love"
+    GIRLFRIENDS_LOVE_CODE: int = STARTING_CODE + 50  # Give it a proper unique code
+
     song_items: Dict[str, SongData] = {}
     song_things: Dict[str, Dict[str, SongData]] = {}
     song_locations: Dict[str, int] = {}
@@ -130,6 +134,7 @@ class FunkinUtils:
         # Just setup the basic item mappings without songs
         self.item_names_to_id = ChainMap(
             {self.SHOW_TICKET_NAME: self.SHOW_TICKET_CODE}, 
+            {self.GIRLFRIENDS_LOVE_NAME: self.GIRLFRIENDS_LOVE_CODE},
             self.filler_items, 
             self.normal_items,
             self.one_time_items,

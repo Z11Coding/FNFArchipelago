@@ -97,6 +97,13 @@ class FunkinItem(Item):
     def __init__(self, name: str, player: int, data: Union[SongData]) -> None:
         super().__init__(name, ItemClassification.progression, data.code, player)
 
+class FunkinVictoryItem(Item):
+    """Victory item that signals game completion"""
+    game: str = "Friday Night Funkin"
+    
+    def __init__(self, name: str, code: int, player: int) -> None:
+        super().__init__(name, ItemClassification.progression, code, player)
+
 class FunkinUNOMinigameItem(Item):
     game: str = "Friday Night Funkin"
 
