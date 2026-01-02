@@ -101,7 +101,7 @@ class FunkinWorld(World):
     origin_region_name = "Freeplay"
 
     victory_song_name: str = ""
-    victory_song_id: int
+    victory_song_id: int = 0
     location_count: int
     songList: List[str]
     excludedSongs: List[str]
@@ -1218,9 +1218,19 @@ class FunkinWorld(World):
             if not available_song_keys:
                 raise ValueError(f"No songs available for player {self.player_name}")
 
-            # Remove victory song from available pool if it's there
+            # Set victory song ID for slot data
             if self.victory_song_name in available_song_keys:
+                victory_index = available_song_keys.index(self.victory_song_name)
+                self.victory_song_id = int(song_ids[victory_index])
                 available_song_keys.remove(self.victory_song_name)
+            else:
+                # Fallback: try to find the song in song_items
+                if self.victory_song_name in self.song_items:
+                    self.victory_song_id = self.song_items[self.victory_song_name].code
+                else:
+                    # Emergency fallback
+                    self.victory_song_id = 0
+                    print(f"Emergency fallback: Victory song '{self.victory_song_name}' not found for player '{self.player_name}'. Things may break!")
 
             # Create song pool and give starting song
             self.create_song_pool(available_song_keys)
@@ -2121,8 +2131,13 @@ class FunkinWorld(World):
         menu_region.locations.append(victory_location)
         print(f"Created victory location '{victory_location_name}' for {self.player_name}")
 
-
-        self.location_count = len(menu_region.locations)
+        # Update total location count AFTER adding victory location (for region completeness)
+        total_locations = len(menu_region.locations)
+        
+        # But for item pool purposes, exclude the victory location since it has a locked item
+        self.location_count = total_locations
+        print(f"Total locations in region: {total_locations} (including victory)")
+        print(f"Available slots for item pool: {self.location_count} (excluding victory with locked item)")
 
         # Update location mappings for song and note locations (these seem stable)
         self.location_name_to_id.update({loc.name: loc.address for loc in menu_region.locations if loc.name not in self.location_name_to_id})
@@ -2337,6 +2352,7 @@ class FunkinWorld(World):
 
     def create_items(self) -> None:
         song_keys_in_pool = self.get_songs_map(self.player_name).copy()
+        self.location_count -= 1  # Reserve one slot for victory item
         print(f"=== ITEM CREATION DEBUG for {self.player_name} ===")
         print(f"Location count: {self.location_count}")
         print(f"Songs in pool: {len(song_keys_in_pool)} - {song_keys_in_pool}")
