@@ -12305,11 +12305,11 @@ class yutautil_APYaml:
                     key = StringTools.trim((keyValue[0] if 0 < len(keyValue) else None))
                     value = StringTools.trim((keyValue[1] if 1 < len(keyValue) else None))
                     if (key == "game"):
-                        self.game = StringTools.trim(value)
+                        self.game = self._stripQuotes(StringTools.trim(value))
                     elif (key == "name"):
-                        self.name = StringTools.trim(value)
+                        self.name = self._stripQuotes(StringTools.trim(value))
                     elif (key == "description"):
-                        self.description = StringTools.trim(value)
+                        self.description = self._stripQuotes(StringTools.trim(value))
                     
                     # Store songList when encountered during conversion
                     if (key == "songList"):
@@ -12389,7 +12389,7 @@ class yutautil_APYaml:
                             value2 = Std.parseFloat(value)
                             sectionData.h[key] = value2
                         else:
-                            sectionData.h[key] = self._stripQuotes(value)
+                            sectionData.h[key] = self._stripQuotes(StringTools.trim(value))
         # Check for unclosed multi-line list at end of file
         if inMultiLineList:
             print(f"Error: Unclosed multi-line list at end of file, started at line {multiLineListStartLine} for key '{multiLineListKey}'")
