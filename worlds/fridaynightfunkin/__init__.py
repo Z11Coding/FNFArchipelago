@@ -206,9 +206,13 @@ class FunkinWorld(World):
 
         # First, collect all player names from YAML files
         player_names = set()
-        for yaml_data in all_yamls:
+        name_counter = {}  # Track name counts for {number} placeholder
+        for i, yaml_data in enumerate(all_yamls):
             if hasattr(yaml_data, 'name'):
-                player_names.add(yaml_data.name)
+                # Process name placeholders using player index + 1 as player_id
+                processed_name = yaml_data.handle_name(yaml_data.name, i + 1, name_counter)
+                yaml_data.name = processed_name  # Update the YAML object with processed name
+                player_names.add(processed_name)
 
         # Check if fnfModData folder exists and use it if available
         folder_path = f"{folder_path}\\fnfModData" if os.path.exists(f"{folder_path}\\fnfModData") and os.path.isdir(f"{folder_path}\\fnfModData") else folder_path
@@ -845,6 +849,7 @@ class FunkinWorld(World):
         try:
             player_name = multiworld.player_name[player]
         except:
+            # Get the name from YAML (already processed with placeholders)
             player_name = cls.all_yamls[player].name
 
         player_yaml = None
@@ -867,6 +872,15 @@ class FunkinWorld(World):
                     })()
                 def getSongList(self):
                     return self.settings.songList
+                def handle_name(self, name, player_id=1, name_counter=None):
+                    # Simple placeholder processing for fallback YAML
+                    if name_counter is None:
+                        name_counter = {}
+                    count = name_counter.get(name, 0) + 1
+                    name_counter[name] = count
+                    result = name.replace('{number}', str(count)).replace('{NUMBER}', str(count))
+                    result = result.replace('{player}', str(player_id)).replace('{PLAYER}', str(player_id))
+                    return result
             player_yaml = DefaultYAML()
 
         instance.thisYaml = player_yaml

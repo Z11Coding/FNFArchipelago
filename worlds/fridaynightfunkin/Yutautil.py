@@ -12107,7 +12107,7 @@ class yutautil_APYaml:
     _hx_class_name = "yutautil.APYaml"
     __slots__ = ("game", "name", "description", "settings", "isWeightedFormat")
     _hx_fields = ["game", "name", "description", "settings", "isWeightedFormat"]
-    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled", "_findSongListInSettings", "_detectWeightedFormat"]
+    _hx_methods = ["convertYamlToJson", "getSongList", "getTicketWinPercentage", "isModsEnabled", "_findSongListInSettings", "_detectWeightedFormat", "handle_name", "process_name_with_placeholders"]
 
     def __init__(self,yamlContent):
         self.settings = None
@@ -12199,8 +12199,7 @@ class yutautil_APYaml:
                         # Add items before the closing bracket
                         items = before_bracket.split(",")
                         for item in items:
-                            stripped_item = StringTools.trim(item)
-                            if stripped_item:
+                                stripped_item = self._stripQuotes(StringTools.trim(item))
                                 multiLineListItems.append(stripped_item)
                     
                     # Complete the multi-line list
@@ -12224,7 +12223,7 @@ class yutautil_APYaml:
                     # Continue collecting list items
                     items = line.split(",")
                     for item in items:
-                        stripped_item = StringTools.trim(item)
+                        stripped_item = self._stripQuotes(StringTools.trim(item))
                         if stripped_item:
                             multiLineListItems.append(stripped_item)
                 continue
@@ -12264,7 +12263,7 @@ class yutautil_APYaml:
                             # Complete list on one line
                             value_temp = HxString.substr(line,1,(len(line) - 2))
                             def _hx_local_songlist_section(item):
-                                return StringTools.trim(item)
+                                return self._stripQuotes(StringTools.trim(item))
                             storedSongList = list(map(_hx_local_songlist_section,value_temp.split(",")))
                             songListSectionFound = True
                             print(f"Found songList array in songList section: {storedSongList}")
@@ -12275,7 +12274,7 @@ class yutautil_APYaml:
                                 # Single line with bracket at start
                                 value_temp = bracket_content[:bracket_content.index("]")]
                                 def _hx_local_songlist_multiline(item):
-                                    return StringTools.trim(item)
+                                    return self._stripQuotes(StringTools.trim(item))
                                 storedSongList = list(map(_hx_local_songlist_multiline,value_temp.split(",")))
                                 songListSectionFound = True
                                 print(f"Found songList array in songList section: {storedSongList}")
@@ -12289,7 +12288,7 @@ class yutautil_APYaml:
                                 if bracket_content.strip():
                                     items = bracket_content.split(",")
                                     for item in items:
-                                        stripped_item = StringTools.trim(item)
+                                        stripped_item = self._stripQuotes(StringTools.trim(item))
                                         if stripped_item:
                                             multiLineListItems.append(stripped_item)
                                 print(f"Starting multi-line songList array in songList section at line {_g}")
@@ -12317,7 +12316,7 @@ class yutautil_APYaml:
                         if (value.startswith("[") and value.endswith("]")):
                             value_temp = HxString.substr(value,1,(len(value) - 2))
                             def _hx_local_songlist(item):
-                                return StringTools.trim(item)
+                                return self._stripQuotes(StringTools.trim(item))
                             storedSongList = list(map(_hx_local_songlist,value_temp.split(",")))
                         elif value.startswith("["):
                             # Multi-line songList
@@ -12326,7 +12325,7 @@ class yutautil_APYaml:
                                 # Single line with bracket at start
                                 value_temp = bracket_content[:bracket_content.index("]")]
                                 def _hx_local_songlist_single(item):
-                                    return StringTools.trim(item)
+                                    return self._stripQuotes(StringTools.trim(item))
                                 storedSongList = list(map(_hx_local_songlist_single,value_temp.split(",")))
                             else:
                                 # Start of multi-line songList
@@ -12338,7 +12337,7 @@ class yutautil_APYaml:
                                 if bracket_content.strip():
                                     items = bracket_content.split(",")
                                     for item in items:
-                                        stripped_item = StringTools.trim(item)
+                                        stripped_item = self._stripQuotes(StringTools.trim(item))
                                         if stripped_item:
                                             multiLineListItems.append(stripped_item)
                                 print(f"Starting multi-line songList at line {_g}")
@@ -12349,7 +12348,7 @@ class yutautil_APYaml:
                     if (value.startswith("[") and value.endswith("]")):
                         value = HxString.substr(value,1,(len(value) - 2))
                         def _hx_local_1(item):
-                            return StringTools.trim(item)
+                            return self._stripQuotes(StringTools.trim(item))
                         value1 = list(map(_hx_local_1,value.split(",")))
                         sectionData.h[key] = value1
                     elif value.startswith("["):
@@ -12359,7 +12358,7 @@ class yutautil_APYaml:
                             # Single line with bracket at start
                             value_temp = bracket_content[:bracket_content.index("]")]
                             def _hx_local_regular_single(item):
-                                return StringTools.trim(item)
+                                return self._stripQuotes(StringTools.trim(item))
                             sectionData.h[key] = list(map(_hx_local_regular_single,value_temp.split(",")))
                         else:
                             # Start of multi-line list for regular key
@@ -12371,7 +12370,7 @@ class yutautil_APYaml:
                             if bracket_content.strip():
                                 items = bracket_content.split(",")
                                 for item in items:
-                                    stripped_item = StringTools.trim(item)
+                                    stripped_item = self._stripQuotes(StringTools.trim(item))
                                     if stripped_item:
                                         multiLineListItems.append(stripped_item)
                             print(f"Starting multi-line list for key '{key}' at line {_g}")
@@ -12390,7 +12389,7 @@ class yutautil_APYaml:
                             value2 = Std.parseFloat(value)
                             sectionData.h[key] = value2
                         else:
-                            sectionData.h[key] = value
+                            sectionData.h[key] = self._stripQuotes(value)
         # Check for unclosed multi-line list at end of file
         if inMultiLineList:
             print(f"Error: Unclosed multi-line list at end of file, started at line {multiLineListStartLine} for key '{multiLineListKey}'")
@@ -12476,6 +12475,13 @@ class yutautil_APYaml:
     def isModsEnabled(self):
         return Reflect.field(self.settings,"mods_enabled")
 
+    def _stripQuotes(self, value):
+        """Strip surrounding quotes from string values"""
+        if isinstance(value, str):
+            if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                return value[1:-1]
+        return value
+    
     def _detectWeightedFormat(self):
         """Detect if this YAML uses weighted/template format by checking for nested weight objects"""
         if self.settings is None:
@@ -12520,6 +12526,54 @@ class yutautil_APYaml:
             # If we can't detect properly, assume it's not weighted
             print(f"Warning: Could not detect YAML format for {self.name}: {e}")
             pass
+
+    def handle_name(self, name, player_id=1, name_counter=None):
+        """
+        Process name placeholders in the same way as Archipelago's handle_name function.
+        Supports {number}, {NUMBER}, {player}, {PLAYER} placeholders.
+        
+        Key differences:
+        - {number}: always shows the count
+        - {NUMBER}: only shows count if > 1, empty string if count == 1
+        - {player}: always shows the player ID  
+        - {PLAYER}: only shows player ID if > 1, empty string if player_id == 1
+        """
+        if name_counter is None:
+            name_counter = {}
+        
+        # Count occurrences for this name (using lowercase for consistency)
+        base_name = name.lower()
+        count = name_counter.get(base_name, 0) + 1
+        name_counter[base_name] = count
+        
+        # Process placeholders
+        processed_name = name
+        
+        # Handle {number} - always shows count
+        processed_name = processed_name.replace("{number}", str(count))
+        
+        # Handle {NUMBER} - only shows count if > 1, empty if == 1
+        processed_name = processed_name.replace("{NUMBER}", str(count) if count > 1 else "")
+        
+        # Handle {player} - always shows player ID
+        processed_name = processed_name.replace("{player}", str(player_id))
+        
+        # Handle {PLAYER} - only shows player ID if > 1, empty if == 1  
+        processed_name = processed_name.replace("{PLAYER}", str(player_id) if player_id > 1 else "")
+        
+        # Strip whitespace and limit to 16 characters like Archipelago does
+        processed_name = processed_name.strip()[:16].strip()
+        
+        return processed_name
+
+    def process_name_with_placeholders(self, player_id=1, name_counter=None):
+        """
+        Process the stored name field with placeholder support.
+        This should be called after parsing YAML to handle name placeholders.
+        """
+        if self.name is not None:
+            self.name = self.handle_name(self.name, player_id, name_counter)
+        return self.name
 
     @staticmethod
     def _hx_empty_init(_hx_o):
