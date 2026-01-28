@@ -677,11 +677,116 @@ class FunkinWorld(World):
         for sanity_item in sanity_items_list:
             item_name = sanity_item['name']
             location_name = f"Use {item_name}"
-            # Use the sanity item's ID + offset for the location ID
+            # Use the sanity item's ID + offset for the location ID, but check for conflicts
             sanity_item_id = sanity_item_ids.get(item_name)
             if sanity_item_id:
-                location_id = sanity_item_id + 1000 # Large offset to avoid conflicts
+                location_id = sanity_item_id + 1000  # Start with large offset
+                # Ensure this location ID doesn't conflict with any used IDs
+                while location_id in used_location_ids:
+                    location_id += 1
                 sanity_location_ids[location_name] = location_id
+                used_location_ids.add(location_id)  # Track this ID to prevent future conflicts
+
+        # Generate song bundle placeholders with reserved IDs
+        # Song assignment happens during create_items() with proper seeded randomization
+        song_bundles = {}  # Placeholder bundles with reserved IDs
+        bundle_locations = {}
+        bundle_id_counter = max(used_item_ids) + 200 if used_item_ids else item_id_index + 200
+        bundle_location_id_counter = max(used_location_ids) + 200 if used_location_ids else location_id_counter + 200
+
+        # Process each player's bundle settings
+        bundle_set_counter = 1
+        for yaml_data in all_yamls:
+            player_name = yaml_data.name if hasattr(yaml_data, 'name') else f"Player{all_yamls.index(yaml_data) + 1}"
+
+            # Get bundle settings from YAML with proper None-checking
+            bundle_weight = getattr(yaml_data.settings, 'songBundleWeight', 25) if hasattr(yaml_data, 'settings') else 0
+            bundle_weight = 25 if bundle_weight is None else bundle_weight
+            
+            bundle_enabled = getattr(yaml_data.settings, 'songBundleEnabled', False) if hasattr(yaml_data, 'settings') else False
+            bundle_enabled = False if bundle_enabled is None else bundle_enabled
+            
+            bundle_min_size = getattr(yaml_data.settings, 'songBundleMinSize', 2) if hasattr(yaml_data, 'settings') else 2
+            bundle_min_size = 2 if bundle_min_size is None else bundle_min_size
+            
+            bundle_max_size = getattr(yaml_data.settings, 'songBundleMaxSize', 5) if hasattr(yaml_data, 'settings') else 5
+            bundle_max_size = 5 if bundle_max_size is None else bundle_max_size
+            
+            bundle_limit = getattr(yaml_data.settings, 'songBundleLimit', None) if hasattr(yaml_data, 'settings') else None
+            bundle_limit = None if bundle_limit is None else bundle_limit
+
+            if not bundle_enabled or bundle_weight <= 0:
+                print(f"Bundles disabled for {player_name}")
+                continue
+
+            # Get this player's song count based on YAML song list and limit
+            yaml_song_list = yaml_data.getSongList() if hasattr(yaml_data, 'getSongList') else []
+            song_limit = getattr(yaml_data.settings, 'song_limit', 5) if hasattr(yaml_data, 'settings') else 5
+            song_limit = 5 if song_limit is None else song_limit
+            
+            # Count available songs that exist in our song items
+            available_song_count = 0
+            for song in yaml_song_list:
+                cleaned_song = song.strip().replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']').strip()
+                if cleaned_song in song_items:
+                    available_song_count += 1
+            
+            # Apply the lower of: song limit or actual song count
+            player_song_count = min(song_limit, available_song_count)
+
+            if player_song_count < bundle_min_size:
+                print(f"Not enough songs for {player_name} to create bundles (need at least {bundle_min_size}, have {player_song_count})")
+                continue
+
+            # Calculate how many bundles to create based on weight
+            total_songs = player_song_count
+            max_possible_bundles = total_songs // bundle_min_size
+            
+            # Treat weights > 10 as percentages directly, weights 0-10 as needing *10 conversion
+            if bundle_weight > 10:
+                bundle_percentage = min(100, bundle_weight)  # Direct percentage (cap at 100%)
+            else:
+                bundle_percentage = min(100, bundle_weight * 10)  # Convert 0-10 scale to percentage
+            
+            # Use custom bundle limit if provided, otherwise use reasonable default (25% of songs max)
+            if bundle_limit is not None and bundle_limit > 0:
+                max_reasonable_bundles = bundle_limit
+            else:
+                max_reasonable_bundles = max(1, total_songs // 4)  # At most 1 bundle per 4 songs
+            
+            percentage_based_bundles = int((bundle_percentage / 100) * max_possible_bundles)
+            target_bundle_count = min(max_reasonable_bundles, max(1, percentage_based_bundles))
+
+            print(f"Planning {target_bundle_count} bundles for {player_name} (weight: {bundle_weight}%, max limit: {max_reasonable_bundles})")
+
+            # Create bundle placeholders with reserved IDs (songs assigned later in create_items)
+            for i in range(target_bundle_count):
+                bundle_name = f"Mixtape: Set {bundle_set_counter + i}"
+                bundle_item_id = bundle_id_counter
+                bundle_location_id = bundle_location_id_counter
+                
+                # Create bundle placeholder
+                bundle_data = {
+                    'name': bundle_name,
+                    'songs': [],  # Will be populated in create_items
+                    'item_id': bundle_item_id,
+                    'location_id': bundle_location_id,
+                    'player': player_name,
+                    'min_size': bundle_min_size,
+                    'max_size': bundle_max_size,
+                    'bundle_index': i
+                }
+                
+                song_bundles[bundle_name] = bundle_data
+                bundle_locations[bundle_name] = bundle_location_id
+                
+                bundle_id_counter += 1
+                bundle_location_id_counter += 1
+                used_item_ids.add(bundle_item_id)
+                used_location_ids.add(bundle_location_id)
+
+            bundle_set_counter += target_bundle_count
+            print(f"Reserved {target_bundle_count} bundle IDs for {player_name}")
 
         # Add victory location with a fixed ID - this is the generic victory goal location
         victory_location_id = max(used_location_ids) + 1 if used_location_ids else location_id_counter + 1
@@ -689,6 +794,8 @@ class FunkinWorld(World):
         used_location_ids.add(victory_location_id)
 
         # Build final name-to-ID mappings
+        bundle_item_ids = {bundle_name: bundle_data['item_id'] for bundle_name, bundle_data in song_bundles.items()}
+        
         item_name_to_id = dict(ChainMap(
             {fnfUtil.SHOW_TICKET_NAME: fnfUtil.SHOW_TICKET_CODE},
             {fnfUtil.GIRLFRIENDS_LOVE_NAME: fnfUtil.GIRLFRIENDS_LOVE_CODE},
@@ -701,6 +808,7 @@ class FunkinWorld(World):
             custom_item_ids,  # Add custom items
             custom_trap_item_ids,  # Add custom trap items
             sanity_item_ids,  # Add sanity items
+            bundle_item_ids,  # Add bundle items
             fnfUtil.z11_permatrap_items,
             fnfUtil.z11_antitrap_items,
             fnfUtil.z11_hardmode_items,
@@ -729,6 +837,7 @@ class FunkinWorld(World):
             song_locations,
             custom_locations,  # Add custom locations
             sanity_location_ids,  # Add sanity item locations
+            bundle_locations,  # Add bundle locations
             victory_location_ids  # Add victory location
         ))
 
@@ -796,7 +905,10 @@ class FunkinWorld(World):
             "all_yamls": _all_yamls,
             "vip_songs": vip_exclusive_song_additions,
             "sanity_items_list": sanity_items_list,
-            "sanity_location_ids": sanity_location_ids
+            "sanity_location_ids": sanity_location_ids,
+            "song_bundles": song_bundles,  # Bundle placeholders for instance processing
+            "bundle_locations": bundle_locations,  # Bundle location mappings
+            "songs_in_bundles": set()  # Will be populated during instance generation
         }
 
     # These will be populated during class creation in __new__
@@ -817,6 +929,11 @@ class FunkinWorld(World):
     custom_song_additions = yaml_data.get("custom_song_additions", [])  # Songs added by scripts
     custom_song_exclusions = yaml_data.get("custom_song_exclusions", [])  # Songs excluded by scripts
     custom_song_requirements = yaml_data.get("custom_song_requirements", [])  # Song requirements from scripts
+
+    # Bundle data from class initialization
+    song_bundles: dict = yaml_data.get("song_bundles", {})
+    bundle_locations: dict[str, int] = yaml_data.get("bundle_locations", {})
+    songs_in_bundles: set = yaml_data.get("songs_in_bundles", set())
 
     # Temporary storage for setup
     items_in_general: dict[str, int] = {}
@@ -925,6 +1042,10 @@ class FunkinWorld(World):
         self._custom_song_additions = self.custom_song_additions.copy()
         self._custom_song_exclusions = self.custom_song_exclusions.copy()
         self._custom_song_requirements = self.custom_song_requirements.copy()
+        
+        # Initialize instance-specific bundle tracking
+        self.songs_in_bundles = set()  # Songs that are bundled for this player
+        self.song_bundles = self.song_bundles.copy()  # Copy class data to instance
 
         # COMMENTED OUT: Passthrough functionality disabled
         # # Handle passthrough data for victory and starting songs
@@ -952,7 +1073,7 @@ class FunkinWorld(World):
                 self.songList = yaml_song_list.copy()
             else:
                 self.songList = []
-        
+
         # Check for weighted/template YAMLs and warn user (only show warning once)
         if not FunkinWorld._weighted_yaml_warning_shown:
             weighted_players = []
@@ -960,12 +1081,12 @@ class FunkinWorld(World):
                 if hasattr(yaml_data, 'isWeightedFormat') and yaml_data.isWeightedFormat:
                     player_name = getattr(yaml_data, 'name', 'Unknown Player')
                     weighted_players.append(player_name)
-            
+
             if weighted_players:
                 FunkinWorld._weighted_yaml_warning_shown = True
                 # Check if this is automated generation (Universal Tracker)
                 is_automated = getattr(multiworld, 'gen_is_fake', False)
-                
+
                 if not is_automated:
                     # Format the warning message naturally based on number of players
                     if len(weighted_players) == 1:
@@ -978,7 +1099,7 @@ class FunkinWorld(World):
                         else:
                             player_list = ", ".join(weighted_players[:-1]) + f", and {weighted_players[-1]}"
                         verb = "were"
-                    
+
                     print(f"\n⚠️  WARNING: Template/Weighted YAML Detected ⚠️")
                     print(f"It is not recommended to use a Template or Weighted YAML when generating a game for Friday Night Funkin'.")
                     print(f"The player{'s' if len(weighted_players) > 1 else ''} {player_list} {verb} detected using weighted/template YAMLs.")
@@ -986,7 +1107,7 @@ class FunkinWorld(World):
                     print(f"\nOptions:")
                     print(f"1. Continue generation anyway (not recommended)")
                     print(f"2. Cancel generation and create proper player YAMLs")
-                    
+
                     while True:
                         try:
                             choice = inputimeout(f"Would you like to continue? (1/2): ", timeout=30)
@@ -997,7 +1118,7 @@ class FunkinWorld(World):
                         except:
                             choice = "1"
                             print("Auto-continuing generation")
-                        
+
                         if choice == "1":
                             print("Continuing generation with weighted/template YAMLs (not recommended)")
                             break
@@ -1215,11 +1336,11 @@ class FunkinWorld(World):
         """Select a victory song and set up the item pool"""
         # Get songs that belong to this player
         player_songs = self.get_songs_map(self.player_name)
-        
+
         if not player_songs:
             # Fallback to any available song
             player_songs = list(self.song_items.keys())[:1] if self.song_items else ["Tutorial"]
-        
+
         # Select a random victory song
         self.victory_song_name = self.random.choice(list(player_songs))
         print(f"Selected victory song for {self.player_name}: {self.victory_song_name}")
@@ -1316,6 +1437,12 @@ class FunkinWorld(World):
     def create_item(self, name: str) -> Item:
         if name == self.fnfUtil.SHOW_TICKET_NAME:
             return FunkinFixedItem(name, ItemClassification.progression_skip_balancing, self.fnfUtil.SHOW_TICKET_CODE, self.player)
+
+        # Check for bundle items (Mixtapes) - use class-level bundles
+        if name in self.song_bundles:
+            bundle_data = self.song_bundles[name]
+            bundle_id = bundle_data['item_id']
+            return FunkinFixedItem(name, ItemClassification.progression_deprioritized_skip_balancing, bundle_id, self.player)
 
         # Check for custom items (no longer using player prefixes)
         if name in self.custom_items_list:
@@ -1734,8 +1861,22 @@ class FunkinWorld(World):
             else:
                 full_song_name = song_name
 
-            # Basic song access - check for the full item name
-            has_song = state.has(full_song_name, self.player)
+            # Check if this song is in a bundle
+            bundling_bundle = None
+            if hasattr(self, 'songs_in_bundles') and full_song_name in self.songs_in_bundles:
+                # Find which bundle contains this song
+                for bundle_name, bundle_data in self.song_bundles.items():
+                    if bundle_data.get('player') == self.player_name and full_song_name in bundle_data.get('songs', []):
+                        bundling_bundle = bundle_name
+                        break
+
+            # Basic song access - check for bundle or individual song
+            if bundling_bundle:
+                # Song is bundled - require having the bundle
+                has_song = state.has(bundling_bundle, self.player)
+            else:
+                # Song is individual - require having the song item
+                has_song = state.has(full_song_name, self.player)
 
             # Check for sanity requirements (stages and characters) - NEW: Difficulty-aware accessibility
             if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
@@ -1943,9 +2084,19 @@ class FunkinWorld(World):
                     else:
                         full_song_name = song_name
 
-                    # Check if player owns this song
-                    if state.has(full_song_name, self.player):
-                        return True
+                    # Check if player owns this song (bundle-aware)
+                    if hasattr(self, 'songs_in_bundles') and full_song_name in self.songs_in_bundles:
+                        # Song is bundled - check for bundle ownership
+                        for bundle_name, bundle_data in self.song_bundles.items():
+                            if (bundle_data.get('player') == self.player_name and 
+                                full_song_name in bundle_data.get('songs', [])):
+                                if state.has(bundle_name, self.player):
+                                    return True
+                                break
+                    else:
+                        # Song is individual - check direct ownership
+                        if state.has(full_song_name, self.player):
+                            return True
 
                 return False
 
@@ -1976,8 +2127,19 @@ class FunkinWorld(World):
                     # We need to find the song requirements
                     song_requirements = self._get_all_song_requirements(song_name, mod_name)
 
-                    # Check basic song access
-                    has_song = state.has(full_song_name, self.player)
+                    # Check basic song access (bundle-aware)
+                    has_song = False
+                    if hasattr(self, 'songs_in_bundles') and full_song_name in self.songs_in_bundles:
+                        # Song is bundled - check for bundle ownership
+                        for bundle_name, bundle_data in self.song_bundles.items():
+                            if (bundle_data.get('player') == self.player_name and 
+                                full_song_name in bundle_data.get('songs', [])):
+                                has_song = state.has(bundle_name, self.player)
+                                break
+                    else:
+                        # Song is individual - check direct ownership
+                        has_song = state.has(full_song_name, self.player)
+                    
                     if not has_song:
                         continue
 
@@ -2011,7 +2173,92 @@ class FunkinWorld(World):
 
         return sanity_access_rule
 
+    def _create_bundle_access_rule(self, bundle_name):
+        """Create access rule for bundle locations that checks bundle item and all song requirements"""
+        def bundle_access_rule(state):
+            # Must have the bundle item (mixtape) to access the bundle
+            if not state.has(bundle_name, self.player):
+                return False
+            
+            # Check that all songs in the bundle can be accessed
+            bundle_songs = self.song_bundles[bundle_name].get('songs', [])
+            for song_name in bundle_songs:
+                # Find requirements for this song (song_name already contains full formatted name)
+                song_requirements = self._get_all_song_requirements(song_name, "")
+                
+                # Create and test the song's access rule using the full song name
+                song_access_rule = self._create_song_access_rule_with_requirements(
+                    song_name, "", song_requirements
+                )
+                
+                # If any song in the bundle can't be accessed, bundle is inaccessible
+                if not song_access_rule(state):
+                    return False
+            
+            return True
+        return bundle_access_rule
+
+    def pre_assign_bundle_songs(self):
+        """Pre-assign songs to bundles before creating regions so access rules are correct"""
+        # Get player bundles that need song assignment
+        player_bundles = [name for name, data in self.song_bundles.items() if data['player'] == self.player_name]
+        if not player_bundles:
+            print(f"No bundles found for player {self.player_name}")
+            return
+
+        # Get the available songs for this player
+        song_keys_in_pool = self.get_songs_map(self.player_name)
+        
+        # Prepare available songs (copy the list so we can modify it)
+        available_songs = song_keys_in_pool.copy()
+        bundled_songs = set()
+
+        print(f"Pre-assigning songs to {len(player_bundles)} bundles for {self.player_name}")
+        print(f"Available songs: {len(available_songs)}")
+
+        # Process each bundle for this player
+        for bundle_name in player_bundles:
+            bundle_data = self.song_bundles[bundle_name]
+            
+            # Skip if already has songs assigned
+            if bundle_data.get('songs'):
+                print(f"Bundle '{bundle_name}' already has songs assigned, skipping")
+                continue
+            
+            # Get bundle constraints from bundle data
+            bundle_min_size = bundle_data['min_size']
+            bundle_max_size = bundle_data['max_size']
+            
+            # Skip if not enough songs left
+            if len(available_songs) < bundle_min_size:
+                print(f"Not enough songs left for bundle '{bundle_name}' (need {bundle_min_size}, have {len(available_songs)})")
+                continue
+            
+            # Randomize bundle size between min and max
+            max_possible = min(bundle_max_size, len(available_songs))
+            bundle_size = self.random.randint(bundle_min_size, max_possible)
+            
+            # Randomly select songs for this bundle
+            selected_songs = self.random.sample(available_songs, bundle_size)
+            
+            # Update bundle data with actual songs
+            self.song_bundles[bundle_name]['songs'] = selected_songs
+            bundled_songs.update(selected_songs)
+            
+            # Remove bundled songs from available pool
+            for song in selected_songs:
+                available_songs.remove(song)
+            
+            print(f"Bundle '{bundle_name}' pre-assigned {len(selected_songs)} songs: {selected_songs}")
+
+        # Update instance-specific songs_in_bundles for this player
+        self.songs_in_bundles.update(bundled_songs)
+        print(f"Total songs pre-assigned to bundles: {len(bundled_songs)}")
+
     def create_regions(self):
+        # Pre-assign songs to bundles before creating access rules
+        self.pre_assign_bundle_songs()
+        
         menu_region = Region("Freeplay", self.player, self.multiworld)
         self.multiworld.regions += [menu_region]
 
@@ -2095,13 +2342,28 @@ class FunkinWorld(World):
                     loc = FunkinLocation(self.player, loc_name, self.song_locations[loc_name], menu_region)
                     loc.access_rule = song_access_rule
                     menu_region.locations.append(loc)
-        
+
+        # Create bundle locations and set access rules for bundled songs
+        player_bundles = [name for name, data in self.song_bundles.items() if data['player'] == self.player_name]
+        for bundle_name in player_bundles:
+            bundle_data = self.song_bundles[bundle_name]
+            bundle_location_id = bundle_data['location_id']
+            bundle_location = FunkinLocation(self.player, bundle_name, bundle_location_id, menu_region)
+            
+            # Bundle location requires having the bundle item AND all songs in bundle being accessible
+            bundle_location.access_rule = self._create_bundle_access_rule(bundle_name)
+            menu_region.locations.append(bundle_location)
+            
+            # Get bundle songs for logging
+            bundled_songs = bundle_data.get('songs', [])
+            print(f"Created bundle location '{bundle_name}' with access to songs: {bundled_songs}")
+
         # Create victory location with forced Girlfriend's Love item
         victory_location_name = "Victory Goal"
         # Use the pre-assigned victory location ID from stuff()
         victory_location_id = self.location_name_to_id[victory_location_name]
         victory_location = FunkinLocation(self.player, victory_location_name, victory_location_id, menu_region)
-        
+
         # Use the same access rule logic as other song locations
         # Collect ALL access rules that apply to the victory song
         applicable_requirements = []
@@ -2137,17 +2399,17 @@ class FunkinWorld(World):
         # Create the song access rule that includes ALL applicable requirements
         victory_song_access_rule = self._create_song_access_rule_with_requirements(song_name_only, mod_name, applicable_requirements)
         victory_location.access_rule = victory_song_access_rule
-        
+
         # Place the victory item at the victory location
         victory_item = self.create_victory_item()
         victory_location.place_locked_item(victory_item)
-        
+
         menu_region.locations.append(victory_location)
         print(f"Created victory location '{victory_location_name}' for {self.player_name}")
 
         # Update total location count AFTER adding victory location (for region completeness)
         total_locations = len(menu_region.locations)
-        
+
         # But for item pool purposes, exclude the victory location since it has a locked item
         self.location_count = total_locations
         print(f"Total locations in region: {total_locations} (including victory)")
@@ -2335,7 +2597,7 @@ class FunkinWorld(World):
                     else:
                         # This should never happen if stuff() was comprehensive
                         raise LocationIDMismatchError(location_name, -1, location_id, self.player_name)
-                    
+
                     print(f"Verified sanity location {location_name} ID matches pre-calculated value: {location_id}")
                 else:
                     print(f"Warning: Could not find item ID for sanity item {sanity_item_name}")
@@ -2381,9 +2643,38 @@ class FunkinWorld(World):
                 self.multiworld.itempool.append(self.create_item(self.fnfUtil.SHOW_TICKET_NAME))
                 item_count += 1
 
-            # Then add 1 copy of every song
-            print(f"Adding {len(song_keys_in_pool)} songs")
-            for song in song_keys_in_pool:
+            # Process bundles for this player - use pre-assigned songs from create_regions
+            player_bundles = [name for name, data in self.song_bundles.items() if data['player'] == self.player_name]
+            bundled_songs = set()  # Track songs that got bundled
+            
+            if player_bundles:
+                print(f"Processing {len(player_bundles)} pre-assigned bundles for {self.player_name}")
+                
+                for bundle_name in player_bundles:
+                    bundle_data = self.song_bundles[bundle_name]
+                    
+                    # Get pre-assigned songs for this bundle
+                    assigned_songs = bundle_data.get('songs', [])
+                    if not assigned_songs:
+                        print(f"Warning: Bundle '{bundle_name}' has no pre-assigned songs, skipping")
+                        continue
+                    
+                    bundled_songs.update(assigned_songs)
+                    print(f"Bundle '{bundle_name}' using {len(assigned_songs)} pre-assigned songs: {assigned_songs}")
+                    
+                    # Add bundle item to pool
+                    if item_count >= self.location_count:
+                        break
+                    self.multiworld.itempool.append(self.create_item(bundle_name))
+                    item_count += 1
+                
+                print(f"Total songs in bundles: {len(bundled_songs)} (should match pre-assigned count)")
+            
+            
+            # Add individual songs (excluding those now in bundles)
+            individual_songs = [song for song in song_keys_in_pool if song not in bundled_songs]
+            print(f"Adding {len(individual_songs)} individual songs (excluding {len(bundled_songs)} bundled songs)")
+            for song in individual_songs:
                 if item_count >= self.location_count:
                     break
                 self.multiworld.itempool.append(self.create_item(song))
@@ -2656,9 +2947,16 @@ class FunkinWorld(World):
         print(f"Total tickets in pool: {self.get_ticket_count()}")
 
         # Player wins when they have required tickets, victory song, AND Girlfriend's Love
+        # Check if victory song is in a bundle - if so, need the bundle item instead of the song directly
+        victory_bundle = next((bundle_name for bundle_name, bundle_data in self.song_bundles.items() 
+                              if bundle_data.get('player') == self.player_name and self.victory_song_name in bundle_data.get('songs', [])), 
+                             None)
+        
+        victory_item = victory_bundle if victory_bundle else self.victory_song_name
+        
         self.multiworld.completion_condition[self.player] = \
             lambda state: state.has(self.fnfUtil.SHOW_TICKET_NAME, self.player, self.get_ticket_win_count()) and \
-                  state.has(self.victory_song_name, self.player, 1) and \
+                  state.has(victory_item, self.player, 1) and \
                   state.has(self.fnfUtil.GIRLFRIENDS_LOVE_NAME, self.player)
 
         print(f"Completion condition set: Need {self.get_ticket_win_count()} tickets AND '{self.victory_song_name}' song AND '{self.fnfUtil.GIRLFRIENDS_LOVE_NAME}'")
@@ -2685,7 +2983,7 @@ class FunkinWorld(World):
         multiplier = self.options.ticket_win_percentage.value / 100.0
         ticket_count = self.get_ticket_count()
         return max(1, floor(ticket_count * multiplier))
-    
+
 
     def write_spoiler_header(self, spoiler_handle):
         spoiler_handle.write("\n\n")
@@ -2699,70 +2997,70 @@ class FunkinWorld(World):
     def write_spoiler(self, spoiler_handle: TextIO) -> None:
         # Give song requirements in human-readable format
         spoiler_handle.write(f"\n-- Song Requirements for [{self.player_name}] --\n")
-        
+
         if not self._custom_song_requirements:
             spoiler_handle.write("No custom song requirements.\n")
             return
-            
+
         for requirement in self._custom_song_requirements:
             song_name = requirement.get('songName', 'Unknown Song')
             target_mod = requirement.get('targetMod', '')
-            
+
             # Build the full song name
             if target_mod and target_mod.strip():
                 full_song_name = f"{song_name} ({target_mod})"
             else:
                 full_song_name = song_name
-            
+
             spoiler_handle.write(f"\nSong: {full_song_name}\n")
-            
+
             # Check if this song has required items
             if 'requiredItems' in requirement and requirement['requiredItems']:
                 spoiler_handle.write("  Required Items:\n")
                 for req_item in requirement['requiredItems']:
                     item_name = req_item.get('name', 'Unknown Item')
                     item_count = req_item.get('count', 1)
-                    
+
                     if item_count > 1:
                         spoiler_handle.write(f"    - {item_name} (x{item_count})\n")
                     else:
                         spoiler_handle.write(f"    - {item_name}\n")
             else:
                 spoiler_handle.write("  No additional items required.\n")
-            
+
             # Add any other requirement details if they exist
             other_requirements = []
             for key, value in requirement.items():
                 if key not in ['songName', 'targetMod', 'requiredItems'] and value:
                     other_requirements.append(f"{key}: {value}")
-            
+
             if other_requirements:
                 spoiler_handle.write("  Other Requirements:\n")
                 for req in other_requirements:
                     spoiler_handle.write(f"    - {req}\n")
-        
+
         # Add sanity requirements if they exist
         if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
             spoiler_handle.write(f"\n-- Sanity Requirements for [{self.player_name}] --\n")
-            
+
             # Get sanity settings
             sanity_settings = self._get_sanity_settings()
             completion_type = sanity_settings.get('sanity_completion_type', 'on_getting')
-            
+
             spoiler_handle.write(f"Sanity Completion Type: {completion_type}\n")
             spoiler_handle.write(f"Sanity Locations Enabled: {sanity_settings.get('enable_sanity_locations', False)}\n\n")
-            
+
             # List all sanity items for this player
             player_sanity_items = [item for item in self.sanity_items_list if item.get('player') == self.player_name]
-            
+
             if player_sanity_items:
                 spoiler_handle.write("Sanity Items:\n")
                 for sanity_item in player_sanity_items:
                     sanity_name = sanity_item.get('name', 'Unknown Sanity Item')
                     sanity_type = sanity_item.get('type', 'unknown')
-                    
+
                     spoiler_handle.write(f"  {sanity_name} ({sanity_type})\n")
-                    
+
                     # List songs that use this sanity item
                     songs = sanity_item.get('songs', [])
                     if songs:
@@ -2772,13 +3070,13 @@ class FunkinWorld(World):
                                 song_name = song_obj.get('song', '')
                                 mod_name = song_obj.get('mod', None)
                                 difficulties = song_obj.get('difficulties', [])
-                                
+
                                 # Build song name
                                 if mod_name:
                                     full_name = f"{song_name} ({mod_name})"
                                 else:
                                     full_name = song_name
-                                
+
                                 # Show difficulties if specified
                                 if difficulties:
                                     diff_str = ", ".join(difficulties)
@@ -2789,6 +3087,26 @@ class FunkinWorld(World):
                         spoiler_handle.write("    No songs specified.\n")
             else:
                 spoiler_handle.write("No sanity items for this player.\n")
+
+        # Add bundle information if bundles exist
+        player_bundles = [name for name, data in self.song_bundles.items() if data.get('player') == self.player_name]
+        if player_bundles:
+            spoiler_handle.write(f"\n-- Mixtape Sets for [{self.player_name}] --\n")
+            
+            for bundle_name in sorted(player_bundles):
+                bundle_data = self.song_bundles[bundle_name]
+                songs_in_bundle = bundle_data.get('songs', [])
+                
+                spoiler_handle.write(f"\n{bundle_name}:\n")
+                if songs_in_bundle:
+                    spoiler_handle.write(f"  Contains {len(songs_in_bundle)} songs:\n")
+                    for song in sorted(songs_in_bundle):
+                        spoiler_handle.write(f"    - {song}\n")
+                else:
+                    spoiler_handle.write("  No songs assigned (this shouldn't happen!)\n")
+        else:
+            spoiler_handle.write(f"\n-- No Mixtape Sets for [{self.player_name}] --\n")
+            spoiler_handle.write("This player has no bundled songs.\n")
 
     # def extend_hint_information(self, hint_data):
     #     return super().extend_hint_information(hint_data)
@@ -2816,12 +3134,25 @@ class FunkinWorld(World):
                 player_name in song_data.playerList or
                 not song_data.modded):
 
+                # Check if this song is in a bundle
+                is_bundled = hasattr(self, 'songs_in_bundles') and song_name in self.songs_in_bundles
+                bundle_name = None
+                
+                if is_bundled:
+                    # Find which bundle contains this song
+                    for bundle_n, bundle_data in self.song_bundles.items():
+                        if bundle_data.get('player') == player_name and song_name in bundle_data.get('songs', []):
+                            bundle_name = bundle_n
+                            break
+
                 song_details[song_name] = {
                     "id": song_data.code,
                     "modded": song_data.modded,
                     "playerOwner": song_data.playerSongBelongsTo,
                     "sharedWith": song_data.playerList,
-                    "songName": song_data.songName
+                    "songName": song_data.songName,
+                    "isBundled": is_bundled,
+                    "bundleName": bundle_name
                 }
 
         return song_details
@@ -2900,6 +3231,28 @@ class FunkinWorld(World):
             song_details = self.get_player_song_details(self.player_name)
             location_details = self.get_player_location_details(self.player_name)
 
+            # Create song-to-location-IDs mapping for completion tracking
+            song_location_mapping = {}
+            for song_name in player_songs:
+                location_ids = []
+                
+                # Add song completion location IDs
+                if self.unlock_method in ["Song Completion", "Both"]:
+                    for j in range(2):
+                        loc_name = f"{song_name}-{j}"
+                        if loc_name in self.song_locations:
+                            location_ids.append(self.song_locations[loc_name])
+                
+                # Add note check location IDs  
+                if self.unlock_method in ["Note Checks", "Both"]:
+                    for j in range(3):
+                        loc_name = f"Note {j}: {song_name}"
+                        if loc_name in self.song_locations:
+                            location_ids.append(self.song_locations[loc_name])
+                
+                if location_ids:
+                    song_location_mapping[song_name] = location_ids
+
             # Get all UNO Minigame colors by looking in the multiworld.
 
             # Collect custom week data for songs added by scripts
@@ -2951,6 +3304,27 @@ class FunkinWorld(World):
                             'sanity_item': sanity_item_name
                         }
 
+            # Get bundle data for this player
+            player_bundle_data = {}
+            player_owned_bundles = []  # List of bundle names owned by this player
+            for bundle_name, bundle_info in self.song_bundles.items():
+                if bundle_info['player'] == self.player_name:
+                    player_owned_bundles.append(bundle_name)
+                    
+                    # Collect location IDs for all songs in this bundle using existing mapping
+                    bundle_location_ids = []
+                    for song_name in bundle_info['songs']:
+                        if song_name in song_location_mapping:
+                            bundle_location_ids.extend(song_location_mapping[song_name])
+                    
+                    player_bundle_data[bundle_name] = {
+                        'item_id': bundle_info['item_id'],
+                        'location_id': bundle_info['location_id'],
+                        'songs': bundle_info['songs'],
+                        'locations': bundle_location_ids,  # Location IDs for all songs in this bundle
+                        'contains_victory': self.victory_song_name in bundle_info['songs']
+                    }
+
             return {
                 "deathLink": self.options.deathlink.value,
                 "fullSongCount": len(player_songs),
@@ -2965,6 +3339,9 @@ class FunkinWorld(World):
                 "selectedSongs": player_songs,  # List of songs selected for this player
                 "songData": song_details,  # Detailed song metadata for the client
                 "locationData": location_details,  # Detailed location metadata for the client
+                "songLocationMapping": song_location_mapping,  # Maps song names to their location IDs for completion tracking
+                "bundleData": player_bundle_data,  # Bundle (Mixtape) data for this player
+                "ownedBundles": player_owned_bundles,  # List of bundle names owned by this player
                 "sanityData": player_sanity_items,  # Sanity items for this player
                 "sanityLocationData": player_sanity_locations,  # Sanity locations for this player
                 "sanitySettings": self._get_sanity_settings(),  # Sanity settings for this player
@@ -2983,7 +3360,7 @@ class FunkinWorld(World):
                 ],
                 "hardmode": self.options.hard_mode.value,  # So that Hard Mode can activate
             }
-        
+
     def _get_custom_weeks_data(self):
         """Generate custom week data for songs added by AP scripts"""
         custom_weeks = {}

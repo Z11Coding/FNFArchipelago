@@ -117,3 +117,12 @@ class FunkinFixedItem(Item):
 
     def __init__(self, name: str, classification: ItemClassification, code: Optional[int], player: int) -> None:
         super().__init__(name, classification, code, player)
+
+class FunkinMixtapeItem(Item):
+    """Progressive Mixtape item that unlocks songs as multiple copies are collected"""
+    game: str = "Friday Night Funkin"
+    
+    def __init__(self, name: str, code: Optional[int], player: int, contained_songs: List[str]) -> None:
+        super().__init__(name, ItemClassification.progression, code, player)
+        self.contained_songs = contained_songs
+        self.total_levels = len(contained_songs)
