@@ -686,14 +686,12 @@ class FunkinWorld(World):
             current_item_id += 1
 
         # Pre-calculate location IDs for ALL valid sanity items
-        # CRITICAL: Base the ID allocation on all_songs (complete list) not song_items (filtered list)
-        # This ensures sanity location IDs are deterministic regardless of which songs actually get created
+        # CRITICAL: Base the ID allocation on actual used_location_ids to prevent overlaps
+        # This ensures sanity location IDs don't conflict with song, custom, or bundle locations
         sanity_location_ids = {}
         
-        # Calculate sanity location base assuming all possible songs exist (5 locations per song)
-        # This prevents ID shifts if song count changes between generation runs
-        all_songs_location_reserve = len(all_songs) * 5  # 5 locations per song (2 completion + 3 notes)
-        sanity_location_id_base = item_id_index + 1 + all_songs_location_reserve + 100  # Start after all reserved songs + gap
+        # Start sanity locations after the highest currently used location ID
+        sanity_location_id_base = max(used_location_ids) + 500 if used_location_ids else location_id_counter + 500  # Large gap to be safe
         sanity_location_id_counter = sanity_location_id_base
         
         for sanity_item in sanity_items_list:
@@ -710,8 +708,8 @@ class FunkinWorld(World):
         song_bundles = {}  # Placeholder bundles with reserved IDs
         bundle_locations = {}
         bundle_id_counter = max(used_item_ids) + 200 if used_item_ids else item_id_index + 200
-        # Bundle locations use the normal location ID counter, not affected by sanity IDs
-        bundle_location_id_counter = max(used_location_ids) + 200 if used_location_ids else location_id_counter + 200
+        # Bundle locations must start after sanity locations to avoid conflicts
+        bundle_location_id_counter = max(used_location_ids) + 500 if used_location_ids else location_id_counter + 500
 
         # Process each player's bundle settings
         bundle_set_counter = 1
@@ -790,7 +788,15 @@ class FunkinWorld(World):
             for i in range(target_bundle_count):
                 bundle_name = f"Mixtape: Set {bundle_set_counter + i}"
                 bundle_item_id = bundle_id_counter
+                
+                # Ensure bundle item ID is unique - increment if it conflicts
+                while bundle_item_id in used_item_ids:
+                    bundle_item_id += 1
+                
+                # Ensure bundle location ID is unique - increment if it conflicts
                 bundle_location_id = bundle_location_id_counter
+                while bundle_location_id in used_location_ids:
+                    bundle_location_id += 1
                 
                 # Create bundle placeholder
                 bundle_data = {
@@ -807,8 +813,8 @@ class FunkinWorld(World):
                 song_bundles[bundle_name] = bundle_data
                 bundle_locations[bundle_name] = bundle_location_id
                 
-                bundle_id_counter += 1
-                bundle_location_id_counter += 1
+                bundle_id_counter = bundle_item_id + 1  # Continue from the actual assigned ID
+                bundle_location_id_counter = bundle_location_id + 1  # Continue from the actual assigned ID
                 used_item_ids.add(bundle_item_id)
                 used_location_ids.add(bundle_location_id)
 
@@ -817,6 +823,9 @@ class FunkinWorld(World):
 
         # Add victory location with a fixed ID - this is the generic victory goal location
         victory_location_id = max(used_location_ids) + 1 if used_location_ids else location_id_counter + 1
+        # Ensure victory location ID is unique - increment if it conflicts
+        while victory_location_id in used_location_ids:
+            victory_location_id += 1
         victory_location_ids = {"Victory Goal": victory_location_id}
         used_location_ids.add(victory_location_id)
 
@@ -841,21 +850,48 @@ class FunkinWorld(World):
             fnfUtil.z11_hardmode_items,
         ))
 
-        # Validate that all item IDs are unique
+        # Validate and auto-fix any duplicate item IDs
         all_item_ids = list(item_name_to_id.values())
         unique_item_ids = set(all_item_ids)
         if len(all_item_ids) != len(unique_item_ids):
-            print(f"ERROR: Found {len(all_item_ids) - len(unique_item_ids)} duplicate item IDs!")
-            # Find and report duplicates
+            # Found duplicates - fix them by reassigning to unique IDs
+            duplicate_count = len(all_item_ids) - len(unique_item_ids)
+            print(f"WARNING: Found {duplicate_count} duplicate item IDs! Auto-fixing...")
+            
+            # Find duplicates and reassign them to unique values
             seen_ids = set()
-            duplicates = set()
-            for item_name, item_id in item_name_to_id.items():
+            next_available_id = max(used_item_ids) + 1000 if used_item_ids else item_id_index + 1000
+            fixed_count = 0
+            
+            for item_name in list(item_name_to_id.keys()):
+                item_id = item_name_to_id[item_name]
                 if item_id in seen_ids:
-                    duplicates.add(item_id)
-                    print(f"Duplicate item ID {item_id} used by item: {item_name}")
-                seen_ids.add(item_id)
-            if duplicates:
-                raise ValueError(f"Found duplicate item IDs: {duplicates}")
+                    # This is a duplicate, find a new unique ID for it
+                    while next_available_id in item_name_to_id.values() or next_available_id in seen_ids:
+                        next_available_id += 1
+                    print(f"Fixed duplicate: Reassigned item '{item_name}' from ID {item_id} to {next_available_id}")
+                    item_name_to_id[item_name] = next_available_id
+                    seen_ids.add(next_available_id)
+                    fixed_count += 1
+                else:
+                    seen_ids.add(item_id)
+            
+            print(f"Auto-fixed {fixed_count} duplicate item IDs")
+            
+            # Recount after fixing
+            unique_item_ids = set(item_name_to_id.values())
+            if len(item_name_to_id) != len(unique_item_ids):
+                # Still has duplicates after auto-fix - this is a serious error
+                print(f"ERROR: Still found duplicates after auto-fix!")
+                seen_ids = set()
+                duplicates = set()
+                for item_name, item_id in item_name_to_id.items():
+                    if item_id in seen_ids:
+                        duplicates.add(item_id)
+                        print(f"Duplicate item ID {item_id} used by item: {item_name}")
+                    seen_ids.add(item_id)
+                if duplicates:
+                    raise ValueError(f"Found duplicate item IDs that could not be auto-fixed: {duplicates}")
 
         print(f"All item IDs are unique: {len(unique_item_ids)} unique item IDs")
         print(item_name_to_id)
@@ -868,21 +904,48 @@ class FunkinWorld(World):
             victory_location_ids  # Add victory location
         ))
 
-        # Validate that all location IDs are unique
+        # Validate and auto-fix any duplicate location IDs
         all_location_ids = list(location_name_to_id.values())
         unique_location_ids = set(all_location_ids)
         if len(all_location_ids) != len(unique_location_ids):
-            print(f"ERROR: Found {len(all_location_ids) - len(unique_location_ids)} duplicate location IDs!")
-            # Find and report duplicates
+            # Found duplicates - fix them by reassigning to unique IDs
+            duplicate_count = len(all_location_ids) - len(unique_location_ids)
+            print(f"WARNING: Found {duplicate_count} duplicate location IDs! Auto-fixing...")
+            
+            # Find duplicates and reassign them to unique values
             seen_ids = set()
-            duplicates = set()
-            for loc_name, loc_id in location_name_to_id.items():
+            next_available_id = max(used_location_ids) + 1000 if used_location_ids else location_id_counter + 1000
+            fixed_count = 0
+            
+            for loc_name in list(location_name_to_id.keys()):
+                loc_id = location_name_to_id[loc_name]
                 if loc_id in seen_ids:
-                    duplicates.add(loc_id)
-                    print(f"Duplicate ID {loc_id} used by location: {loc_name}")
-                seen_ids.add(loc_id)
-            if duplicates:
-                raise ValueError(f"Found duplicate location IDs: {duplicates}")
+                    # This is a duplicate, find a new unique ID for it
+                    while next_available_id in location_name_to_id.values() or next_available_id in seen_ids:
+                        next_available_id += 1
+                    print(f"Fixed duplicate: Reassigned location '{loc_name}' from ID {loc_id} to {next_available_id}")
+                    location_name_to_id[loc_name] = next_available_id
+                    seen_ids.add(next_available_id)
+                    fixed_count += 1
+                else:
+                    seen_ids.add(loc_id)
+            
+            print(f"Auto-fixed {fixed_count} duplicate location IDs")
+            
+            # Recount after fixing
+            unique_location_ids = set(location_name_to_id.values())
+            if len(location_name_to_id) != len(unique_location_ids):
+                # Still has duplicates after auto-fix - this is a serious error
+                print(f"ERROR: Still found duplicates after auto-fix!")
+                seen_ids = set()
+                duplicates = set()
+                for loc_name, loc_id in location_name_to_id.items():
+                    if loc_id in seen_ids:
+                        duplicates.add(loc_id)
+                        print(f"Duplicate location ID {loc_id} used by location: {loc_name}")
+                    seen_ids.add(loc_id)
+                if duplicates:
+                    raise ValueError(f"Found duplicate location IDs that could not be auto-fixed: {duplicates}")
 
         # Store YAML data for instances to use
         _all_yamls = all_yamls
