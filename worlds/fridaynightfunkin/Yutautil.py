@@ -12466,6 +12466,77 @@ class yutautil_APYaml:
         
         return haxe_format_JsonPrinter.print(jsonObject,None,None)
 
+    @staticmethod
+    def clean_yaml_song_name(song_name):
+        """Normalize song names coming from YAML-safe tokenized formatting."""
+        if song_name is None:
+            return ""
+
+        cleaned_song_name = str(song_name).strip()
+
+        yaml_escape_map = {
+            '<cOpen>': '{',
+            '<cClose>': '}',
+            '<sOpen>': '[',
+            '<sClose>': ']',
+            '<comma>': ',',
+            '<hash>': '#',
+            '<backtick>': '`',
+        }
+
+        yaml_start_escape_map = {
+            '<pipe>': '|',
+            '<amp>': '&',
+            '<exclamation>': '!',
+            '<asterisk>': '*',
+            '<percent>': '%',
+            '<at>': '@',
+            '<singleQuote>': "'",
+            '<doubleQuote>': '"',
+        }
+
+        yaml_end_escape_map = {
+            '<singleQuote>': "'",
+            '<doubleQuote>': '"',
+        }
+
+        for escaped, unescaped in yaml_escape_map.items():
+            cleaned_song_name = cleaned_song_name.replace(escaped, unescaped)
+
+        start_replaced = True
+        while start_replaced:
+            start_replaced = False
+            for escaped, unescaped in yaml_start_escape_map.items():
+                if cleaned_song_name.startswith(escaped):
+                    cleaned_song_name = unescaped + cleaned_song_name[len(escaped):]
+                    start_replaced = True
+                    break
+
+        end_replaced = True
+        while end_replaced:
+            end_replaced = False
+            for escaped, unescaped in yaml_end_escape_map.items():
+                if cleaned_song_name.endswith(escaped):
+                    cleaned_song_name = cleaned_song_name[:-len(escaped)] + unescaped
+                    end_replaced = True
+                    break
+
+        return cleaned_song_name.strip()
+
+    @staticmethod
+    def clean_yaml_song_list(song_list):
+        """Normalize and filter empty song names from YAML-derived song lists."""
+        if not song_list:
+            return []
+
+        cleaned_list = []
+        for song in song_list:
+            cleaned_song = yutautil_APYaml.clean_yaml_song_name(song)
+            if cleaned_song:
+                cleaned_list.append(cleaned_song)
+
+        return cleaned_list
+
     def getSongList(self):
         return Reflect.field(self.settings,"songList")
 

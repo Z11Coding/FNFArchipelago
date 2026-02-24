@@ -131,6 +131,18 @@ class FunkinWorld(World):
     used_uno_colors: List[UNOMinigameColor] = []
 
     @staticmethod
+    def _clean_yaml_song_name(song_name: str) -> str:
+        """Normalize song names coming from YAML-safe tokenized formatting."""
+        from .Yutautil import yutautil_APYaml
+        return yutautil_APYaml.clean_yaml_song_name(song_name)
+
+    @classmethod
+    def _clean_yaml_song_list(cls, song_list: List[str]) -> List[str]:
+        """Normalize and filter empty song names from YAML-derived song lists."""
+        from .Yutautil import yutautil_APYaml
+        return yutautil_APYaml.clean_yaml_song_list(song_list)
+
+    @staticmethod
     def stuff():
         """Setup all item and location IDs for all players during class creation"""
 
@@ -506,9 +518,10 @@ class FunkinWorld(World):
             if song_list:
                 for song in song_list:
                     # Clean the song name
-                    cleaned_song = song.strip().replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']').strip()
+                    cleaned_song = yutautil_APYaml.clean_yaml_song_name(song)
 
-                    all_songs.add(cleaned_song)
+                    if cleaned_song:
+                        all_songs.add(cleaned_song)
 
         # Add fallback songs if no custom songs found
         if not all_songs:
@@ -672,26 +685,32 @@ class FunkinWorld(World):
             used_item_ids.add(current_item_id)
             current_item_id += 1
 
-        # Add sanity item locations with their own IDs
+        # Pre-calculate location IDs for ALL valid sanity items
+        # CRITICAL: Base the ID allocation on all_songs (complete list) not song_items (filtered list)
+        # This ensures sanity location IDs are deterministic regardless of which songs actually get created
         sanity_location_ids = {}
+        
+        # Calculate sanity location base assuming all possible songs exist (5 locations per song)
+        # This prevents ID shifts if song count changes between generation runs
+        all_songs_location_reserve = len(all_songs) * 5  # 5 locations per song (2 completion + 3 notes)
+        sanity_location_id_base = item_id_index + 1 + all_songs_location_reserve + 100  # Start after all reserved songs + gap
+        sanity_location_id_counter = sanity_location_id_base
+        
         for sanity_item in sanity_items_list:
             item_name = sanity_item['name']
             location_name = f"Use {item_name}"
-            # Use the sanity item's ID + offset for the location ID, but check for conflicts
-            sanity_item_id = sanity_item_ids.get(item_name)
-            if sanity_item_id:
-                location_id = sanity_item_id + 1000  # Start with large offset
-                # Ensure this location ID doesn't conflict with any used IDs
-                while location_id in used_location_ids:
-                    location_id += 1
-                sanity_location_ids[location_name] = location_id
-                used_location_ids.add(location_id)  # Track this ID to prevent future conflicts
+            # Allocate a unique ID for this sanity location
+            location_id = sanity_location_id_counter
+            sanity_location_id_counter += 1
+            sanity_location_ids[location_name] = location_id
+            used_location_ids.add(location_id)  # Track to prevent collisions with other location types
 
         # Generate song bundle placeholders with reserved IDs
         # Song assignment happens during create_items() with proper seeded randomization
         song_bundles = {}  # Placeholder bundles with reserved IDs
         bundle_locations = {}
         bundle_id_counter = max(used_item_ids) + 200 if used_item_ids else item_id_index + 200
+        # Bundle locations use the normal location ID counter, not affected by sanity IDs
         bundle_location_id_counter = max(used_location_ids) + 200 if used_location_ids else location_id_counter + 200
 
         # Process each player's bundle settings
@@ -715,9 +734,17 @@ class FunkinWorld(World):
             bundle_limit = getattr(yaml_data.settings, 'songBundleLimit', None) if hasattr(yaml_data, 'settings') else None
             bundle_limit = None if bundle_limit is None else bundle_limit
 
+
+
             if not bundle_enabled or bundle_weight <= 0:
                 print(f"Bundles disabled for {player_name}")
                 continue
+
+            if bundle_enabled and (bundle_max_size and bundle_min_size) and bundle_max_size < bundle_min_size:
+                print(f"Invalid bundle settings for {player_name}: max size {bundle_max_size} is less than min size {bundle_min_size}.")
+                class SillyError(Exception):
+                    pass
+                raise SillyError(f"Invalid bundle settings for {player_name}: max size {bundle_max_size} is less than min size {bundle_min_size}.")
 
             # Get this player's song count based on YAML song list and limit
             yaml_song_list = yaml_data.getSongList() if hasattr(yaml_data, 'getSongList') else []
@@ -726,8 +753,8 @@ class FunkinWorld(World):
             
             # Count available songs that exist in our song items
             available_song_count = 0
-            for song in yaml_song_list:
-                cleaned_song = song.strip().replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']').strip()
+            for song in yutautil_APYaml.clean_yaml_song_list(yaml_song_list):
+                cleaned_song = song
                 if cleaned_song in song_items:
                     available_song_count += 1
             
@@ -1002,7 +1029,7 @@ class FunkinWorld(World):
 
         instance.thisYaml = player_yaml
         instance.yamlList = cls.all_yamls
-        instance.original_song_list = player_yaml.getSongList() or []
+        instance.original_song_list = cls._clean_yaml_song_list(player_yaml.getSongList() or [])
 
         print(f"Created FunkinWorld instance for player {player_name} with {len(instance.original_song_list)} songs")
 
@@ -1132,7 +1159,7 @@ class FunkinWorld(World):
     def generate_early(self):
         # Basic Settings
         self.mods_enabled = self.options.mods_enabled.value
-        self.starting_song = self.options.starting_song.value
+        self.starting_song = self._clean_yaml_song_name(self.options.starting_song.value)
         self.unlock_type = self.options.unlock_type.value.copy().pop()
         self.unlock_method = self.options.unlock_method.value.copy().pop()
 
@@ -1182,28 +1209,17 @@ class FunkinWorld(World):
     def _process_song_list(self):
         """Process the song list with randomization and limiting using pre-initialized class data"""
         # Get the original song list from YAML
-        raw_song_list = getattr(self, 'original_song_list', [])
+        raw_song_list = self._clean_yaml_song_list(getattr(self, 'original_song_list', []))
         for song in self.yaml_data['custom_song_additions']:
-            raw_song_list.append(song['name'])
+            cleaned_custom_song = self._clean_yaml_song_name(song.get('name', ''))
+            if cleaned_custom_song:
+                raw_song_list.append(cleaned_custom_song)
         # If no songs in YAML, use fallback
         if not raw_song_list:
             raw_song_list = FNFBaseList.omegaList.copy()
             print(f"No songs found for player {self.player_name}, using fallback songs")
 
-        # Clean the song names
-        def remove_YAML_formatting(song_list: List[str]) -> List[str]:
-            """Remove YAML formatting from the song list"""
-            if not song_list:
-                return []
-
-            cleaned_list = []
-            for song in song_list:
-                cleaned_song = song.strip().replace('<cOpen>', '{').replace('<cClose>', '}').replace('<sOpen>', '[').replace('<sClose>', ']').strip()
-                cleaned_list.append(cleaned_song)
-
-            return cleaned_list
-
-        cleaned_song_list = remove_YAML_formatting(raw_song_list)
+        cleaned_song_list = self._clean_yaml_song_list(raw_song_list)
 
         # Filter to only include songs that exist in our class-level song_items
         available_songs = [song for song in cleaned_song_list if song in self.song_items]
@@ -1215,7 +1231,7 @@ class FunkinWorld(World):
 
         if not available_songs:
             # Emergency fallback - use any song from class data
-            available_songs = remove_YAML_formatting(list(self.song_items.keys())[:5])
+            available_songs = self._clean_yaml_song_list(list(self.song_items.keys())[:5])
             print(f"Emergency fallback: Using first 5 songs from class data for {self.player_name}")
 
         # Randomize the song list
@@ -1225,10 +1241,17 @@ class FunkinWorld(World):
 
         songcheck: list[str] = []
         if getattr(self.thisYaml.settings, 'starting_song', ''):
-            songcheck.append(self.thisYaml.settings.starting_song)
+            cleaned_starting_song = self._clean_yaml_song_name(self.thisYaml.settings.starting_song)
+            if cleaned_starting_song:
+                songcheck.append(cleaned_starting_song)
 
         if getattr(self.thisYaml.settings, 'victory_song', ''):
-            songcheck.append(self.thisYaml.settings.victory_song)
+            raw_victory_song = self.thisYaml.settings.victory_song
+            print(f"DEBUG: Raw victory_song from YAML: '{raw_victory_song}'")
+            cleaned_victory_song = self._clean_yaml_song_name(raw_victory_song)
+            print(f"DEBUG: Cleaned victory_song: '{cleaned_victory_song}'")
+            if cleaned_victory_song:
+                songcheck.append(cleaned_victory_song)
 
         # Apply song limit
         song_limit = max(1, getattr(self.thisYaml.settings, 'song_limit', self.songLimit) or 5)
@@ -1334,102 +1357,72 @@ class FunkinWorld(World):
 
     def _setup_victory_song_and_pool(self):
         """Select a victory song and set up the item pool"""
-        # Get songs that belong to this player
-        player_songs = self.get_songs_map(self.player_name)
-
-        if not player_songs:
-            # Fallback to any available song
-            player_songs = list(self.song_items.keys())[:1] if self.song_items else ["Tutorial"]
-
-        # Select a random victory song
-        self.victory_song_name = self.random.choice(list(player_songs))
-        print(f"Selected victory song for {self.player_name}: {self.victory_song_name}")
-        """Choose victory song and set up the song pool"""
-        # Check if victory song is already set from passthrough data
-        if hasattr(self, 'victory_song_name') and self.victory_song_name:
-            print(f"Using victory song from passthrough data: {self.victory_song_name}")
-            # Get songs available to this player
-            available_song_keys, song_ids = get_player_specific_ids(self.player_name, self.song_items)
-            if not available_song_keys:
-                raise ValueError(f"No songs available for player {self.player_name}")
-
-            # Set victory song ID for slot data
-            if self.victory_song_name in available_song_keys:
-                victory_index = available_song_keys.index(self.victory_song_name)
-                self.victory_song_id = int(song_ids[victory_index])
-                available_song_keys.remove(self.victory_song_name)
-            else:
-                # Fallback: try to find the song in song_items
-                if self.victory_song_name in self.song_items:
-                    self.victory_song_id = self.song_items[self.victory_song_name].code
-                else:
-                    # Emergency fallback
-                    self.victory_song_id = 0
-                    print(f"Emergency fallback: Victory song '{self.victory_song_name}' not found for player '{self.player_name}'. Things may break!")
-
-            # Create song pool and give starting song
-            self.create_song_pool(available_song_keys)
-            return
-
         # Get songs available to this player
         available_song_keys, song_ids = get_player_specific_ids(self.player_name, self.song_items)
-
         if not available_song_keys:
             raise ValueError(f"No songs available for player {self.player_name}")
 
         print(f"Available songs for {self.player_name}: {available_song_keys}")
 
-        # Choose victory song randomly or from settings
-        # Try to use the victory_song from YAML if it exists and is in available songs
-        chosen_song_index = None
-        victory_song = getattr(self.thisYaml.settings, "victory_song", None)
+        # First, try to use the victory song from YAML settings
+        victory_song = None
+        raw_victory_song_yaml = getattr(self.thisYaml.settings, "victory_song", None)
+        if raw_victory_song_yaml:
+            victory_song = self._clean_yaml_song_name(raw_victory_song_yaml)
+            print(f"DEBUG: Found victory_song in YAML: '{victory_song}'")
+            print(f"DEBUG: Checking if '{victory_song}' is in available songs: {available_song_keys}")
+            
+            # Check if this song is available
+            if victory_song not in available_song_keys:
+                # Check if this is automated generation (Universal Tracker)
+                is_automated = getattr(self.multiworld, 'gen_is_fake', False)
 
-        # Check if victory song from YAML is valid
-        if victory_song and victory_song not in available_song_keys:
-            # Check if this is automated generation (Universal Tracker)
-            is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+                if is_automated:
+                    # Automatically use random victory song for Universal Tracker
+                    print(f"Auto-fixing: Victory song '{victory_song}' not available for player '{self.player_name}', using random victory song (Universal Tracker mode)")
+                    victory_song = None
+                else:
+                    print(f"\nWarning: Victory song '{victory_song}' specified in YAML for player '{self.player_name}' is not available in their song list.")
+                    print("Options:")
+                    print("1. Continue generation with a random victory song")
+                    print("2. Cancel generation")
 
-            if is_automated:
-                # Automatically use random victory song for Universal Tracker
-                print(f"Auto-fixing: Victory song '{victory_song}' not available for player '{self.player_name}', using random victory song (Universal Tracker mode)")
-                victory_song = None  # Will be set randomly below
-            else:
-                print(f"\nWarning: Victory song '{victory_song}' specified in YAML for player '{self.player_name}' is not available in their song list.")
-                print("Options:")
-                print("1. Continue generation with a random victory song")
-                print("2. Cancel generation")
+                    while True:
+                        is_automated = getattr(self.multiworld, 'gen_is_fake', False)
 
-                while True:
-                    # Check if this is automated generation (Universal Tracker)
-                    is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+                        if is_automated:
+                            choice = "1"  # Auto-select for automated generation
+                            print(f"Auto-continuing generation for '{self.player_name}' with a random victory song (Universal Tracker mode).")
+                            victory_song = None
+                            break
+                        else:
+                            choice = input(f"What would you like to do for player '{self.player_name}'? (1/2): ").strip()
 
-                    if is_automated:
-                        choice = "1"  # Auto-select for automated generation
-                        print(f"Auto-continuing generation for '{self.player_name}' with a random victory song (Universal Tracker mode).")
-                        victory_song = None  # Will be set randomly below
-                        break
-                    else:
-                        choice = input(f"What would you like to do for player '{self.player_name}'? (1/2): ").strip()
-
-                    if choice == "1":
-                        print(f"Continuing generation for '{self.player_name}' with a random victory song.")
-                        victory_song = None  # Will be set randomly below
-                        break
-                    elif choice == "2":
-                        raise ValueError(f"Player '{self.player_name}' has an invalid victory song '{victory_song}' in their YAML file. Generation cancelled.")
-                    else:
-                        print("Invalid choice. Please enter 1 or 2.")
-
-        if victory_song and victory_song in available_song_keys:
-            chosen_song_index = available_song_keys.index(victory_song)
-        else:
+                        if choice == "1":
+                            print(f"Continuing generation for '{self.player_name}' with a random victory song.")
+                            victory_song = None
+                            break
+                        elif choice == "2":
+                            raise ValueError(f"Player '{self.player_name}' has an invalid victory song '{victory_song}' in their YAML file. Generation cancelled.")
+                        else:
+                            print("Invalid choice. Please enter 1 or 2.")
+        
+        # If no valid YAML victory song, select randomly
+        if not victory_song:
             chosen_song_index = self.random.randrange(0, len(available_song_keys))
-        self.victory_song_name = available_song_keys[chosen_song_index]
-        self.victory_song_id = int(song_ids[chosen_song_index])
+            victory_song = available_song_keys[chosen_song_index]
+            print(f"Selected random victory song: {victory_song}")
+        else:
+            print(f"Using YAML victory song: {victory_song}")
+        
+        # Set the victory song name and ID
+        self.victory_song_name = victory_song
+        victory_index = available_song_keys.index(victory_song)
+        self.victory_song_id = int(song_ids[victory_index])
 
         # Remove victory song from available pool
         remaining_songs = available_song_keys.copy()
-        del remaining_songs[chosen_song_index]
+        remaining_songs.remove(victory_song)
 
         # Create song pool and give starting song
         self.create_song_pool(remaining_songs)
@@ -1599,11 +1592,13 @@ class FunkinWorld(World):
         # Choose and give starting song (precollected)
         # Check if starting song is already set from passthrough data
         if hasattr(self, 'starting_song_name') and self.starting_song_name:
-            starting_song = self.starting_song_name
+            starting_song = self._clean_yaml_song_name(self.starting_song_name)
             print(f"Using starting song from passthrough data: {starting_song}")
         else:
             # Try to use the starting_song from YAML if it exists and is in available songs or matches victory song
-            starting_song = getattr(self.thisYaml.settings, "starting_song", None)
+            starting_song = self._clean_yaml_song_name(getattr(self.thisYaml.settings, "starting_song", None))
+            if not starting_song:
+                starting_song = None
 
         starting_song_from_yaml = starting_song  # Keep original for validation
 
@@ -2542,65 +2537,59 @@ class FunkinWorld(World):
                 using_songs = []
                 for song_obj in required_songs:
                     # song_obj should have 'song' and optionally 'mod' fields
+                    sanity_song_name = ""
+                    sanity_mod_name = None
                     if isinstance(song_obj, dict):
                         sanity_song_name = song_obj.get('song', '')
                         sanity_mod_name = song_obj.get('mod', None)
 
                     # Build the expected full song name
-                    if sanity_mod_name:
-                        expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
-                    else:
-                        expected_full_song_name = sanity_song_name
+                    if sanity_song_name:  # Only process if we have a song name
+                        if sanity_mod_name:
+                            expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
+                        else:
+                            expected_full_song_name = sanity_song_name
 
-                    # Check if this song is available to this player
-                    if expected_full_song_name in available_songs:
-                        using_songs.append(expected_full_song_name)
+                        # Check if this song is available to this player
+                        if expected_full_song_name in available_songs:
+                            using_songs.append(expected_full_song_name)
 
                 # Create location (we already know this sanity item is valid)
                 sanity_item_name = sanity_item['name']
                 location_name = f"Use {sanity_item_name}"
 
-                # Get the sanity item's ID and create a location ID by adding an offset
-                sanity_item_id = self.item_name_to_id.get(sanity_item_name)
-                if sanity_item_id:
-                    # Use a different offset for sanity locations to avoid conflicts
-                    location_id = sanity_item_id + 1000  # Large offset to avoid conflicts
-
-                    # Create the sanity location
-                    sanity_loc = FunkinLocation(self.player, location_name, location_id, menu_region)
-
-                    # Create access rule based on completion type
-                    completion_type = sanity_settings['sanity_completion_type']
-                    sanity_loc.access_rule = self._create_sanity_access_rule(
-                        sanity_item_name, sanity_item, completion_type
-                    )
-
-                    menu_region.locations.append(sanity_loc)
-
-                    # Create description of access requirements for logging
-                    if completion_type == 'on_getting':
-                        access_desc = f"requires {sanity_item_name} only"
-                    elif completion_type == 'on_playing':
-                        access_desc = f"requires {sanity_item_name} + owning any of {using_songs}"
-                    elif completion_type == 'on_beating':
-                        access_desc = f"requires {sanity_item_name} + ability to beat any of {using_songs}"
-                    else:
-                        access_desc = f"requires {sanity_item_name} (unknown completion type)"
-
-                    print(f"Added sanity location for {self.player_name}: {location_name} ({access_desc})")
-
-                    # Validate that sanity location ID matches what was pre-calculated in stuff()
-                    if location_name in self.location_name_to_id:
-                        expected_id = self.location_name_to_id[location_name]
-                        if location_id != expected_id:
-                            raise LocationIDMismatchError(location_name, expected_id, location_id, self.player_name)
-                    else:
-                        # This should never happen if stuff() was comprehensive
-                        raise LocationIDMismatchError(location_name, -1, location_id, self.player_name)
-
-                    print(f"Verified sanity location {location_name} ID matches pre-calculated value: {location_id}")
+                # Get the pre-calculated location ID from stuff()
+                if location_name in self.sanity_location_ids:
+                    location_id = self.sanity_location_ids[location_name]
                 else:
-                    print(f"Warning: Could not find item ID for sanity item {sanity_item_name}")
+                    # Fallback: shouldn't happen if stuff() ran correctly
+                    print(f"WARNING: No pre-calculated ID for {location_name}, somehow...")
+                    class NoIDError(Exception):
+                        pass
+                    raise NoIDError(f"No pre-calculated ID for {location_name}")
+
+                # Create the sanity location
+                sanity_loc = FunkinLocation(self.player, location_name, location_id, menu_region)
+
+                # Create access rule based on completion type
+                completion_type = sanity_settings['sanity_completion_type']
+                sanity_loc.access_rule = self._create_sanity_access_rule(
+                    sanity_item_name, sanity_item, completion_type
+                )
+
+                menu_region.locations.append(sanity_loc)
+
+                # Create description of access requirements for logging
+                if completion_type == 'on_getting':
+                    access_desc = f"requires {sanity_item_name} only"
+                elif completion_type == 'on_playing':
+                    access_desc = f"requires {sanity_item_name} + owning any of {using_songs}"
+                elif completion_type == 'on_beating':
+                    access_desc = f"requires {sanity_item_name} + ability to beat any of {using_songs}"
+                else:
+                    access_desc = f"requires {sanity_item_name} (unknown completion type)"
+
+                print(f"Added sanity location for {self.player_name}: {location_name} ({access_desc})")
         elif not sanity_settings['enable_sanity_locations']:
             print(f"Sanity locations disabled for {self.player_name}")
         else:
