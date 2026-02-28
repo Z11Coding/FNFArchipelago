@@ -1936,52 +1936,14 @@ class FunkinWorld(World):
                 # Song is individual - require having the song item
                 has_song = state.has(full_song_name, self.player)
 
-            # Check for sanity requirements (stages and characters) - NEW: Difficulty-aware accessibility
-            if hasattr(self, 'sanity_items_list') and self.sanity_items_list:
-                # For difficulty-aware accessibility, we need to check if ANY difficulty of this song is playable
-                # A song is accessible if at least one difficulty can be played with available characters/stages
-
-                # Group all sanity items that affect this song by type
-                song_difficulties_info = {}  # Map of difficulty -> {characters: set, stages: set}
-
-                # First pass: collect all sanity items that affect this song and build difficulty info
-                for sanity_item in self.sanity_items_list:
-                    if sanity_item.get('player') != self.player_name:
-                        continue  # Skip sanity items for other players
-
-                    sanity_type = sanity_item.get('type', '')
-                    sanity_name = sanity_item.get('name', '')
-
-                    # Check each song in this sanity item
-                    for song_obj in sanity_item['songs']:
-                        if isinstance(song_obj, dict):
-                            sanity_song_name = song_obj.get('song', '')
-                            sanity_mod_name = song_obj.get('mod', None)
-                            song_difficulties = song_obj.get('difficulties', [])  # NEW: difficulty list
-
-                            # Build the expected full song name from sanity data
-                            if sanity_mod_name:
-                                expected_full_song_name = f"{sanity_song_name} ({sanity_mod_name})"
-                            else:
-                                expected_full_song_name = sanity_song_name
-
-                            # Check if this matches the current song's full name
-                            if expected_full_song_name == full_song_name:
-                                # This sanity item affects this song - track which difficulties use it
-                                for difficulty in song_difficulties:
-                                    if difficulty not in song_difficulties_info:
-                                        song_difficulties_info[difficulty] = {'characters': set(), 'stages': set()}
-
-                                    if sanity_type == 'character':
-                                        character_name = sanity_item.get('character_name', sanity_name.replace('Character: ', ''))
-                                        song_difficulties_info[difficulty]['characters'].add(character_name)
-                                    elif sanity_type == 'stage':
-                                        stage_name = sanity_item.get('stage_name', sanity_name.replace('Stage: ', ''))
-                                        song_difficulties_info[difficulty]['stages'].add(stage_name)
-
-                # Second pass: check if ANY difficulty is playable with available sanity items
-                if song_difficulties_info:
-                    # Check each difficulty to see if it's playable
+            # Check for sanity requirements using pre-computed cache (OPTIMIZED)
+            # Instead of iterating through all sanity_items_list on every reachability check,
+            # we use a cache that was built once during world creation (in _precompute_sanity_requirements)
+            if hasattr(self, '_sanity_requirements_cache') and full_song_name in self._sanity_requirements_cache:
+                song_difficulties_info = self._sanity_requirements_cache[full_song_name]
+                
+                if song_difficulties_info:  # Only check if there are sanity requirements for this song
+                    # Check if ANY difficulty is playable with available sanity items
                     any_difficulty_playable = False
 
                     for difficulty, requirements in song_difficulties_info.items():
@@ -2313,9 +2275,68 @@ class FunkinWorld(World):
         self.songs_in_bundles.update(bundled_songs)
         print(f"Total songs pre-assigned to bundles: {len(bundled_songs)}")
 
+    def _precompute_sanity_requirements(self):
+        """Pre-compute sanity requirements for each song to avoid repeated lookups during fill.
+        
+        Creates a mapping: song_full_name -> {difficulty -> {characters: set, stages: set}}
+        This eliminates the expensive nested loop in song_access_rule that was
+        iterating through all sanity items on every reachability check.
+        """
+        self._sanity_requirements_cache = {}  # Maps full song name to its requirements
+        
+        if not hasattr(self, 'sanity_items_list') or not self.sanity_items_list:
+            return
+        
+        # Single pass: build the cache for this player's songs
+        for sanity_item in self.sanity_items_list:
+            # Only process sanity items for this player
+            if sanity_item.get('player') != self.player_name:
+                continue
+            
+            sanity_type = sanity_item.get('type', '')
+            sanity_name = sanity_item.get('name', '')
+            
+            # Process each song in this sanity item
+            for song_obj in sanity_item.get('songs', []):
+                if not isinstance(song_obj, dict):
+                    continue
+                    
+                # Extract song info
+                sanity_song_name = song_obj.get('song', '')
+                sanity_mod_name = song_obj.get('mod')
+                song_difficulties = song_obj.get('difficulties', [])
+                
+                if not sanity_song_name:
+                    continue
+                
+                # Build full song name (use empty string for mod if None)
+                full_song_name = f"{sanity_song_name} ({sanity_mod_name})" if sanity_mod_name else sanity_song_name
+                
+                # Initialize cache entry if needed
+                if full_song_name not in self._sanity_requirements_cache:
+                    self._sanity_requirements_cache[full_song_name] = {}
+                
+                # For each difficulty, track which characters/stages are needed
+                for difficulty in song_difficulties:
+                    if difficulty not in self._sanity_requirements_cache[full_song_name]:
+                        self._sanity_requirements_cache[full_song_name][difficulty] = {
+                            'characters': set(),
+                            'stages': set()
+                        }
+                    
+                    if sanity_type == 'character':
+                        character_name = sanity_item.get('character_name', sanity_name.replace('Character: ', ''))
+                        self._sanity_requirements_cache[full_song_name][difficulty]['characters'].add(character_name)
+                    elif sanity_type == 'stage':
+                        stage_name = sanity_item.get('stage_name', sanity_name.replace('Stage: ', ''))
+                        self._sanity_requirements_cache[full_song_name][difficulty]['stages'].add(stage_name)
+
     def create_regions(self):
         # Pre-assign songs to bundles before creating access rules
         self.pre_assign_bundle_songs()
+        
+        # Pre-compute sanity requirements for fast lookups during fill
+        self._precompute_sanity_requirements()
         
         menu_region = Region("Freeplay", self.player, self.multiworld)
         self.multiworld.regions += [menu_region]
