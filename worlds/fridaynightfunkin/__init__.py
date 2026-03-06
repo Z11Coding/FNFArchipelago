@@ -2941,15 +2941,17 @@ class FunkinWorld(World):
             if remaining_slots > 0:
                 # Fill 20% of remaining slots with useful song duplicates
                 dupe_count = min(remaining_slots, floor(remaining_slots * 0.20))
+                print(f"Providing {dupe_count} duplicates. Remaining slots after duplicates: {remaining_slots - dupe_count}")
 
                 # Add song duplicates if we have songs to duplicate
                 if len(song_keys_in_pool) > 0 and dupe_count > 0:
                     for i in range(dupe_count):
-                        song_index = i % len(song_keys_in_pool)
+                        song_index = self.random.randrange(0, len(song_keys_in_pool))
                         item = self.create_item(song_keys_in_pool[song_index])
                         item.classification = ItemClassification.useful
                         self.multiworld.itempool.append(item)
                         item_count += 1
+                        print(f"Duplicated song: {song_keys_in_pool[song_index]} (total count: {song_keys_in_pool.count(song_keys_in_pool[song_index])})")
 
                 # Fill all remaining slots with weighted random selection
                 remaining_slots = self.location_count - item_count
