@@ -1223,8 +1223,8 @@ class FunkinWorld(World):
         # Basic Settings
         self.mods_enabled = self.options.mods_enabled.value
         self.starting_song = self._clean_yaml_song_name(self.options.starting_song.value)
-        self.unlock_type = self.options.unlock_type.value.copy().pop()
-        self.unlock_method = self.options.unlock_method.value.copy().pop()
+        self.unlock_type = self.options.unlock_type.get_string_value()
+        self.unlock_method = self.options.unlock_method.get_string_value()
 
         # Trap Settings
         self.trapAmount = self.options.trapAmount.value
@@ -1253,8 +1253,8 @@ class FunkinWorld(World):
         # Other Settings
         self.ticket_percentage = self.options.ticket_percentage.value
         self.ticket_win_percentage = self.options.ticket_win_percentage.value
-        self.graderequirement = self.options.graderequirement.value
-        self.accrequirement = self.options.accrequirement.value
+        self.graderequirement = self.options.graderequirement.get_string_value()
+        self.accrequirement = self.options.accrequirement.get_string_value()
         self.checksPerSong = self.options.check_count.value
         self.songLimit = self.options.song_limit.value
 
@@ -1282,13 +1282,13 @@ class FunkinWorld(World):
             raw_song_list = FNFBaseList.omegaList.copy()
             print(f"No songs found for player {self.player_name}, using fallback songs")
 
-        cleaned_song_list = self._clean_yaml_song_list(raw_song_list)
+        cleaned_song_list = set(self._clean_yaml_song_list(raw_song_list))
 
         # Filter to only include songs that exist in our class-level song_items
         available_songs = [song for song in cleaned_song_list if song in self.song_items]
 
         # Add any missing base songs that should be available to all players
-        for song in FNFBaseList.omegaList:
+        for song in set(FNFBaseList.omegaList):
             if song in self.song_items and song not in available_songs:
                 available_songs.append(song)
 
@@ -1317,10 +1317,11 @@ class FunkinWorld(World):
                 songcheck.append(cleaned_victory_song)
 
         # Apply song limit
-        song_limit = max(1, getattr(self.thisYaml.settings, 'song_limit', self.songLimit) or 5)
+        song_limit = min(len(available_songs), max(1, getattr(self.thisYaml.settings, 'song_limit', self.songLimit) or 5))
         limited_song_list = available_songs if getattr(self.multiworld, 'gen_is_fake', False) else available_songs[:song_limit-songcheck.__len__()]
 
         print(f"Processing {len(limited_song_list)} songs for player {self.player_name}: {limited_song_list}")
+        print (f"The song limit is set to {song_limit}, with {len(songcheck)} reserved songs and {len(available_songs)} total available songs")
 
         for song in songcheck:
             if limited_song_list and song not in limited_song_list:
