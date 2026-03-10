@@ -475,7 +475,7 @@ class FunkinWorld(World):
             player_name = getattr(yaml_data, 'name', 'Unknown Player')
 
             if not song_list or len(song_list) == 0:
-                # For automated systems, we can't access gen_is_fake in static context
+                # For automated systems, we can't access generation_is_fake in static context
                 # So we'll use inputimeout with a short timeout to auto-select for automated systems
                 print(f"\nWarning: Player '{player_name}' has no song list or an empty song list in their YAML file.")
                 print("Will timeout in 30 seconds and auto-select option 1 if no input is provided.")
@@ -1175,7 +1175,7 @@ class FunkinWorld(World):
             if weighted_players:
                 FunkinWorld._weighted_yaml_warning_shown = True
                 # Check if this is automated generation (Universal Tracker)
-                is_automated = getattr(multiworld, 'gen_is_fake', False)
+                is_automated = getattr(multiworld, 'generation_is_fake', False)
 
                 if not is_automated:
                     # Format the warning message naturally based on number of players
@@ -1220,6 +1220,23 @@ class FunkinWorld(World):
                     print(f"Note: Detected {len(weighted_players)} weighted/template YAML(s) in automated mode, continuing generation")
 
     def generate_early(self):
+        # Check for Universal Tracker re-generation with passthrough data
+        # This allows exact restoration of generation state without re-randomization
+        is_automated = getattr(self.multiworld, 'generation_is_fake', False)
+        has_passthrough = (hasattr(self.multiworld, 're_gen_passthrough') and 
+                          'Friday Night Funkin' in self.multiworld.re_gen_passthrough)
+        
+        if is_automated and has_passthrough:
+            # Restore state from passthrough instead of re-generating
+            print(f"[UT Re-gen] Restoring generation state for {self.player_name} from passthrough data")
+            try:
+                self._restore_from_passthrough()
+                return  # Skip all other generation steps
+            except Exception as e:
+                print(f"[UT Re-gen ERROR] Failed to restore from passthrough: {e}")
+                print(f"[UT Re-gen] Falling back to normal generation")
+                # Fall through to normal generation if restoration fails
+        
         # Basic Settings
         self.mods_enabled = self.options.mods_enabled.value
         self.starting_song = self._clean_yaml_song_name(self.options.starting_song.value)
@@ -1318,7 +1335,7 @@ class FunkinWorld(World):
 
         # Apply song limit
         song_limit = min(len(available_songs), max(1, getattr(self.thisYaml.settings, 'song_limit', self.songLimit) or 5))
-        limited_song_list = available_songs if getattr(self.multiworld, 'gen_is_fake', False) else available_songs[:song_limit-songcheck.__len__()]
+        limited_song_list = available_songs if getattr(self.multiworld, 'generation_is_fake', False) else available_songs[:song_limit-songcheck.__len__()]
 
         print(f"Processing {len(limited_song_list)} songs for player {self.player_name}: {limited_song_list}")
         print (f"The song limit is set to {song_limit}, with {len(songcheck)} reserved songs and {len(available_songs)} total available songs")
@@ -1426,6 +1443,10 @@ class FunkinWorld(World):
         if not available_song_keys:
             raise ValueError(f"No songs available for player {self.player_name}")
 
+        # Track all playable songs for this player (before victory song removal)
+        # This is needed for passthrough restoration
+        self.playable_songs = available_song_keys.copy()
+
         print(f"Available songs for {self.player_name}: {available_song_keys}")
 
         # First, try to use the victory song from YAML settings
@@ -1439,7 +1460,7 @@ class FunkinWorld(World):
             # Check if this song is available
             if victory_song not in available_song_keys:
                 # Check if this is automated generation (Universal Tracker)
-                is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+                is_automated = getattr(self.multiworld, 'generation_is_fake', False)
 
                 if is_automated:
                     # Automatically use random victory song for Universal Tracker
@@ -1452,7 +1473,7 @@ class FunkinWorld(World):
                     print("2. Cancel generation")
 
                     while True:
-                        is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+                        is_automated = getattr(self.multiworld, 'generation_is_fake', False)
 
                         if is_automated:
                             choice = "1"  # Auto-select for automated generation
@@ -1490,6 +1511,204 @@ class FunkinWorld(World):
 
         # Create song pool and give starting song
         self.create_song_pool(remaining_songs)
+
+    def _restore_from_passthrough(self):
+        """
+        Restore world state from Universal Tracker passthrough data.
+        This is called during UT re-generation to restore exact generation state
+        without re-randomization, and CRITICALLY, to restore the exact same item/location IDs.
+        """
+        passthrough = self.multiworld.re_gen_passthrough.get('Friday Night Funkin', {})
+        ut_slot_data = passthrough.get('UTSlotData', {})
+        generation_data = passthrough.get('generation_data', {})
+        
+        if not ut_slot_data:
+            raise ValueError(f"No UTSlotData in passthrough for {self.player_name} - cannot restore generation state")
+        
+        print(f"[UT Re-gen] ===============================================")
+        print(f"[UT Re-gen] RESTORING ID MAPPINGS FOR {self.player_name}")
+        print(f"[UT Re-gen] ===============================================")
+        
+        # CRITICAL: Restore class-level item and location ID mappings
+        # This ensures Archipelago uses the exact same IDs as the original generation
+        try:
+            # Restore item name to ID mappings (affects all item creation)
+            restored_item_mappings = ut_slot_data.get('item_name_to_id', {})
+            if restored_item_mappings:
+                # Update class-level mapping (all instances share this)
+                self.__class__.item_name_to_id = restored_item_mappings.copy()
+                print(f"[UT Re-gen] ✓ Restored {len(restored_item_mappings)} item ID mappings")
+            else:
+                print(f"[UT Re-gen WARNING] No item ID mappings in UTSlotData")
+            
+            # Restore location name to ID mappings (affects all location creation)
+            restored_location_mappings = ut_slot_data.get('location_name_to_id', {})
+            if restored_location_mappings:
+                # Update class-level mapping (all instances share this)
+                self.__class__.location_name_to_id = restored_location_mappings.copy()
+                print(f"[UT Re-gen] ✓ Restored {len(restored_location_mappings)} location ID mappings")
+            else:
+                print(f"[UT Re-gen WARNING] No location ID mappings in UTSlotData")
+            
+            # Restore song items with all ownership data
+            restored_song_items = ut_slot_data.get('song_items', {})
+            if restored_song_items:
+                from .Items import SongData  # Import here to avoid circular imports
+                for song_name, song_info in restored_song_items.items():
+                    song_data = SongData(
+                        song_info.get('code', 0),
+                        song_info.get('modded', False),
+                        song_info.get('songName', song_name),
+                        song_info.get('playerSongBelongsTo', ''),
+                        song_info.get('playerList', []).copy()
+                    )
+                    self.__class__.song_items[song_name] = song_data
+                print(f"[UT Re-gen] ✓ Restored {len(restored_song_items)} song data entries")
+            
+            # Restore song locations
+            restored_song_locations = ut_slot_data.get('song_locations', {})
+            if restored_song_locations:
+                self.__class__.song_locations = restored_song_locations.copy()
+                print(f"[UT Re-gen] ✓ Restored {len(restored_song_locations)} song location mappings")
+            
+            # Restore custom items/locations/bundles
+            self.__class__.custom_items_list = ut_slot_data.get('custom_items', []).copy()
+            self.__class__.custom_trap_items_list = ut_slot_data.get('custom_trap_items', []).copy()
+            self.__class__.custom_location_items = {}  # Will be reconstructed below
+            self.__class__.sanity_items_list = ut_slot_data.get('sanity_items_list', []).copy()
+            self.__class__.sanity_location_ids = ut_slot_data.get('sanity_location_ids', {}).copy()
+            self.__class__.song_bundles = ut_slot_data.get('song_bundles', {}).copy()
+            self.__class__.bundle_locations = ut_slot_data.get('bundle_locations', {}).copy()
+            
+            print(f"[UT Re-gen] ✓ Restored custom content ({len(self.custom_items_list)} items, {len(self.custom_trap_items_list)} trap items)")
+            print(f"[UT Re-gen] ✓ Restored sanity data ({len(self.sanity_items_list)} items, {len(self.sanity_location_ids)} locations)")
+            print(f"[UT Re-gen] ✓ Restored bundles ({len(self.song_bundles)} bundles)")
+            
+            # Restore player song additions
+            self.__class__.player_song_additions = ut_slot_data.get('player_song_additions', {}).copy()
+            
+            # Restore custom song requirements
+            self._custom_song_requirements = ut_slot_data.get('custom_song_requirements', []).copy()
+            
+        except Exception as e:
+            print(f"[UT Re-gen ERROR] Failed to restore ID mappings: {e}")
+            raise ValueError(f"Failed to restore class-level data from UTSlotData: {e}")
+        
+        print(f"[UT Re-gen] ===============================================")
+        print(f"[UT Re-gen] RESTORING INSTANCE DATA FOR {self.player_name}")
+        print(f"[UT Re-gen] ===============================================")
+        
+        # Restore instance-specific generation data
+        if not generation_data:
+            print(f"[UT Re-gen WARNING] No generation_data in passthrough")
+        else:
+            # Restore all options from passthrough
+            restored_options = generation_data.get('options', {})
+            restored_count = 0
+            for option_name, option_value in restored_options.items():
+                if hasattr(self.options, option_name):
+                    try:
+                        setattr(self.options, option_name, option_value)
+                        restored_count += 1
+                    except Exception as e:
+                        print(f"[UT Re-gen WARNING] Could not restore option '{option_name}': {e}")
+            print(f"[UT Re-gen] Restored {restored_count}/{len(restored_options)} options")
+            
+            # Restore basic settings
+            self.mods_enabled = generation_data.get('mods_enabled', AllowMods.default)
+            self.starting_song = generation_data.get('starting_song', '')
+            self.unlock_type = generation_data.get('unlock_type', UnlockType.default)
+            self.unlock_method = generation_data.get('unlock_method', UnlockMethod.default)
+            self.songLimit = generation_data.get('song_limit', 5)
+            print(f"[UT Re-gen] Restored basic settings (unlock_type={self.unlock_type}, unlock_method={self.unlock_method}, songLimit={self.songLimit})")
+            
+            # Restore all trap and item weights
+            self.trap_items_weights = generation_data.get('trap_items_weights', {}).copy()
+            self.items_in_general = generation_data.get('items_in_general', {}).copy()
+            self.filter_items_weights = generation_data.get('filter_items_weights', {}).copy()
+            print(f"[UT Re-gen] Restored {len(self.trap_items_weights)} trap weights, {len(self.items_in_general)} item weights, {len(self.filter_items_weights)} filter weights")
+            
+            # Restore other settings
+            self.trapAmount = generation_data.get('trap_amount', 0)
+            self.ticket_percentage = generation_data.get('ticket_percentage', 0)
+            self.ticket_win_percentage = generation_data.get('ticket_win_percentage', 0)
+            self.graderequirement = generation_data.get('grade_requirement', '')
+            self.accrequirement = generation_data.get('accuracy_requirement', '')
+            self.checksPerSong = generation_data.get('checks_per_song', 2)
+            print(f"[UT Re-gen] Restored other settings (trapAmount={self.trapAmount}, checksPerSong={self.checksPerSong})")
+            
+            # Restore victory song (critical)
+            victory_song_name = generation_data.get('victory_song_name')
+            victory_song_id = generation_data.get('victory_song_id')
+            if not victory_song_name or not victory_song_id:
+                raise ValueError(f"Missing victory song data in passthrough for {self.player_name}")
+            
+            self.victory_song_name = victory_song_name
+            self.victory_song_id = victory_song_id
+            print(f"[UT Re-gen] ✓ Restored victory song: {victory_song_name} (ID: {victory_song_id})")
+            
+            # Restore starting song if present
+            starting_song_name = generation_data.get('starting_song_name')
+            if starting_song_name:
+                self.starting_song_name = starting_song_name
+                print(f"[UT Re-gen] ✓ Restored starting song: {starting_song_name}")
+            
+            # Restore playable songs list
+            playable_songs = generation_data.get('playable_songs', [])
+            if not playable_songs:
+                raise ValueError(f"No playable songs in passthrough for {self.player_name}")
+            
+            self.playable_songs = playable_songs
+            print(f"[UT Re-gen] ✓ Restored {len(playable_songs)} playable songs")
+            
+            # Validate playable songs exist in song_items
+            invalid_songs = [s for s in playable_songs if s not in self.song_items]
+            if invalid_songs:
+                print(f"[UT Re-gen WARNING] {len(invalid_songs)} songs not in song_items: {invalid_songs}")
+            
+            # Restore songs in bundles set
+            songs_in_bundles_list = generation_data.get('songs_in_bundles', [])
+            self.songs_in_bundles = set(songs_in_bundles_list)
+            print(f"[UT Re-gen] Restored {len(self.songs_in_bundles)} songs marked as bundled")
+            
+            # Restore bundle song assignments
+            bundle_songs = generation_data.get('bundle_songs', {})
+            restored_bundles = 0
+            for bundle_name, songs in bundle_songs.items():
+                if bundle_name in self.song_bundles:
+                    self.song_bundles[bundle_name]['songs'] = songs.copy() if isinstance(songs, list) else songs
+                    restored_bundles += 1
+            
+            print(f"[UT Re-gen] ✓ Restored {restored_bundles} bundle song assignments ({len(bundle_songs)} total)")
+            
+            # Validate bundles
+            for bundle_name, bundle_data in self.song_bundles.items():
+                if bundle_data['player'] == self.player_name:
+                    assigned_songs = bundle_data.get('songs', [])
+                    if not assigned_songs:
+                        print(f"[UT Re-gen WARNING] Bundle '{bundle_name}' has no songs assigned after restoration")
+            
+            # Restore song exclusions/additions
+            self._custom_song_exclusions = generation_data.get('song_exclusions', []).copy()
+            print(f"[UT Re-gen] Restored {len(self._custom_song_exclusions)} song exclusions")
+        
+        print(f"[UT Re-gen] ===============================================")
+        print(f"[UT Re-gen] ✓ RESTORATION COMPLETE FOR {self.player_name}")
+        print(f"[UT Re-gen] All item/location IDs guaranteed to match original generation")
+        print(f"[UT Re-gen] ===============================================")
+
+
+    def interpret_slot_data(self, slot_data: dict) -> dict:
+        """
+        Called by Universal Tracker to determine if re-generation is needed.
+        Returns the slot_data dict if re-generation should occur with passthrough,
+        or None if the current generation is sufficient.
+        
+        For FNF, we always return the slot_data to enable UT passthrough mechanism.
+        """
+        # Always return slot_data to enable UT re-generation with passthrough
+        # This allows UT to re-generate with exact same state as original
+        return slot_data
 
     def create_item(self, name: str) -> Item:
         if name == self.fnfUtil.SHOW_TICKET_NAME:
@@ -1672,7 +1891,7 @@ class FunkinWorld(World):
             starting_song != self.victory_song_name):
 
             # Check if this is automated generation (Universal Tracker)
-            is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+            is_automated = getattr(self.multiworld, 'generation_is_fake', False)
 
             if is_automated:
                 # Automatically use random starting song for Universal Tracker
@@ -1686,7 +1905,7 @@ class FunkinWorld(World):
 
                 while True:
                     # Check if this is automated generation (Universal Tracker)
-                    is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+                    is_automated = getattr(self.multiworld, 'generation_is_fake', False)
 
                     if is_automated:
                         choice = "1"  # Auto-select for automated generation
@@ -1708,7 +1927,7 @@ class FunkinWorld(World):
         # Check if starting song and victory song are the same
         if starting_song and starting_song == self.victory_song_name:
             # Check if this is automated generation (Universal Tracker)
-            is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+            is_automated = getattr(self.multiworld, 'generation_is_fake', False)
 
             if is_automated:
                 # Automatically use random starting song for Universal Tracker to avoid instant win
@@ -1724,7 +1943,7 @@ class FunkinWorld(World):
 
                 while True:
                     # Check if this is automated generation (Universal Tracker)
-                    is_automated = getattr(self.multiworld, 'gen_is_fake', False)
+                    is_automated = getattr(self.multiworld, 'generation_is_fake', False)
 
                     if is_automated:
                         choice = "2"  # Auto-select option 2 to prevent instant win
@@ -3383,6 +3602,7 @@ class FunkinWorld(World):
             # Get bundle data for this player
             player_bundle_data = {}
             player_owned_bundles = []  # List of bundle names owned by this player
+            bundle_songs_mapping = {}  # Track which songs are in which bundles
             for bundle_name, bundle_info in self.song_bundles.items():
                 if bundle_info['player'] == self.player_name:
                     player_owned_bundles.append(bundle_name)
@@ -3400,6 +3620,81 @@ class FunkinWorld(World):
                         'locations': bundle_location_ids,  # Location IDs for all songs in this bundle
                         'contains_victory': self.victory_song_name in bundle_info['songs']
                     }
+                    
+                    # Track songs in bundles for re-generation
+                    bundle_songs_mapping[bundle_name] = bundle_info['songs']
+
+            # Build generation data for Universal Tracker re-generation
+            # Get sanity settings which affect access rule generation
+            sanity_settings = self._get_sanity_settings()
+            
+            generation_data = {
+                # Options (for re-generation)
+                'options': self.options.as_dict() if hasattr(self.options, 'as_dict') else {},
+                
+                # Basic settings
+                'mods_enabled': self.mods_enabled,
+                'starting_song': self.starting_song,
+                'unlock_type': self.unlock_type,
+                'unlock_method': self.unlock_method,
+                'song_limit': self.songLimit,
+                
+                # Weights and settings
+                'trap_items_weights': self.trap_items_weights.copy(),
+                'items_in_general': self.items_in_general.copy(),
+                'filter_items_weights': self.filter_items_weights.copy(),
+                'trap_amount': self.trapAmount,
+                'ticket_percentage': self.ticket_percentage,
+                'ticket_win_percentage': self.ticket_win_percentage,
+                'grade_requirement': self.graderequirement,
+                'accuracy_requirement': self.accrequirement,
+                'checks_per_song': self.checksPerSong,
+                
+                # Victory song (critical)
+                'victory_song_name': self.victory_song_name,
+                'victory_song_id': self.victory_song_id,
+                
+                # Starting song if present
+                'starting_song_name': getattr(self, 'starting_song_name', None),
+                
+                # Playable songs for this player
+                'playable_songs': self.playable_songs if hasattr(self, 'playable_songs') else player_songs,
+                
+                # Songs in bundles
+                'songs_in_bundles': list(self.songs_in_bundles) if hasattr(self, 'songs_in_bundles') else [],
+                
+                # Bundle song assignments
+                'bundle_songs': bundle_songs_mapping,
+                
+                # Song exclusions/additions (affects item pool)
+                'song_exclusions': self._custom_song_exclusions if hasattr(self, '_custom_song_exclusions') else [],
+                'song_additions': self._custom_song_additions if hasattr(self, '_custom_song_additions') else [],
+                'song_requirements': self._custom_song_requirements if hasattr(self, '_custom_song_requirements') else [],
+                
+                # Sanity settings (affects access rules and location generation)
+                'sanity_settings': sanity_settings,
+                'sanity_requirements_cache': self._sanity_requirements_cache.copy() if hasattr(self, '_sanity_requirements_cache') else {},
+                
+                # Starter debuffs and perma traps settings (affect item logic)
+                'starter_debuffs_enabled': self.options.starter_debuffs.value if hasattr(self.options, 'starter_debuffs') else False,
+                'perma_traps_enabled': self.options.perma_traps.value if hasattr(self.options, 'perma_traps') else False,
+                'hard_mode_enabled': self.options.hard_mode.value if hasattr(self.options, 'hard_mode') else False,
+                'shop_enabled': self.options.shop.value if hasattr(self.options, 'shop') else False,
+                
+                # Player-specific YAML settings (affects song selection and logic)
+                'yaml_name': self.thisYaml.name if hasattr(self, 'thisYaml') and hasattr(self.thisYaml, 'name') else 'Unknown',
+                'yaml_settings': {
+                    'mods_enabled': getattr(self.thisYaml.settings, 'mods_enabled', []) if hasattr(self, 'thisYaml') and hasattr(self.thisYaml, 'settings') else [],
+                    'song_limit': getattr(self.thisYaml.settings, 'song_limit', 5) if hasattr(self, 'thisYaml') and hasattr(self.thisYaml, 'settings') else 5,
+                    'victory_song': getattr(self.thisYaml.settings, 'victory_song', '') if hasattr(self, 'thisYaml') and hasattr(self.thisYaml, 'settings') else '',
+                    'starting_song': getattr(self.thisYaml.settings, 'starting_song', '') if hasattr(self, 'thisYaml') and hasattr(self.thisYaml, 'settings') else '',
+                    'enable_sanity_locations': getattr(self.thisYaml.settings, 'enable_sanity_locations', True) if hasattr(self, 'thisYaml') and hasattr(self.thisYaml, 'settings') else True,
+                    'sanity_completion_type': getattr(self.thisYaml.settings, 'sanity_completion_type', 'on_getting') if hasattr(self, 'thisYaml') and hasattr(self.thisYaml, 'settings') else 'on_getting',
+                },
+                
+                # Pre-assigned bundle songs from create_regions
+                'pre_assigned_bundles': bundle_songs_mapping,
+            }
 
             return {
                 "deathLink": self.options.deathlink.value,
@@ -3435,6 +3730,95 @@ class FunkinWorld(World):
                     for color in self.used_uno_colors if color is not None
                 ],
                 "hardmode": self.options.hard_mode.value,  # So that Hard Mode can activate
+                # Universal Tracker re-generation data (not used by client)
+                "generation_data": generation_data,
+                # Comprehensive data for UT re-generation with exact ID matching
+                # This completely bypasses the need to re-run stuff() during UT re-gen
+                "UTSlotData": {
+                    # All item and location ID mappings (from class-level stuff())
+                    "item_name_to_id": self.item_name_to_id.copy(),
+                    "location_name_to_id": self.location_name_to_id.copy(),
+                    
+                    # Song data with ownership information
+                    "song_items": {
+                        name: {
+                            'code': data.code,
+                            'modded': data.modded,
+                            'songName': data.songName,
+                            'playerSongBelongsTo': data.playerSongBelongsTo,
+                            'playerList': data.playerList.copy() if data.playerList else []
+                        }
+                        for name, data in self.song_items.items()
+                    },
+                    "song_locations": self.song_locations.copy(),
+                    
+                    # Custom content (affects item pool and location generation)
+                    "custom_items": self.custom_items_list.copy(),
+                    "custom_trap_items": self.custom_trap_items_list.copy(),
+                    "custom_locations": {
+                        name: {
+                            'id': data.code,
+                            'playerOwner': data.playerLocationBelongsTo,
+                            'playerList': data.playerList.copy(),
+                            'originSong': data.originSong,
+                            'originMod': data.originMod
+                        }
+                        for name, data in self.custom_location_items.items()
+                    },
+                    
+                    # Sanity content with all logic dependencies
+                    "sanity_items_list": [item.copy() if isinstance(item, dict) else item for item in self.sanity_items_list],
+                    "sanity_location_ids": self.sanity_location_ids.copy(),
+                    "sanity_requirements_cache": self._sanity_requirements_cache.copy() if hasattr(self, '_sanity_requirements_cache') else {},
+                    "sanity_settings": sanity_settings,
+                    
+                    # Bundles (Mixtapes) - pre-assigned songs affect access rules
+                    "song_bundles": {
+                        name: data.copy() for name, data in self.song_bundles.items()
+                    },
+                    "bundle_locations": self.bundle_locations.copy(),
+                    "songs_in_bundles": list(self.songs_in_bundles) if hasattr(self, 'songs_in_bundles') else [],
+                    
+                    # Song requirements and exclusions (affect access rules)
+                    "custom_song_requirements": [req.copy() if isinstance(req, dict) else req for req in self._custom_song_requirements] if hasattr(self, '_custom_song_requirements') else [],
+                    "custom_song_exclusions": self._custom_song_exclusions.copy() if hasattr(self, '_custom_song_exclusions') else [],
+                    "custom_song_additions": self._custom_song_additions if hasattr(self, '_custom_song_additions') else [],
+                    
+                    # YAML data for all players (compact version with critical fields affecting generation)
+                    "yaml_data_compact": [
+                        {
+                            'name': yaml_data.name if hasattr(yaml_data, 'name') else 'Unknown',
+                            'song_list': self._clean_yaml_song_list(yaml_data.getSongList()) if hasattr(yaml_data, 'getSongList') else [],
+                            'song_limit': getattr(yaml_data.settings, 'song_limit', 5) if hasattr(yaml_data, 'settings') else 5,
+                            'victory_song': getattr(yaml_data.settings, 'victory_song', '') if hasattr(yaml_data, 'settings') else '',
+                            'starting_song': getattr(yaml_data.settings, 'starting_song', '') if hasattr(yaml_data, 'settings') else '',
+                            'mods_enabled': getattr(yaml_data.settings, 'mods_enabled', []) if hasattr(yaml_data, 'settings') else [],
+                            'enable_sanity_locations': getattr(yaml_data.settings, 'enable_sanity_locations', True) if hasattr(yaml_data, 'settings') else True,
+                            'sanity_completion_type': getattr(yaml_data.settings, 'sanity_completion_type', 'on_getting') if hasattr(yaml_data, 'settings') else 'on_getting',
+                        }
+                        for yaml_data in self.all_yamls
+                    ],
+                    
+                    # Option flags affecting logic
+                    'starter_debuffs': self.options.starter_debuffs.value if hasattr(self.options, 'starter_debuffs') else False,
+                    'perma_traps': self.options.perma_traps.value if hasattr(self.options, 'perma_traps') else False,
+                    'hard_mode': self.options.hard_mode.value if hasattr(self.options, 'hard_mode') else False,
+                    'shop_enabled': self.options.shop.value if hasattr(self.options, 'shop') else False,
+                    
+                    # Weights and selection logic (affect item pool balancing)
+                    "trap_items_weights": self.trap_items_weights.copy(),
+                    "items_in_general": self.items_in_general.copy(),
+                    "filter_items_weights": self.filter_items_weights.copy(),
+                    
+                    # Player song additions per player (affects pool diversity)
+                    "player_song_additions": self.player_song_additions.copy(),
+                    
+                    # Victory and starting song settings (affect completion logic)
+                    'victory_song_name': self.victory_song_name,
+                    'victory_song_id': self.victory_song_id,
+                    'starting_song_name': getattr(self, 'starting_song_name', None),
+                    'playable_songs': self.playable_songs if hasattr(self, 'playable_songs') else [],
+                }
             }
 
     def _get_custom_weeks_data(self):
