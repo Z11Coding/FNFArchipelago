@@ -1919,6 +1919,11 @@ class FunkinWorld(World):
             else:
                 full_song_name = song_name
 
+            # check if the player has all hardmode items, as they literally cannot play the game without them
+            if self.options.hard_mode.value:
+                for element in self.fnfUtil.z11_hardmode_items:
+                    state.has(element, self.player)
+
             # Check if this song is in a bundle
             bundling_bundle = None
             if hasattr(self, 'songs_in_bundles') and full_song_name in self.songs_in_bundles:
@@ -2762,7 +2767,10 @@ class FunkinWorld(World):
             # then check to see if Hard Mode is enabled, so that we can randomize the elements
             if self.options.hard_mode.value:
                 for element in self.fnfUtil.z11_hardmode_items:
-                    self.multiworld.itempool.append(self.create_item(element))
+                    if element == "Stage Access Key" and len(self.all_yamls) == 1: # "because it'd be impossible otherwise lol" - Someone smarter than me
+                        self.multiworld.push_precollected(self.create_item(element))
+                    else:
+                        self.multiworld.itempool.append(self.create_item(element))
                     item_count += 1
 
             remaining_slots = self.location_count - item_count
