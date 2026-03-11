@@ -4,8 +4,66 @@
 # https://opensource.org/licenses/MIT
 
 from dataclasses import dataclass
-from Options import Toggle, OptionSet, OptionList, Range, PerGameCommonOptions, OptionGroup, DeathLink, FreeText
+from Options import Toggle, TextChoice, OptionList, Range, PerGameCommonOptions, OptionGroup, DeathLink, FreeText, OptionError
 from .Items import FNFBaseList
+
+
+class VerifiedTextChoice(TextChoice):
+    """A TextChoice that requires valid_keys to be defined and validates against them.
+    Automatically initializes the options dictionary from valid_keys with integer IDs.
+    Accepts both string and integer values."""
+    valid_keys: set = set()
+    
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Build options dictionary from valid_keys with integer IDs
+        if hasattr(cls, 'valid_keys') and cls.valid_keys:
+            sorted_keys = sorted(cls.valid_keys)
+            cls.options = {key.lower(): i for i, key in enumerate(sorted_keys)}
+            # Build reverse mapping for integer to key lookup
+            cls._reverse_options = {i: key for i, key in enumerate(sorted_keys)}
+    
+    def __init__(self, value):
+        if not self.__class__.valid_keys:
+            raise OptionError(f"{self.__class__.__name__} must define valid_keys")
+        
+        # If value is an integer, convert to the corresponding key string
+        if isinstance(value, int):
+            if hasattr(self.__class__, '_reverse_options') and value in self.__class__._reverse_options:
+                value = self.__class__._reverse_options[value]
+            else:
+                # Build error message with valid range and mappings
+                if hasattr(self.__class__, '_reverse_options'):
+                    max_int = len(self.__class__._reverse_options) - 1
+                    mapping = ', '.join(f'{i}: "{self.__class__._reverse_options[i]}"' 
+                                      for i in range(len(self.__class__._reverse_options)))
+                    raise OptionError(f"Invalid integer value {value} for {self.__class__.__name__}. "
+                                    f"Valid range is 0-{max_int}: {mapping}")
+                else:
+                    raise OptionError(f"Invalid integer value {value} for {self.__class__.__name__}")
+        
+        super().__init__(value)
+    
+    def verify(self, *args, **kwargs) -> None:
+        if self.value not in self.valid_keys:
+            # Build error message with valid range and mappings
+            if hasattr(self.__class__, '_reverse_options'):
+                max_int = len(self.__class__._reverse_options) - 1
+                mapping = ', '.join(f'{i}: "{self.__class__._reverse_options[i]}"' 
+                                  for i in range(len(self.__class__._reverse_options)))
+                raise OptionError(f"Invalid value '{self.value}' for {self.__class__.__name__}. "
+                                f"Valid range is 0-{max_int}: {mapping}")
+            else:
+                raise OptionError(f"Invalid value '{self.value}' for {self.__class__.__name__}. "
+                                f"Valid options are: {', '.join(sorted(self.valid_keys))}")
+    
+    def get_int_value(self) -> int:
+        """Get the integer index of the current option."""
+        return self.__class__.options[self.value.lower()]
+    
+    def get_string_value(self) -> str:
+        """Get the string key of the current option."""
+        return self.value
 
 
 class AllowMods(Toggle):
@@ -22,17 +80,17 @@ class SongStarter(FreeText):
     default = ""
 
 
-class UnlockType(OptionSet):
+class UnlockType(VerifiedTextChoice):
     """The way you wish to unlock songs."""
     display_name = "Unlock Type"
-    valid_keys = ["Per Song", "Per Week"]
+    valid_keys = {"Per Song", "Per Week"}
     default = "Per Song"
 
 
-class UnlockMethod(OptionSet):
+class UnlockMethod(VerifiedTextChoice):
     """The way you wish to get checks."""
     display_name = "Check Method"
-    valid_keys = ["Note Checks", "Song Completion", "Both"]
+    valid_keys = {"Note Checks", "Song Completion", "Both"}
     default = "Song Completion"
 
 class CheckCount(Range):
@@ -199,17 +257,17 @@ class TicketWinPercentage(Range):
     default = 80
     display_name = "Tickets Needed to Win"
 
-class gradeNeeded(OptionList):
-    """The percentage of tickets in the item pool that are needed to unlock the winning song."""
-    valid_keys = ["Any", "MFC", "SFC", "GFC", "AFC", "FC", "SDCB"]
-    default = "Any"
+class gradeNeeded(VerifiedTextChoice):
+    """The grade needed to win."""
     display_name = "Grade Required"
+    valid_keys = {"Any", "MFC", "SFC", "GFC", "AFC", "FC", "SDCB"}
+    default = "Any"
 
-class accuracyNeeded(OptionList):
-    """The percentage of tickets in the item pool that are needed to unlock the winning song."""
-    valid_keys = ["Any", "P", "X", "X-", "SS+", "SS", "SS-", "S+", "S", "S-", "A+", "A", "A-", "B", "C", "D", "E",]
+class accuracyNeeded(VerifiedTextChoice):
+    """The accuracy needed to win."""
+    display_name = "Accuracy Required"
+    valid_keys = {"Any", "P", "X", "X-", "SS+", "SS", "SS-", "S+", "S", "S-", "A+", "A", "A-", "B", "C", "D", "E"}
     default = "Any"
-    display_name = "Grade Required"
 
 class songLimit(Range):
     """The percentage of songs in the item pool."""
