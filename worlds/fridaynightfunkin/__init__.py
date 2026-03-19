@@ -1249,7 +1249,7 @@ class FunkinWorld(World):
         self.trap_items_weights['Ghost Chat'] = self.options.ghostChatWeight.value
         self.trap_items_weights['SvC Effect'] = self.options.svcWeight.value
         self.trap_items_weights['Tutorial Trap'] = self.options.tutorialWeight.value
-        self.trap_items_weights['Song Switch Trap'] = self.options.songSwitchWeight.value
+        self.trap_items_weights['Song Switch Trap'] = self.options.songswitchWeight.value
         self.trap_items_weights['Opponent Mode Trap'] = self.options.opponentWeight.value
         self.trap_items_weights['Both Play Trap'] = self.options.bothWeight.value
         self.trap_items_weights['Ultimate Confusion Trap'] = self.options.ultconfusion.value
@@ -2139,10 +2139,12 @@ class FunkinWorld(World):
             else:
                 full_song_name = song_name
 
-            # check if the player has all hardmode items, as they literally cannot play the game without them
-            if self.options.hard_mode.value:
-                for element in self.fnfUtil.z11_hardmode_items:
-                    state.has(element, self.player)
+            # check if the player has the access key, as they literally cannot play the game without it in hard mode
+            if bool(self.options.hard_mode.value) and not any(
+                hard_mode_item != "Pause Menu" and state.has(hard_mode_item, self.player)
+                for hard_mode_item in self.fnfUtil.z11_hardmode_items
+            ):
+                return False
 
             # Check if this song is in a bundle
             bundling_bundle = None
@@ -3008,7 +3010,7 @@ class FunkinWorld(World):
             # then check to see if Hard Mode is enabled, so that we can randomize the elements
             if self.options.hard_mode.value:
                 for element in self.fnfUtil.z11_hardmode_items:
-                    if element == "Stage Access Key" and len(self.all_yamls) == 1: # "because it'd be impossible otherwise lol" - Someone smarter than me
+                    if element == "Stage Access Key" and len(self.multiworld.players) == 1: # "because it'd be impossible otherwise lol" - Someone smarter than me
                         self.multiworld.push_precollected(self.create_item(element))
                     else:
                         self.multiworld.itempool.append(self.create_item(element))
