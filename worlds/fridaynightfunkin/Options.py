@@ -363,7 +363,7 @@ class FunkinOptions(PerGameCommonOptions):
     ghostChatWeight: ghostChatWeight
     svcWeight: svcWeight
     tutorialWeight: tutorialWeight
-    songSwitchWeight: SongSwitchWeight
+    songswitchWeight: SongSwitchWeight
     opponentWeight: OpponentWeight
     bothWeight: BothWeight
     resistanceWeight: ResistWeight
