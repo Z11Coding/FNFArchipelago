@@ -3044,7 +3044,7 @@ class FunkinWorld(World):
                         self.available_uno_colors.remove(color)
                         from .Items import FunkinUNOMinigameItem
                         self.multiworld.itempool.append(
-                            FunkinUNOMinigameItem(f'UNO Color Filler', self.fnfUtil.STARTING_CODE + 19, self.player, color))
+                            FunkinUNOMinigameItem(f'UNO Color Filler', self.fnfUtil.STARTING_CODE + 20, self.player, color))
                         self.used_uno_colors.append(color)
                         item_count += 1
                         uno_colors_added += 1
@@ -3639,9 +3639,9 @@ class FunkinWorld(World):
             sanity_settings = self._get_sanity_settings()
             
             generation_data = {
-                # Options (for re-generation)
-                'options': self.options.as_dict() if hasattr(self.options, 'as_dict') else {},
-                
+                # Options (for re-generation) Asks for all available options.
+                'options': {k: v.value for k, v in vars(self.options).items() if hasattr(v, 'value')} if hasattr(self, 'options') else {},
+           
                 # Basic settings
                 'mods_enabled': self.mods_enabled,
                 'starting_song': self.starting_song,
@@ -3705,6 +3705,10 @@ class FunkinWorld(World):
                 # Pre-assigned bundle songs from create_regions
                 'pre_assigned_bundles': bundle_songs_mapping,
             }
+            print("=== SLOT DATA FOR CLIENT ===")
+            # USE PRETTY PRINT
+            import pprint
+            pprint.pprint(generation_data)
 
             return {
                 "deathLink": self.options.deathlink.value,
