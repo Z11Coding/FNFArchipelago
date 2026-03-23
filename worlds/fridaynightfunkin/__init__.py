@@ -93,6 +93,7 @@ class FunkinWorld(World):
 
     game = "Friday Night Funkin"
     web = FunkinWeb()
+    ut_can_gen_without_yaml = True
 
     required_client_version = (0, 5, 0)
     topology_present = False
@@ -1219,6 +1220,30 @@ class FunkinWorld(World):
                 else:
                     print(f"Note: Detected {len(weighted_players)} weighted/template YAML(s) in automated mode, continuing generation")
 
+    def _get_option_value(self, option_name: str, default=None):
+        """Get option value from passthrough if available, otherwise from self.options"""
+        # Check if in passthrough mode (UT re-generation)
+        if (hasattr(self.multiworld, 'generation_is_fake') and self.multiworld.generation_is_fake and
+            hasattr(self.multiworld, 're_gen_passthrough') and 'Friday Night Funkin' in self.multiworld.re_gen_passthrough):
+            
+            passthrough = self.multiworld.re_gen_passthrough.get('Friday Night Funkin', {})
+            options_dict = passthrough.get('generation_data', {}).get('options', {})
+            
+            if option_name in options_dict:
+                return options_dict[option_name]
+        
+        # Fall back to self.options
+        if hasattr(self.options, option_name):
+            option_obj = getattr(self.options, option_name)
+            if hasattr(option_obj, 'value'):
+                return option_obj.value
+            elif hasattr(option_obj, 'get_string_value'):
+                return option_obj.get_string_value()
+            else:
+                return option_obj
+        
+        return default
+
     def generate_early(self):
         # Check for Universal Tracker re-generation with passthrough data
         # This allows exact restoration of generation state without re-randomization
@@ -1608,7 +1633,12 @@ class FunkinWorld(World):
             for option_name, option_value in restored_options.items():
                 if hasattr(self.options, option_name):
                     try:
-                        setattr(self.options, option_name, option_value)
+                        option_obj = getattr(self.options, option_name)
+                        # Set the value attribute of the option object, not replace the object itself
+                        if hasattr(option_obj, 'value'):
+                            option_obj.value = option_value
+                        else:
+                            setattr(self.options, option_name, option_value)
                         restored_count += 1
                     except Exception as e:
                         print(f"[UT Re-gen WARNING] Could not restore option '{option_name}': {e}")
@@ -1696,7 +1726,6 @@ class FunkinWorld(World):
         print(f"[UT Re-gen] ✓ RESTORATION COMPLETE FOR {self.player_name}")
         print(f"[UT Re-gen] All item/location IDs guaranteed to match original generation")
         print(f"[UT Re-gen] ===============================================")
-
 
     def interpret_slot_data(self, slot_data: dict) -> dict:
         """
@@ -3280,11 +3309,41 @@ class FunkinWorld(World):
         return total
 
     def get_ticket_count(self) -> int:
+        # Check if in passthrough mode (UT re-generation)
+        if (hasattr(self.multiworld, 'generation_is_fake') and self.multiworld.generation_is_fake and
+            hasattr(self.multiworld, 're_gen_passthrough') and 'Friday Night Funkin' in self.multiworld.re_gen_passthrough):
+            
+            passthrough = self.multiworld.re_gen_passthrough.get('Friday Night Funkin', {})
+            generation_data = passthrough.get('generation_data', {})
+            ticket_count = generation_data.get('ticket_percentage', None)
+            
+            if ticket_count is not None:
+                # Recalculate based on current song count and the original percentage
+                multiplier = ticket_count / 100.0
+                song_count = len(self.get_songs_map(self.player_name))
+                return max(1, floor(song_count * multiplier))
+        
+        # Normal mode: calculate from options
         multiplier = self.options.ticket_percentage.value / 100.0
         song_count = len(self.get_songs_map(self.player_name))
         return max(1, floor(song_count * multiplier))
 
     def get_ticket_win_count(self) -> int:
+        # Check if in passthrough mode (UT re-generation)
+        if (hasattr(self.multiworld, 'generation_is_fake') and self.multiworld.generation_is_fake and
+            hasattr(self.multiworld, 're_gen_passthrough') and 'Friday Night Funkin' in self.multiworld.re_gen_passthrough):
+            
+            passthrough = self.multiworld.re_gen_passthrough.get('Friday Night Funkin', {})
+            generation_data = passthrough.get('generation_data', {})
+            ticket_win_percentage = generation_data.get('ticket_win_percentage', None)
+            
+            if ticket_win_percentage is not None:
+                # Recalculate based on current ticket count and the original win percentage
+                multiplier = ticket_win_percentage / 100.0
+                ticket_count = self.get_ticket_count()
+                return max(1, floor(ticket_count * multiplier))
+        
+        # Normal mode: calculate from options
         multiplier = self.options.ticket_win_percentage.value / 100.0
         ticket_count = self.get_ticket_count()
         return max(1, floor(ticket_count * multiplier))
@@ -3705,10 +3764,10 @@ class FunkinWorld(World):
                 # Pre-assigned bundle songs from create_regions
                 'pre_assigned_bundles': bundle_songs_mapping,
             }
-            print("=== SLOT DATA FOR CLIENT ===")
-            # USE PRETTY PRINT
-            import pprint
-            pprint.pprint(generation_data)
+            # print("=== SLOT DATA FOR CLIENT ===")
+            # # USE PRETTY PRINT
+            # import pprint
+            # pprint.pprint(generation_data)
 
             return {
                 "deathLink": self.options.deathlink.value,
