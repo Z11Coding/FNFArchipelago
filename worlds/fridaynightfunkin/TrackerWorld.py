@@ -91,13 +91,46 @@ def create_tracker_world_class(passthrough_data: dict) -> type:
         all_yamls = ut_slot_data.get('all_yamls', [])
         player_song_additions = {}
         
-        # Custom content
-        custom_items_list = ut_slot_data.get('custom_items', []).copy()
-        custom_trap_items_list = ut_slot_data.get('custom_trap_items', []).copy()
+        # Custom content - handle both old (list) and new (dict) formats
+        raw_custom_items = ut_slot_data.get('custom_items', {})
+        if isinstance(raw_custom_items, list):
+            # Old format: flat list - convert to dict with empty player key
+            custom_items_list = {'': raw_custom_items.copy()}
+        else:
+            # New format: dict with player_name keys
+            custom_items_list = raw_custom_items.copy()
+        
+        raw_custom_traps = ut_slot_data.get('custom_trap_items', {})
+        if isinstance(raw_custom_traps, list):
+            # Old format: flat list - convert to dict with empty player key
+            custom_trap_items_list = {'': raw_custom_traps.copy()}
+        else:
+            # New format: dict with player_name keys
+            custom_trap_items_list = raw_custom_traps.copy()
+        
         custom_location_items = reconstructed_custom_locations.copy()
-        custom_song_additions = []
-        custom_song_exclusions = []
-        custom_song_requirements = ut_slot_data.get('custom_song_requirements', []).copy()
+        
+        # Custom song modifications - must be dicts with player_name keys to match stuff()'s structure
+        raw_song_adds = ut_slot_data.get('custom_song_additions', {})
+        if isinstance(raw_song_adds, list):
+            # Old format compatibility: convert list to empty dict
+            custom_song_additions = {}
+        else:
+            custom_song_additions = raw_song_adds.copy()
+        
+        raw_song_excls = ut_slot_data.get('custom_song_exclusions', {})
+        if isinstance(raw_song_excls, list):
+            # Old format compatibility: convert list to empty dict
+            custom_song_exclusions = {}
+        else:
+            custom_song_exclusions = raw_song_excls.copy()
+        
+        raw_song_reqs = ut_slot_data.get('custom_song_requirements', {})
+        if isinstance(raw_song_reqs, list):
+            # Old format compatibility: convert list to empty dict
+            custom_song_requirements = {}
+        else:
+            custom_song_requirements = raw_song_reqs.copy()
         
         # Bundles (Mixtapes)
         song_bundles = ut_slot_data.get('song_bundles', {}).copy()
@@ -243,8 +276,10 @@ def create_tracker_world_class(passthrough_data: dict) -> type:
                 return self.filter_items_weights[theFiller]
             
             # Custom trap items default to weight 1 if not specified
-            if theFiller in self.custom_trap_items_list:
-                return 1
+            # Handle both old (list in dict) and current (multi-player) formats
+            for player_traps in self.custom_trap_items_list.values():
+                if theFiller in player_traps:
+                    return 1
             
             # Default to 0 instead of returning None
             return 0

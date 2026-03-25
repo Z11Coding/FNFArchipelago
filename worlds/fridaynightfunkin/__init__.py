@@ -2,6 +2,7 @@
 #
 # This software is released under the MIT License.
 # https://opensource.org/licenses/MIT
+
 from BaseClasses import Region, Item, MultiWorld, Tutorial, ItemClassification
 from typing import Dict, List, ClassVar, Type, Tuple, TextIO, Optional
 from Utils import user_path
@@ -148,254 +149,103 @@ class FunkinWorld(World):
     def stuff():
         """Setup all item and location IDs for all players during class creation"""
 
-        import Utils
-        from .Yutautil import yutautil_APYaml
-        import sys
-        import os
-        fnfUtil = FunkinUtils()
+        try:
 
-        # You cannot check this. Don't try it.
-        # COMMENTED OUT: Passthrough data functionality disabled
-        # if hasattr(FunkinWorld, '_passthrough_data'):
-        #     passthrough = FunkinWorld._passthrough_data
-        #     print("Using passthrough data for item/location setup")
+            import Utils
+            from .Yutautil import yutautil_APYaml
+            import sys
+            import os
+            fnfUtil = FunkinUtils()
 
-        #     return {
-        #         "items": passthrough.get("item_name_to_id", {}),
-        #         "locations": passthrough.get("location_name_to_id", {}),
-        #         "custom_access_rules": {},  # Legacy
-        #         "custom_location_data": {},  # Legacy
-        #         "custom_items": passthrough.get("custom_items", []),
-        #         "custom_trap_items": passthrough.get("custom_trap_items", []),
-        #         "custom_location_items": passthrough.get("custom_location_items", {}),
-        #         "custom_song_additions": passthrough.get("custom_song_additions", []),
-        #         "custom_song_exclusions": passthrough.get("custom_song_exclusions", []),
-        #         "custom_song_requirements": passthrough.get("custom_song_requirements", []),
-        #         "song_items": passthrough.get("song_items", {}),
-        #         "song_locations": passthrough.get("song_locations", {}),
-        #         "all_yamls": passthrough.get("all_yamls", []),
-        #         "vip_songs": passthrough.get("player_song_additions", {})
-        #     }
+            # You cannot check this. Don't try it.
+            # COMMENTED OUT: Passthrough data functionality disabled
+            # if hasattr(FunkinWorld, '_passthrough_data'):
+            #     passthrough = FunkinWorld._passthrough_data
+            #     print("Using passthrough data for item/location setup")
 
-        # Get all player YAML files
-        user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
-        folder_path = sys.argv[
-            sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
+            #     return {
+            #         "items": passthrough.get("item_name_to_id", {}),
+            #         "locations": passthrough.get("location_name_to_id", {}),
+            #         "custom_access_rules": {},  # Legacy
+            #         "custom_location_data": {},  # Legacy
+            #         "custom_items": passthrough.get("custom_items", []),
+            #         "custom_trap_items": passthrough.get("custom_trap_items", []),
+            #         "custom_location_items": passthrough.get("custom_location_items", {}),
+            #         "custom_song_additions": passthrough.get("custom_song_additions", []),
+            #         "custom_song_exclusions": passthrough.get("custom_song_exclusions", []),
+            #         "custom_song_requirements": passthrough.get("custom_song_requirements", []),
+            #         "song_items": passthrough.get("song_items", {}),
+            #         "song_locations": passthrough.get("song_locations", {}),
+            #         "all_yamls": passthrough.get("all_yamls", []),
+            #         "vip_songs": passthrough.get("player_song_additions", {})
+            #     }
 
-        if not os.path.isdir(folder_path):
-            raise ValueError(f"The path {folder_path} is not a valid directory.")
+            # Get all player YAML files
+            user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
+            folder_path = sys.argv[
+                sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
 
-        # Load all FNF YAML files
-        all_yamls = []
-        for item in os.listdir(folder_path):
-            item_path = os.path.join(folder_path, item)
-            if os.path.isfile(item_path):
-                try:
-                    with open(item_path, 'r', encoding='utf-8') as file:
-                        file_content = file.read()
-                        yaml = yutautil_APYaml(file_content)
-                        if yaml.game == "Friday Night Funkin":
-                            all_yamls.append(yaml)
-                except Exception as e:
-                    print(f"Error reading YAML file {item}: {e}")
-                    continue
+            if not os.path.isdir(folder_path):
+                raise ValueError(f"The path {folder_path} is not a valid directory.")
 
-        if not all_yamls:
-            print("No FNF YAML files found, using default songs")
-            # Create a default YAML for fallback
+            # Load all FNF YAML files
             all_yamls = []
-
-        # Load custom logic files and execute them
-        custom_items = []
-        custom_trap_items = []
-        custom_locations = {}
-        custom_access_rules = {}
-        custom_location_data = {}
-        custom_song_additions = []  # Track songs added by scripts
-        custom_song_exclusions = []  # Track songs excluded by scripts
-        custom_song_requirements = []  # Track song requirements from scripts
-        vip_exclusive_song_additions:dict[str, list[str]] = {}
-
-        print("Loading custom AP logic files...")
-
-        # First, collect all player names from YAML files
-        player_names = set()
-        name_counter = {}  # Track name counts for {number} placeholder
-        for i, yaml_data in enumerate(all_yamls):
-            if hasattr(yaml_data, 'name'):
-                # Process name placeholders using player index + 1 as player_id
-                processed_name = yaml_data.handle_name(yaml_data.name, i + 1, name_counter)
-                yaml_data.name = processed_name  # Update the YAML object with processed name
-                player_names.add(processed_name)
-
-        # Check if fnfModData folder exists and use it if available
-        folder_path = f"{folder_path}\\fnfModData" if os.path.exists(f"{folder_path}\\fnfModData") and os.path.isdir(f"{folder_path}\\fnfModData") else folder_path
-
-        # First, process modData from YAML files (embedded compressed Python code)
-        print("Processing modData from YAML files...")
-        import base64
-        for yaml_data in all_yamls:
-            if hasattr(yaml_data.settings, 'modData') and yaml_data.settings.modData:
-                player_name = getattr(yaml_data, 'name', 'Unknown Player')
-                try:
-                    print(f"Processing embedded modData for player '{player_name}'")
-
-                    # Decode Base64 compressed Python script
-                    compressed_script = yaml_data.settings.modData
-                    custom_script = base64.b64decode(compressed_script).decode('utf-8')
-
-                    # Create execution environment
-                    exec_globals = {}
-                    exec_locals = {}
-
-                    # Execute the custom script
-                    exec(custom_script, exec_globals, exec_locals)
-
-                    # Get the custom data - check for new class-based approach first
-                    custom_data = None
-                    if 'INSTANCE' in exec_locals:
-                        # New class-based approach
-                        instance = exec_locals['INSTANCE']
-                        if hasattr(instance, 'get_custom_data_for_class'):
-                            custom_data = instance.get_custom_data_for_class()
-                    elif 'get_custom_data_for_class' in exec_locals:
-                        # Legacy function-based approach
-                        custom_data = exec_locals['get_custom_data_for_class']()
-
-                    if custom_data:
-                        # Store player-specific data WITHOUT prefixes
-                        player_items = custom_data.get('items', [])
-                        player_locations = custom_data.get('locations', {})  # Now contains location objects with rules
-
-                        # Add items without player prefix - ownership will be tracked in LocationData
-                        for item_name in player_items:
-                            if item_name not in custom_items:  # Avoid duplicates
-                                custom_items.append(item_name)
-
-                        # Add trap items without player prefix - ownership will be tracked in LocationData
-                        player_trap_items = custom_data.get('trap_items', [])
-                        for trap_name in player_trap_items:
-                            if trap_name not in custom_trap_items:  # Avoid duplicates
-                                custom_trap_items.append(trap_name)
-
-                        # Track song additions and exclusions from scripts
-                        player_song_additions = custom_data.get('song_additions', [])
-                        player_song_exclusions = custom_data.get('song_exclusions', [])
-                        player_song_requirements = custom_data.get('song_requirements', [])
-                        custom_song_additions.extend(player_song_additions)
-                        custom_song_exclusions.extend(player_song_exclusions)
-                        custom_song_requirements.extend(player_song_requirements)
-                        vip_exclusive_song_additions[player_name] = player_song_additions
-
-                        for yaml in all_yamls:
-                            if yaml.name == player_name:
-                                for song in player_song_additions:
-                                    yaml.settings.songList.append(song['name'])
-
-                        # Store location data with ownership tracking (no prefixes)
-                        for location_name, location_obj in player_locations.items():
-                            # Add player info to location data
-                            location_info_with_player = location_obj.copy()
-                            location_info_with_player['player'] = player_name
-                            custom_location_data[location_name] = location_info_with_player
-
-                        print(f"Loaded from embedded modData: {len(player_items)} custom items and {len(player_locations)} custom locations for player '{player_name}'")
-
-                except Exception as e:
-                    print(f"Error processing embedded modData for player '{player_name}': {e}")
-                    continue
-
-        # Process sanity data from YAML files (embedded compressed JSON data)
-        print("Processing sanity data from YAML files...")
-        import json
-        sanity_items = []  # Track sanity items for starting song unlock
-
-        for yaml_data in all_yamls:
-            if hasattr(yaml_data.settings, 'sanity') and yaml_data.settings.sanity:
-                player_name = getattr(yaml_data, 'name', 'Unknown Player')
-                try:
-                    print(f"Processing embedded sanity data for player '{player_name}'")
-
-                    # Decode Base64 compressed JSON data
-                    compressed_sanity = yaml_data.settings.sanity
-                    sanity_json = base64.b64decode(compressed_sanity).decode('utf-8')
-                    sanity_data = json.loads(sanity_json)
-
-                    # Check if stagesanity and charactersanity are enabled for this player
-                    stagesanity_enabled = getattr(yaml_data.settings, 'stagesanity', False)
-                    charactersanity_enabled = getattr(yaml_data.settings, 'charactersanity', False)
-
-                    # Process stage sanity data - only if stagesanity is enabled
-                    if 'Stage' in sanity_data and stagesanity_enabled:
-                        stage_data = sanity_data['Stage']
-                        print(f"Processing {len(stage_data)} stages for stagesanity")
-
-                        for stage_info in stage_data:
-                            stage_name = stage_info.get('name', '')
-                            stage_songs = stage_info.get('songs', [])
-
-                            if stage_name and stage_songs:
-                                # Create stage item (no location - just an item)
-                                stage_item_name = f"Stage: {stage_name}"
-                                # Don't add sanity items to custom_items - they are separate
-                                sanity_items.append({
-                                    'name': stage_item_name,
-                                    'type': 'stage',
-                                    'stage_name': stage_name,
-                                    'songs': stage_songs,
-                                    'player': player_name
-                                })
-                    elif 'Stage' in sanity_data and not stagesanity_enabled:
-                        print(f"Skipping {len(sanity_data['Stage'])} stages for player '{player_name}' because stagesanity is disabled")
-
-                    # Process character sanity data - only if charactersanity is enabled
-                    if 'Character' in sanity_data and charactersanity_enabled:
-                        character_data = sanity_data['Character']
-                        print(f"Processing {len(character_data)} characters for charactersanity")
-
-                        for character_info in character_data:
-                            character_name = character_info.get('name', '')
-                            character_songs = character_info.get('songs', [])
-
-                            if character_name and character_songs:
-                                # Create character item (no location - just an item)
-                                character_item_name = f"Character: {character_name}"
-                                # Don't add sanity items to custom_items - they are separate
-                                sanity_items.append({
-                                    'name': character_item_name,
-                                    'type': 'character',
-                                    'character_name': character_name,
-                                    'songs': character_songs,
-                                    'player': player_name
-                                })
-                    elif 'Character' in sanity_data and not charactersanity_enabled:
-                        print(f"Skipping {len(sanity_data['Character'])} characters for player '{player_name}' because charactersanity is disabled")
-
-                    # Updated logging to show actual processed counts
-                    stages_processed = len([item for item in sanity_items if item['type'] == 'stage' and item['player'] == player_name])
-                    characters_processed = len([item for item in sanity_items if item['type'] == 'character' and item['player'] == player_name])
-                    print(f"Loaded sanity data: {stages_processed} stages and {characters_processed} characters for player '{player_name}'")
-
-                except Exception as e:
-                    print(f"Error processing embedded sanity data for player '{player_name}': {e}")
-                    continue
-
-        # Store sanity items for later use in create_items
-        sanity_items_list = sanity_items
-
-        # Look for player-specific custom data files
-        for item in os.listdir(folder_path):
-            if item.endswith("_customFNFData.py"):
-                # Extract player name from filename
-                player_name = item[:-len("_customFNFData.py")]
-
-                # Only load if this player has a YAML file or if it's a general file
-                if player_name in player_names or not player_names:
-                    custom_file_path = os.path.join(folder_path, item)
+            for item in os.listdir(folder_path):
+                item_path = os.path.join(folder_path, item)
+                if os.path.isfile(item_path):
                     try:
-                        print(f"Loading custom logic for player '{player_name}' from: {item}")
-                        with open(custom_file_path, 'r', encoding='utf-8') as file:
-                            custom_script = file.read()
+                        with open(item_path, 'r', encoding='utf-8') as file:
+                            file_content = file.read()
+                            yaml = yutautil_APYaml(file_content)
+                            if yaml.game == "Friday Night Funkin":
+                                all_yamls.append(yaml)
+                    except Exception as e:
+                        print(f"Error reading YAML file {item}: {e}")
+                        continue
+
+            if not all_yamls:
+                print("No FNF YAML files found, using default songs")
+                # Create a default YAML for fallback
+                all_yamls = []
+
+            # Load custom logic files and execute them
+            custom_items = {}  # Dict of {player_name: [items]} to track player ownership
+            custom_trap_items = {}  # Dict of {player_name: [trap_items]} to track player ownership
+            custom_locations = {}
+            custom_access_rules = {}
+            custom_location_data = {}
+            custom_song_additions = {}  # Dict of {player_name: [songs_added]} to track player-specific additions
+            custom_song_exclusions = {}  # Dict of {player_name: [songs_excluded]} to track player-specific exclusions
+            custom_song_requirements = {}  # Dict of {player_name: [requirements]} to track player-specific requirements
+            vip_exclusive_song_additions:dict[str, list[str]] = {}
+
+            print("Loading custom AP logic files...")
+
+            # First, collect all player names from YAML files
+            player_names = set()
+            name_counter = {}  # Track name counts for {number} placeholder
+            for i, yaml_data in enumerate(all_yamls):
+                if hasattr(yaml_data, 'name'):
+                    # Process name placeholders using player index + 1 as player_id
+                    processed_name = yaml_data.handle_name(yaml_data.name, i + 1, name_counter)
+                    yaml_data.name = processed_name  # Update the YAML object with processed name
+                    player_names.add(processed_name)
+
+            # Check if fnfModData folder exists and use it if available
+            folder_path = f"{folder_path}\\fnfModData" if os.path.exists(f"{folder_path}\\fnfModData") and os.path.isdir(f"{folder_path}\\fnfModData") else folder_path
+
+            # First, process modData from YAML files (embedded compressed Python code)
+            print("Processing modData from YAML files...")
+            import base64
+            for yaml_data in all_yamls:
+                if hasattr(yaml_data.settings, 'modData') and yaml_data.settings.modData:
+                    player_name = getattr(yaml_data, 'name', 'Unknown Player')
+                    try:
+                        print(f"Processing embedded modData for player '{player_name}'")
+
+                        # Decode Base64 compressed Python script
+                        compressed_script = yaml_data.settings.modData
+                        custom_script = base64.b64decode(compressed_script).decode('utf-8')
 
                         # Create execution environment
                         exec_globals = {}
@@ -416,29 +266,37 @@ class FunkinWorld(World):
                             custom_data = exec_locals['get_custom_data_for_class']()
 
                         if custom_data:
-
-                            # Store player-specific data WITHOUT prefixes
+                            # Store player-specific data WITH player tracking
                             player_items = custom_data.get('items', [])
                             player_locations = custom_data.get('locations', {})  # Now contains location objects with rules
 
-                            # Add items without player prefix - ownership will be tracked in LocationData
+                            # Add items with player ownership tracking
+                            if player_name not in custom_items:
+                                custom_items[player_name] = []
                             for item_name in player_items:
-                                if item_name not in custom_items:  # Avoid duplicates
-                                    custom_items.append(item_name)
+                                if item_name not in custom_items[player_name]:  # Avoid duplicates for this player
+                                    custom_items[player_name].append(item_name)
 
-                            # Add trap items without player prefix - ownership will be tracked in LocationData
+                            # Add trap items with player ownership tracking
                             player_trap_items = custom_data.get('trap_items', [])
+                            if player_name not in custom_trap_items:
+                                custom_trap_items[player_name] = []
                             for trap_name in player_trap_items:
-                                if trap_name not in custom_trap_items:  # Avoid duplicates
-                                    custom_trap_items.append(trap_name)
+                                if trap_name not in custom_trap_items[player_name]:  # Avoid duplicates for this player
+                                    custom_trap_items[player_name].append(trap_name)
 
-                            # Track song additions and exclusions from scripts
+                            # Track song additions and exclusions from scripts - player-specific
                             player_song_additions = custom_data.get('song_additions', [])
                             player_song_exclusions = custom_data.get('song_exclusions', [])
                             player_song_requirements = custom_data.get('song_requirements', [])
-                            custom_song_additions.extend(player_song_additions)
-                            custom_song_exclusions.extend(player_song_exclusions)
-                            custom_song_requirements.extend(player_song_requirements)
+                            
+                            # Store with player association
+                            if player_song_additions:
+                                custom_song_additions[player_name] = player_song_additions
+                            if player_song_exclusions:
+                                custom_song_exclusions[player_name] = player_song_exclusions
+                            if player_song_requirements:
+                                custom_song_requirements[player_name] = player_song_requirements
                             vip_exclusive_song_additions[player_name] = player_song_additions
 
                             for yaml in all_yamls:
@@ -453,533 +311,747 @@ class FunkinWorld(World):
                                 location_info_with_player['player'] = player_name
                                 custom_location_data[location_name] = location_info_with_player
 
-                            print(f"Loaded {len(player_items)} custom items and {len(player_locations)} custom locations for player '{player_name}'")
+                            print(f"Loaded from embedded modData: {len(player_items)} custom items and {len(player_locations)} custom locations for player '{player_name}'")
 
                     except Exception as e:
-                        print(f"Error loading custom logic from {item}: {e}")
+                        print(f"Error processing embedded modData for player '{player_name}': {e}")
                         continue
 
-        # Initialize class-level data
-        song_items = {}
-        song_locations = {}
-        custom_location_items = {}  # New: store LocationData objects
-        item_name_to_id = {}
-        location_name_to_id = {}
-        item_id_index = fnfUtil.STARTING_CODE + 100
+            # Process sanity data from YAML files (embedded compressed JSON data)
+            print("Processing sanity data from YAML files...")
+            import json
+            sanity_items = []  # Track sanity items for starting song unlock
 
-        # Process all songs from all players
-        all_songs = set()
-
-        # Collect all unique songs from all players
-        for yaml_data in all_yamls:
-            # Check if the YAML has a valid song list
-            song_list = yaml_data.getSongList() if hasattr(yaml_data, 'getSongList') else None
-            player_name = getattr(yaml_data, 'name', 'Unknown Player')
-
-            if not song_list or len(song_list) == 0:
-                # For automated systems, we can't access generation_is_fake in static context
-                # So we'll use inputimeout with a short timeout to auto-select for automated systems
-                print(f"\nWarning: Player '{player_name}' has no song list or an empty song list in their YAML file.")
-                print("Will timeout in 30 seconds and auto-select option 1 if no input is provided.")
-                print("Options:")
-                print("1. Continue generation with base game songs")
-                print("2. Skip this player (will cancel generation)")
-                choice = None
-
-                while True:
+            for yaml_data in all_yamls:
+                if hasattr(yaml_data.settings, 'sanity') and yaml_data.settings.sanity:
+                    player_name = getattr(yaml_data, 'name', 'Unknown Player')
                     try:
-                        # Use inputimeout with 5 second timeout for automated systems
-                        choice = inputimeout(f"What would you like to do for player '{player_name}'? (1/2): ", timeout=30).strip()
-                    except:
-                        # Timeout occurred (likely automated system) - auto-select option 1
-                        choice = "1"
-                        print(f"Auto-fixing: Player '{player_name}' has no song list, automatically adding base game songs (timeout)")
+                        print(f"Processing embedded sanity data for player '{player_name}'")
 
-                    if choice == "1":
-                        print(f"Continuing generation for '{player_name}' with base game songs.")
-                        # Add base game songs to the YAML's song list
-                        if hasattr(yaml_data, 'settings') and hasattr(yaml_data.settings, 'songList'):
-                            if not yaml_data.settings.songList:
-                                yaml_data.settings.songList = FNFBaseList.omegaList.copy()
+                        # Decode Base64 compressed JSON data
+                        compressed_sanity = yaml_data.settings.sanity
+                        sanity_json = base64.b64decode(compressed_sanity).decode('utf-8')
+                        sanity_data = json.loads(sanity_json)
+
+                        # Check if stagesanity and charactersanity are enabled for this player
+                        stagesanity_enabled = getattr(yaml_data.settings, 'stagesanity', False)
+                        charactersanity_enabled = getattr(yaml_data.settings, 'charactersanity', False)
+
+                        # Process stage sanity data - only if stagesanity is enabled
+                        if 'Stage' in sanity_data and stagesanity_enabled:
+                            stage_data = sanity_data['Stage']
+                            print(f"Processing {len(stage_data)} stages for stagesanity")
+
+                            for stage_info in stage_data:
+                                stage_name = stage_info.get('name', '')
+                                stage_songs = stage_info.get('songs', [])
+
+                                if stage_name and stage_songs:
+                                    # Create stage item (no location - just an item)
+                                    stage_item_name = f"Stage: {stage_name}"
+                                    # Don't add sanity items to custom_items - they are separate
+                                    sanity_items.append({
+                                        'name': stage_item_name,
+                                        'type': 'stage',
+                                        'stage_name': stage_name,
+                                        'songs': stage_songs,
+                                        'player': player_name
+                                    })
+                        elif 'Stage' in sanity_data and not stagesanity_enabled:
+                            print(f"Skipping {len(sanity_data['Stage'])} stages for player '{player_name}' because stagesanity is disabled")
+
+                        # Process character sanity data - only if charactersanity is enabled
+                        if 'Character' in sanity_data and charactersanity_enabled:
+                            character_data = sanity_data['Character']
+                            print(f"Processing {len(character_data)} characters for charactersanity")
+
+                            for character_info in character_data:
+                                character_name = character_info.get('name', '')
+                                character_songs = character_info.get('songs', [])
+
+                                if character_name and character_songs:
+                                    # Create character item (no location - just an item)
+                                    character_item_name = f"Character: {character_name}"
+                                    # Don't add sanity items to custom_items - they are separate
+                                    sanity_items.append({
+                                        'name': character_item_name,
+                                        'type': 'character',
+                                        'character_name': character_name,
+                                        'songs': character_songs,
+                                        'player': player_name
+                                    })
+                        elif 'Character' in sanity_data and not charactersanity_enabled:
+                            print(f"Skipping {len(sanity_data['Character'])} characters for player '{player_name}' because charactersanity is disabled")
+
+                        # Updated logging to show actual processed counts
+                        stages_processed = len([item for item in sanity_items if item['type'] == 'stage' and item['player'] == player_name])
+                        characters_processed = len([item for item in sanity_items if item['type'] == 'character' and item['player'] == player_name])
+                        print(f"Loaded sanity data: {stages_processed} stages and {characters_processed} characters for player '{player_name}'")
+
+                    except Exception as e:
+                        print(f"Error processing embedded sanity data for player '{player_name}': {e}")
+                        continue
+
+            # Store sanity items for later use in create_items
+            sanity_items_list = sanity_items
+
+            # Look for player-specific custom data files
+            for item in os.listdir(folder_path):
+                if item.endswith("_customFNFData.py"):
+                    # Extract player name from filename
+                    player_name = item[:-len("_customFNFData.py")]
+
+                    # Only load if this player has a YAML file or if it's a general file
+                    if player_name in player_names or not player_names:
+                        custom_file_path = os.path.join(folder_path, item)
+                        try:
+                            print(f"Loading custom logic for player '{player_name}' from: {item}")
+                            with open(custom_file_path, 'r', encoding='utf-8') as file:
+                                custom_script = file.read()
+
+                            # Create execution environment
+                            exec_globals = {}
+                            exec_locals = {}
+
+                            # Execute the custom script
+                            exec(custom_script, exec_globals, exec_locals)
+
+                            # Get the custom data - check for new class-based approach first
+                            custom_data = None
+                            if 'INSTANCE' in exec_locals:
+                                # New class-based approach
+                                instance = exec_locals['INSTANCE']
+                                if hasattr(instance, 'get_custom_data_for_class'):
+                                    custom_data = instance.get_custom_data_for_class()
+                            elif 'get_custom_data_for_class' in exec_locals:
+                                # Legacy function-based approach
+                                custom_data = exec_locals['get_custom_data_for_class']()
+
+                            if custom_data:
+
+                                # Store player-specific data WITHOUT prefixes
+                                player_items = custom_data.get('items', [])
+                                player_locations = custom_data.get('locations', {})  # Now contains location objects with rules
+
+                                # Add items without player prefix - ownership will be tracked in LocationData
+                                for item_name in player_items:
+                                    if item_name not in custom_items:  # Avoid duplicates
+                                        custom_items.append(item_name)
+
+                                # Add trap items without player prefix - ownership will be tracked in LocationData
+                                player_trap_items = custom_data.get('trap_items', [])
+                                for trap_name in player_trap_items:
+                                    if trap_name not in custom_trap_items:  # Avoid duplicates
+                                        custom_trap_items.append(trap_name)
+
+                                # Track song additions and exclusions from scripts
+                                player_song_additions = custom_data.get('song_additions', [])
+                                player_song_exclusions = custom_data.get('song_exclusions', [])
+                                player_song_requirements = custom_data.get('song_requirements', [])
+                                if player_song_additions:
+                                    custom_song_additions[player_name] = player_song_additions
+                                if player_song_exclusions:
+                                    custom_song_exclusions[player_name] = player_song_exclusions
+                                if player_song_requirements:
+                                    custom_song_requirements[player_name] = player_song_requirements
+                                vip_exclusive_song_additions[player_name] = player_song_additions
+
+                                for yaml in all_yamls:
+                                    if yaml.name == player_name:
+                                        for song in player_song_additions:
+                                            yaml.settings.songList.append(song['name'])
+
+                                # Store location data with ownership tracking (no prefixes)
+                                for location_name, location_obj in player_locations.items():
+                                    # Add player info to location data
+                                    location_info_with_player = location_obj.copy()
+                                    location_info_with_player['player'] = player_name
+                                    custom_location_data[location_name] = location_info_with_player
+
+                                print(f"Loaded {len(player_items)} custom items and {len(player_locations)} custom locations for player '{player_name}'")
+
+                        except Exception as e:
+                            print(f"Error loading custom logic from {item}: {e}")
+                            continue
+
+            # Initialize class-level data
+            song_items = {}
+            song_locations = {}
+            custom_location_items = {}  # New: store LocationData objects
+            item_name_to_id = {}
+            location_name_to_id = {}
+            item_id_index = fnfUtil.STARTING_CODE + 100
+
+            # Process all songs from all players
+            all_songs = set()
+
+            # Collect all unique songs from all players
+            for yaml_data in all_yamls:
+                # Check if the YAML has a valid song list
+                song_list = yaml_data.getSongList() if hasattr(yaml_data, 'getSongList') else None
+                player_name = getattr(yaml_data, 'name', 'Unknown Player')
+
+                if not song_list or len(song_list) == 0:
+                    # For automated systems, we can't access generation_is_fake in static context
+                    # So we'll use inputimeout with a short timeout to auto-select for automated systems
+                    print(f"\nWarning: Player '{player_name}' has no song list or an empty song list in their YAML file.")
+                    print("Will timeout in 30 seconds and auto-select option 1 if no input is provided.")
+                    print("Options:")
+                    print("1. Continue generation with base game songs")
+                    print("2. Skip this player (will cancel generation)")
+                    choice = None
+
+                    while True:
+                        try:
+                            # Use inputimeout with 5 second timeout for automated systems
+                            choice = inputimeout(f"What would you like to do for player '{player_name}'? (1/2): ", timeout=30).strip()
+                        except:
+                            # Timeout occurred (likely automated system) - auto-select option 1
+                            choice = "1"
+                            print(f"Auto-fixing: Player '{player_name}' has no song list, automatically adding base game songs (timeout)")
+
+                        if choice == "1":
+                            print(f"Continuing generation for '{player_name}' with base game songs.")
+                            # Add base game songs to the YAML's song list
+                            if hasattr(yaml_data, 'settings') and hasattr(yaml_data.settings, 'songList'):
+                                if not yaml_data.settings.songList:
+                                    yaml_data.settings.songList = FNFBaseList.omegaList.copy()
+                                else:
+                                    yaml_data.settings.songList.extend(FNFBaseList.omegaList)
                             else:
-                                yaml_data.settings.songList.extend(FNFBaseList.omegaList)
+                                # Create settings and songList if they don't exist
+                                if not hasattr(yaml_data, 'settings'):
+                                    yaml_data.settings = type('Settings', (), {})()
+                                yaml_data.settings.songList = FNFBaseList.omegaList.copy()
+
+                            # Now get the updated song list
+                            song_list = yaml_data.getSongList()
+                            break
+                        elif choice == "2":
+                            raise ValueError(f"Player '{player_name}' has an empty or invalid song list in their YAML file. Generation cannot continue.")
                         else:
-                            # Create settings and songList if they don't exist
-                            if not hasattr(yaml_data, 'settings'):
-                                yaml_data.settings = type('Settings', (), {})()
-                            yaml_data.settings.songList = FNFBaseList.omegaList.copy()
+                            print("Invalid choice. Please enter 1 or 2.")
 
-                        # Now get the updated song list
-                        song_list = yaml_data.getSongList()
-                        break
-                    elif choice == "2":
-                        raise ValueError(f"Player '{player_name}' has an empty or invalid song list in their YAML file. Generation cannot continue.")
-                    else:
-                        print("Invalid choice. Please enter 1 or 2.")
+                if song_list:
+                    for song in song_list:
+                        # Clean the song name
+                        cleaned_song = yutautil_APYaml.clean_yaml_song_name(song)
 
-            if song_list:
-                for song in song_list:
-                    # Clean the song name
-                    cleaned_song = yutautil_APYaml.clean_yaml_song_name(song)
+                        if cleaned_song:
+                            all_songs.add(cleaned_song)
 
-                    if cleaned_song:
-                        all_songs.add(cleaned_song)
+            # Add fallback songs if no custom songs found
+            if not all_songs:
+                all_songs.update(FNFBaseList.omegaList)
 
-        # Add fallback songs if no custom songs found
-        if not all_songs:
-            all_songs.update(FNFBaseList.omegaList)
+            print(f"Found {len(all_songs)} unique songs across all players: {list(all_songs)}")
 
-        print(f"Found {len(all_songs)} unique songs across all players: {list(all_songs)}")
+            # Track all used item IDs to prevent overlaps
+            used_item_ids = set()
 
-        # Track all used item IDs to prevent overlaps
-        used_item_ids = set()
+            # Add existing item IDs to the tracking set
+            used_item_ids.add(fnfUtil.SHOW_TICKET_CODE)
+            used_item_ids.update(fnfUtil.filler_items.values())
+            used_item_ids.update(fnfUtil.trap_filler_items.values())
+            used_item_ids.update(fnfUtil.normal_items.values())
+            used_item_ids.update(fnfUtil.one_time_items.values())
+            used_item_ids.update(fnfUtil.trap_items.values())
+            used_item_ids.update(fnfUtil.z11_permatrap_items.values())
+            used_item_ids.update(fnfUtil.z11_antitrap_items.values())
+            used_item_ids.update(fnfUtil.z11_hardmode_items.values())
 
-        # Add existing item IDs to the tracking set
-        used_item_ids.add(fnfUtil.SHOW_TICKET_CODE)
-        used_item_ids.update(fnfUtil.filler_items.values())
-        used_item_ids.update(fnfUtil.trap_filler_items.values())
-        used_item_ids.update(fnfUtil.normal_items.values())
-        used_item_ids.update(fnfUtil.one_time_items.values())
-        used_item_ids.update(fnfUtil.trap_items.values())
-        used_item_ids.update(fnfUtil.z11_permatrap_items.values())
-        used_item_ids.update(fnfUtil.z11_antitrap_items.values())
-        used_item_ids.update(fnfUtil.z11_hardmode_items.values())
+            # Create SongData for all songs
+            for song in all_songs:
+                cur_song_name = song
+                # Ensure song item ID doesn't conflict with existing items
+                while item_id_index in used_item_ids:
+                    item_id_index += 1
 
-        # Create SongData for all songs
-        for song in all_songs:
-            cur_song_name = song
-            # Ensure song item ID doesn't conflict with existing items
-            while item_id_index in used_item_ids:
+                item_id = item_id_index
+                # isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
+                isModded = True
+
+                if not isModded:
+                    continue
+
+                # Create song data - we'll assign players later
+                song_items[cur_song_name] = SongData(
+                    item_id,
+                    isModded,
+                    cur_song_name,
+                    "",  # Will be set per-instance
+                    []  # Will be populated per-instance
+                )
+                used_item_ids.add(item_id)
                 item_id_index += 1
 
-            item_id = item_id_index
-            # isModded = cur_song_name.capitalize().replace("-", " ") not in FNFBaseList.baseSongList
-            isModded = True
+            # Create all possible locations for all songs
+            # Use a reasonable starting point and sequential allocation to prevent overlaps
+            used_location_ids = set()  # Track all used location IDs to prevent duplicates
+            location_id_counter = item_id_index + 1  # Start location IDs after item IDs
 
-            if not isModded:
-                continue
-
-            # Create song data - we'll assign players later
-            song_items[cur_song_name] = SongData(
-                item_id,
-                isModded,
-                cur_song_name,
-                "",  # Will be set per-instance
-                []  # Will be populated per-instance
-            )
-            used_item_ids.add(item_id)
-            item_id_index += 1
-
-        # Create all possible locations for all songs
-        # Use a reasonable starting point and sequential allocation to prevent overlaps
-        used_location_ids = set()  # Track all used location IDs to prevent duplicates
-        location_id_counter = item_id_index + 1  # Start location IDs after item IDs
-
-        for song_name, song_data in song_items.items():
-            # Song completion locations
-            for j in range(2):
-                while location_id_counter in used_location_ids:
+            for song_name, song_data in song_items.items():
+                # Song completion locations
+                for j in range(2):
+                    while location_id_counter in used_location_ids:
+                        location_id_counter += 1
+                    location_id = location_id_counter
+                    song_locations[f"{song_name}-{j}"] = location_id
+                    used_location_ids.add(location_id)
                     location_id_counter += 1
-                location_id = location_id_counter
-                song_locations[f"{song_name}-{j}"] = location_id
-                used_location_ids.add(location_id)
-                location_id_counter += 1
 
-            # Note check locations
-            for j in range(3):
-                while location_id_counter in used_location_ids:
+                # Note check locations
+                for j in range(3):
+                    while location_id_counter in used_location_ids:
+                        location_id_counter += 1
+                    location_id = location_id_counter
+                    song_locations[f"Note {j}: {song_name}"] = location_id
+                    used_location_ids.add(location_id)
                     location_id_counter += 1
-                location_id = location_id_counter
-                song_locations[f"Note {j}: {song_name}"] = location_id
-                used_location_ids.add(location_id)
-                location_id_counter += 1
 
-        # Create custom locations using LocationData objects - start after song locations
-        current_custom_id = location_id_counter + 100  # Small gap after song locations
+            # Create custom locations using LocationData objects - start after song locations
+            current_custom_id = location_id_counter + 100  # Small gap after song locations
 
-        # Group custom locations by location name to track ownership
-        location_ownership = {}
-        for location_name, location_info in custom_location_data.items():
-            player_owner = location_info.get('player', '')
+            # Group custom locations by location name to track ownership
+            location_ownership = {}
+            for location_name, location_info in custom_location_data.items():
+                player_owner = location_info.get('player', '')
 
-            if location_name not in location_ownership:
-                # Ensure this custom location ID is unique
-                while current_custom_id in used_location_ids:
+                if location_name not in location_ownership:
+                    # Ensure this custom location ID is unique
+                    while current_custom_id in used_location_ids:
+                        current_custom_id += 1
+
+                    location_ownership[location_name] = {
+                        'id': current_custom_id,
+                        'players': [],
+                        'origin_song': location_info.get('origin_song', ''),
+                        'origin_mod': location_info.get('origin_mod', ''),
+                        'access_rule': location_info.get('access_rule')  # Rule is now part of location object
+                    }
+                    used_location_ids.add(current_custom_id)
                     current_custom_id += 1
 
-                location_ownership[location_name] = {
-                    'id': current_custom_id,
-                    'players': [],
-                    'origin_song': location_info.get('origin_song', ''),
-                    'origin_mod': location_info.get('origin_mod', ''),
-                    'access_rule': location_info.get('access_rule')  # Rule is now part of location object
-                }
-                used_location_ids.add(current_custom_id)
-                current_custom_id += 1
+                # Add player to ownership list
+                if player_owner and player_owner not in location_ownership[location_name]['players']:
+                    location_ownership[location_name]['players'].append(player_owner)
 
-            # Add player to ownership list
-            if player_owner and player_owner not in location_ownership[location_name]['players']:
-                location_ownership[location_name]['players'].append(player_owner)
+            # Create LocationData objects for custom locations with validation
+            for location_name, ownership_info in location_ownership.items():
+                # Validate location - skip if name or origin song is null/empty
+                if not location_name or not location_name.strip():
+                    print(f"Skipping invalid location: empty name")
+                    continue
 
-        # Create LocationData objects for custom locations with validation
-        for location_name, ownership_info in location_ownership.items():
-            # Validate location - skip if name or origin song is null/empty
-            if not location_name or not location_name.strip():
-                print(f"Skipping invalid location: empty name")
-                continue
+                origin_song = ownership_info['origin_song']
+                if not origin_song or not origin_song.strip():
+                    print(f"Skipping invalid location '{location_name}': empty origin song")
+                    continue
 
-            origin_song = ownership_info['origin_song']
-            if not origin_song or not origin_song.strip():
-                print(f"Skipping invalid location '{location_name}': empty origin song")
-                continue
+                # Check for duplicate location names and resolve conflicts
+                duplicate_suffix = 1
+                original_location_name = location_name
+                while location_name in custom_location_items:
+                    location_name = f"{original_location_name}_{duplicate_suffix}"
+                    duplicate_suffix += 1
+                    print(f"Resolved duplicate location name: {original_location_name} -> {location_name}")
 
-            # Check for duplicate location names and resolve conflicts
-            duplicate_suffix = 1
-            original_location_name = location_name
-            while location_name in custom_location_items:
-                location_name = f"{original_location_name}_{duplicate_suffix}"
-                duplicate_suffix += 1
-                print(f"Resolved duplicate location name: {original_location_name} -> {location_name}")
+                custom_location_items[location_name] = LocationData(
+                    ownership_info['id'],
+                    location_name,
+                    ownership_info['players'][0] if ownership_info['players'] else "",  # Primary owner
+                    ownership_info['players'],  # All players who can access
+                    ownership_info['origin_song'],
+                    ownership_info['origin_mod'],
+                    ownership_info['access_rule']
+                )
+                # Add to location name-to-id mapping
+                custom_locations[location_name] = ownership_info['id']
 
-            custom_location_items[location_name] = LocationData(
-                ownership_info['id'],
-                location_name,
-                ownership_info['players'][0] if ownership_info['players'] else "",  # Primary owner
-                ownership_info['players'],  # All players who can access
-                ownership_info['origin_song'],
-                ownership_info['origin_mod'],
-                ownership_info['access_rule']
-            )
-            # Add to location name-to-id mapping
-            custom_locations[location_name] = ownership_info['id']
+            # Add custom items with their own IDs - ensure no conflicts with existing items
+            custom_item_ids = {}
+            # Start custom item IDs after the current highest item ID with a small gap
+            current_item_id = max(used_item_ids) + 100 if used_item_ids else item_id_index + 100
 
-        # Add custom items with their own IDs - ensure no conflicts with existing items
-        custom_item_ids = {}
-        # Start custom item IDs after the current highest item ID with a small gap
-        current_item_id = max(used_item_ids) + 100 if used_item_ids else item_id_index + 100
+            # Flatten all custom items from all players (dict of {player_name: [items]})
+            for player_name, player_items in custom_items.items():
+                for item_name in player_items:
+                    # Ensure this custom item ID doesn't conflict with any existing item
+                    while current_item_id in used_item_ids:
+                        current_item_id += 1
+                    custom_item_ids[item_name] = current_item_id
+                    used_item_ids.add(current_item_id)
+                    current_item_id += 1
 
-        for item_name in custom_items:
-            # Ensure this custom item ID doesn't conflict with any existing item
-            while current_item_id in used_item_ids:
+            # Add custom trap items with their own IDs - start after custom items
+            custom_trap_item_ids = {}
+            for player_name, player_traps in custom_trap_items.items():
+                for item_name in player_traps:
+                    # Ensure this custom trap item ID doesn't conflict with any existing item
+                    while current_item_id in used_item_ids:
+                        current_item_id += 1
+                    custom_trap_item_ids[item_name] = current_item_id
+                    used_item_ids.add(current_item_id)
+                    current_item_id += 1
+
+            # Add sanity items with their own IDs - start after custom trap items
+            sanity_item_ids = {}
+            for sanity_item in sanity_items_list:
+                item_name = sanity_item['name']
+                # Ensure this sanity item ID doesn't conflict with any existing item
+                while current_item_id in used_item_ids:
+                    current_item_id += 1
+                sanity_item_ids[item_name] = current_item_id
+                used_item_ids.add(current_item_id)
                 current_item_id += 1
-            custom_item_ids[item_name] = current_item_id
-            used_item_ids.add(current_item_id)
-            current_item_id += 1
 
-        # Add custom trap items with their own IDs - start after custom items
-        custom_trap_item_ids = {}
-        for item_name in custom_trap_items:
-            # Ensure this custom trap item ID doesn't conflict with any existing item
-            while current_item_id in used_item_ids:
-                current_item_id += 1
-            custom_trap_item_ids[item_name] = current_item_id
-            used_item_ids.add(current_item_id)
-            current_item_id += 1
-
-        # Add sanity items with their own IDs - start after custom trap items
-        sanity_item_ids = {}
-        for sanity_item in sanity_items_list:
-            item_name = sanity_item['name']
-            # Ensure this sanity item ID doesn't conflict with any existing item
-            while current_item_id in used_item_ids:
-                current_item_id += 1
-            sanity_item_ids[item_name] = current_item_id
-            used_item_ids.add(current_item_id)
-            current_item_id += 1
-
-        # Pre-calculate location IDs for ALL valid sanity items
-        # CRITICAL: Base the ID allocation on actual used_location_ids to prevent overlaps
-        # This ensures sanity location IDs don't conflict with song, custom, or bundle locations
-        sanity_location_ids = {}
-        
-        # Start sanity locations after the highest currently used location ID
-        sanity_location_id_base = max(used_location_ids) + 500 if used_location_ids else location_id_counter + 500  # Large gap to be safe
-        sanity_location_id_counter = sanity_location_id_base
-        
-        for sanity_item in sanity_items_list:
-            item_name = sanity_item['name']
-            location_name = f"Use {item_name}"
-            # Allocate a unique ID for this sanity location
-            location_id = sanity_location_id_counter
-            sanity_location_id_counter += 1
-            sanity_location_ids[location_name] = location_id
-            used_location_ids.add(location_id)  # Track to prevent collisions with other location types
-
-        # Generate song bundle placeholders with reserved IDs
-        # Song assignment happens during create_items() with proper seeded randomization
-        song_bundles = {}  # Placeholder bundles with reserved IDs
-        bundle_locations = {}
-        bundle_id_counter = max(used_item_ids) + 200 if used_item_ids else item_id_index + 200
-        # Bundle locations must start after sanity locations to avoid conflicts
-        bundle_location_id_counter = max(used_location_ids) + 500 if used_location_ids else location_id_counter + 500
-
-        # Process each player's bundle settings
-        bundle_set_counter = 1
-        for yaml_data in all_yamls:
-            player_name = yaml_data.name if hasattr(yaml_data, 'name') else f"Player{all_yamls.index(yaml_data) + 1}"
-
-            # Get bundle settings from YAML with proper None-checking
-            bundle_weight = getattr(yaml_data.settings, 'songBundleWeight', 25) if hasattr(yaml_data, 'settings') else 0
-            bundle_weight = 25 if bundle_weight is None else bundle_weight
+            # Pre-calculate location IDs for ALL valid sanity items
+            # CRITICAL: Base the ID allocation on actual used_location_ids to prevent overlaps
+            # This ensures sanity location IDs don't conflict with song, custom, or bundle locations
+            sanity_location_ids = {}
             
-            bundle_enabled = getattr(yaml_data.settings, 'songBundleEnabled', False) if hasattr(yaml_data, 'settings') else False
-            bundle_enabled = False if bundle_enabled is None else bundle_enabled
+            # Start sanity locations after the highest currently used location ID
+            sanity_location_id_base = max(used_location_ids) + 500 if used_location_ids else location_id_counter + 500  # Large gap to be safe
+            sanity_location_id_counter = sanity_location_id_base
             
-            bundle_min_size = getattr(yaml_data.settings, 'songBundleMinSize', 2) if hasattr(yaml_data, 'settings') else 2
-            bundle_min_size = 2 if bundle_min_size is None else bundle_min_size
-            
-            bundle_max_size = getattr(yaml_data.settings, 'songBundleMaxSize', 5) if hasattr(yaml_data, 'settings') else 5
-            bundle_max_size = 5 if bundle_max_size is None else bundle_max_size
-            
-            bundle_limit = getattr(yaml_data.settings, 'songBundleLimit', None) if hasattr(yaml_data, 'settings') else None
-            bundle_limit = None if bundle_limit is None else bundle_limit
+            for sanity_item in sanity_items_list:
+                item_name = sanity_item['name']
+                location_name = f"Use {item_name}"
+                # Allocate a unique ID for this sanity location
+                location_id = sanity_location_id_counter
+                sanity_location_id_counter += 1
+                sanity_location_ids[location_name] = location_id
+                used_location_ids.add(location_id)  # Track to prevent collisions with other location types
 
+            # Generate song bundle placeholders with reserved IDs
+            # Song assignment happens during create_items() with proper seeded randomization
+            song_bundles = {}  # Placeholder bundles with reserved IDs
+            bundle_locations = {}
+            bundle_id_counter = max(used_item_ids) + 200 if used_item_ids else item_id_index + 200
+            # Bundle locations must start after sanity locations to avoid conflicts
+            bundle_location_id_counter = max(used_location_ids) + 500 if used_location_ids else location_id_counter + 500
 
+            # Process each player's bundle settings
+            bundle_set_counter = 1
+            for yaml_data in all_yamls:
+                player_name = yaml_data.name if hasattr(yaml_data, 'name') else f"Player{all_yamls.index(yaml_data) + 1}"
 
-            if not bundle_enabled or bundle_weight <= 0:
-                print(f"Bundles disabled for {player_name}")
-                continue
-
-            if bundle_enabled and (bundle_max_size and bundle_min_size) and bundle_max_size < bundle_min_size:
-                print(f"Invalid bundle settings for {player_name}: max size {bundle_max_size} is less than min size {bundle_min_size}.")
-                class SillyError(Exception):
-                    pass
-                raise SillyError(f"Invalid bundle settings for {player_name}: max size {bundle_max_size} is less than min size {bundle_min_size}.")
-
-            # Get this player's song count based on YAML song list and limit
-            yaml_song_list = yaml_data.getSongList() if hasattr(yaml_data, 'getSongList') else []
-            song_limit = getattr(yaml_data.settings, 'song_limit', 5) if hasattr(yaml_data, 'settings') else 5
-            song_limit = 5 if song_limit is None else song_limit
-            
-            # Count available songs that exist in our song items
-            available_song_count = 0
-            for song in yutautil_APYaml.clean_yaml_song_list(yaml_song_list):
-                cleaned_song = song
-                if cleaned_song in song_items:
-                    available_song_count += 1
-            
-            # Apply the lower of: song limit or actual song count
-            player_song_count = min(song_limit, available_song_count)
-
-            if player_song_count < bundle_min_size:
-                print(f"Not enough songs for {player_name} to create bundles (need at least {bundle_min_size}, have {player_song_count})")
-                continue
-
-            # Calculate how many bundles to create based on weight
-            total_songs = player_song_count
-            max_possible_bundles = total_songs // bundle_min_size
-            
-            # Treat weights > 10 as percentages directly, weights 0-10 as needing *10 conversion
-            if bundle_weight > 10:
-                bundle_percentage = min(100, bundle_weight)  # Direct percentage (cap at 100%)
-            else:
-                bundle_percentage = min(100, bundle_weight * 10)  # Convert 0-10 scale to percentage
-            
-            # Use custom bundle limit if provided, otherwise use reasonable default (25% of songs max)
-            if bundle_limit is not None and bundle_limit > 0:
-                max_reasonable_bundles = bundle_limit
-            else:
-                max_reasonable_bundles = max(1, total_songs // 4)  # At most 1 bundle per 4 songs
-            
-            percentage_based_bundles = int((bundle_percentage / 100) * max_possible_bundles)
-            target_bundle_count = min(max_reasonable_bundles, max(1, percentage_based_bundles))
-
-            print(f"Planning {target_bundle_count} bundles for {player_name} (weight: {bundle_weight}%, max limit: {max_reasonable_bundles})")
-
-            # Create bundle placeholders with reserved IDs (songs assigned later in create_items)
-            for i in range(target_bundle_count):
-                bundle_name = f"Mixtape: Set {bundle_set_counter + i}"
-                bundle_item_id = bundle_id_counter
+                # Get bundle settings from YAML with proper None-checking
+                bundle_weight = getattr(yaml_data.settings, 'songBundleWeight', 25) if hasattr(yaml_data, 'settings') else 0
+                bundle_weight = 25 if bundle_weight is None else bundle_weight
                 
-                # Ensure bundle item ID is unique - increment if it conflicts
-                while bundle_item_id in used_item_ids:
-                    bundle_item_id += 1
+                bundle_enabled = getattr(yaml_data.settings, 'songBundleEnabled', False) if hasattr(yaml_data, 'settings') else False
+                bundle_enabled = False if bundle_enabled is None else bundle_enabled
                 
-                # Ensure bundle location ID is unique - increment if it conflicts
-                bundle_location_id = bundle_location_id_counter
-                while bundle_location_id in used_location_ids:
-                    bundle_location_id += 1
+                bundle_min_size = getattr(yaml_data.settings, 'songBundleMinSize', 2) if hasattr(yaml_data, 'settings') else 2
+                bundle_min_size = 2 if bundle_min_size is None else bundle_min_size
                 
-                # Create bundle placeholder
-                bundle_data = {
-                    'name': bundle_name,
-                    'songs': [],  # Will be populated in create_items
-                    'item_id': bundle_item_id,
-                    'location_id': bundle_location_id,
-                    'player': player_name,
-                    'min_size': bundle_min_size,
-                    'max_size': bundle_max_size,
-                    'bundle_index': i
-                }
+                bundle_max_size = getattr(yaml_data.settings, 'songBundleMaxSize', 5) if hasattr(yaml_data, 'settings') else 5
+                bundle_max_size = 5 if bundle_max_size is None else bundle_max_size
                 
-                song_bundles[bundle_name] = bundle_data
-                bundle_locations[bundle_name] = bundle_location_id
+                bundle_limit = getattr(yaml_data.settings, 'songBundleLimit', None) if hasattr(yaml_data, 'settings') else None
+                bundle_limit = None if bundle_limit is None else bundle_limit
                 
-                bundle_id_counter = bundle_item_id + 1  # Continue from the actual assigned ID
-                bundle_location_id_counter = bundle_location_id + 1  # Continue from the actual assigned ID
-                used_item_ids.add(bundle_item_id)
-                used_location_ids.add(bundle_location_id)
+                # Ensure bundle_limit is an int, not a string
+                if isinstance(bundle_limit, str):
+                    try:
+                        bundle_limit = int(bundle_limit)
+                    except (ValueError, TypeError):
+                        bundle_limit = 0
 
-            bundle_set_counter += target_bundle_count
-            print(f"Reserved {target_bundle_count} bundle IDs for {player_name}")
+                if not bundle_enabled or bundle_weight <= 0:
+                    print(f"Bundles disabled for {player_name}")
+                    continue
 
-        # Add victory location with a fixed ID - this is the generic victory goal location
-        victory_location_id = max(used_location_ids) + 1 if used_location_ids else location_id_counter + 1
-        # Ensure victory location ID is unique - increment if it conflicts
-        while victory_location_id in used_location_ids:
-            victory_location_id += 1
-        victory_location_ids = {"Victory Goal": victory_location_id}
-        used_location_ids.add(victory_location_id)
+                if bundle_enabled and (bundle_max_size and bundle_min_size) and bundle_max_size < bundle_min_size:
+                    print(f"Invalid bundle settings for {player_name}: max size {bundle_max_size} is less than min size {bundle_min_size}.")
+                    class SillyError(Exception):
+                        pass
+                    raise SillyError(f"Invalid bundle settings for {player_name}: max size {bundle_max_size} is less than min size {bundle_min_size}.")
 
-        # Build final name-to-ID mappings
-        bundle_item_ids = {bundle_name: bundle_data['item_id'] for bundle_name, bundle_data in song_bundles.items()}
-        
-        item_name_to_id = dict(ChainMap(
-            {fnfUtil.SHOW_TICKET_NAME: fnfUtil.SHOW_TICKET_CODE},
-            {fnfUtil.GIRLFRIENDS_LOVE_NAME: fnfUtil.GIRLFRIENDS_LOVE_CODE},
-            fnfUtil.filler_items,
-            fnfUtil.normal_items,
-            fnfUtil.one_time_items,
-            fnfUtil.trap_items,
-            fnfUtil.trap_filler_items,
-            {name: data.code for name, data in song_items.items()},
-            custom_item_ids,  # Add custom items
-            custom_trap_item_ids,  # Add custom trap items
-            sanity_item_ids,  # Add sanity items
-            bundle_item_ids,  # Add bundle items
-            fnfUtil.z11_permatrap_items,
-            fnfUtil.z11_antitrap_items,
-            fnfUtil.z11_hardmode_items,
-        ))
+                # Get this player's song count based on YAML song list and limit
+                yaml_song_list = yaml_data.getSongList() if hasattr(yaml_data, 'getSongList') else []
+                song_limit = getattr(yaml_data.settings, 'song_limit', 5) if hasattr(yaml_data, 'settings') else 5
+                song_limit = 5 if song_limit is None else song_limit
+                
+                # Count available songs that exist in our song items
+                available_song_count = 0
+                for song in yutautil_APYaml.clean_yaml_song_list(yaml_song_list):
+                    cleaned_song = song
+                    if cleaned_song in song_items:
+                        available_song_count += 1
+                
+                # Apply the lower of: song limit or actual song count
+                player_song_count = min(song_limit, available_song_count)
 
-        # Validate and auto-fix any duplicate item IDs
-        all_item_ids = list(item_name_to_id.values())
-        unique_item_ids = set(all_item_ids)
-        if len(all_item_ids) != len(unique_item_ids):
-            # Found duplicates - fix them by reassigning to unique IDs
-            duplicate_count = len(all_item_ids) - len(unique_item_ids)
-            print(f"WARNING: Found {duplicate_count} duplicate item IDs! Auto-fixing...")
-            
-            # Find duplicates and reassign them to unique values
-            seen_ids = set()
-            next_available_id = max(used_item_ids) + 1000 if used_item_ids else item_id_index + 1000
-            fixed_count = 0
-            
-            for item_name in list(item_name_to_id.keys()):
-                item_id = item_name_to_id[item_name]
-                if item_id in seen_ids:
-                    # This is a duplicate, find a new unique ID for it
-                    while next_available_id in item_name_to_id.values() or next_available_id in seen_ids:
-                        next_available_id += 1
-                    print(f"Fixed duplicate: Reassigned item '{item_name}' from ID {item_id} to {next_available_id}")
-                    item_name_to_id[item_name] = next_available_id
-                    seen_ids.add(next_available_id)
-                    fixed_count += 1
+                if player_song_count < bundle_min_size:
+                    print(f"Not enough songs for {player_name} to create bundles (need at least {bundle_min_size}, have {player_song_count})")
+                    continue
+
+                # Calculate how many bundles to create based on weight
+                total_songs = player_song_count
+                max_possible_bundles = total_songs // bundle_min_size
+                
+                # Treat weights > 10 as percentages directly, weights 0-10 as needing *10 conversion
+                if bundle_weight > 10:
+                    bundle_percentage = min(100, bundle_weight)  # Direct percentage (cap at 100%)
                 else:
-                    seen_ids.add(item_id)
+                    bundle_percentage = min(100, bundle_weight * 10)  # Convert 0-10 scale to percentage
+                
+                print(f"Bundle Info: Player: {player_name}, Songs: {total_songs}, Weight: {bundle_weight}%, Calculated Bundle Percentage: {bundle_percentage}%, Max Possible Bundles: {max_possible_bundles}")
+                print(f"Bundle Size: Min {bundle_min_size}, Max {bundle_max_size}, Limit: {bundle_limit if bundle_limit is not None else 'No Limit'}")
+                # Use custom bundle limit if provided, otherwise use reasonable default (25% of songs max)
+                if (bundle_limit is not None and str(bundle_limit).strip() != "null") and bundle_limit > 0:
+                    max_reasonable_bundles = bundle_limit
+                else:
+                    max_reasonable_bundles = max(1, total_songs // 4)  # At most 1 bundle per 4 songs
+                
+                percentage_based_bundles = int((bundle_percentage / 100) * max_possible_bundles)
+                target_bundle_count = min(max_reasonable_bundles, max(1, percentage_based_bundles))
+
+                print(f"Planning {target_bundle_count} bundles for {player_name} (weight: {bundle_weight}%, max limit: {max_reasonable_bundles})")
+
+                # Create bundle placeholders with reserved IDs (songs assigned later in create_items)
+                for i in range(target_bundle_count):
+                    bundle_name = f"Mixtape: Set {bundle_set_counter + i}"
+                    bundle_item_id = bundle_id_counter
+                    
+                    # Ensure bundle item ID is unique - increment if it conflicts
+                    while bundle_item_id in used_item_ids:
+                        bundle_item_id += 1
+                    
+                    # Ensure bundle location ID is unique - increment if it conflicts
+                    bundle_location_id = bundle_location_id_counter
+                    while bundle_location_id in used_location_ids:
+                        bundle_location_id += 1
+                    
+                    # Create bundle placeholder
+                    bundle_data = {
+                        'name': bundle_name,
+                        'songs': [],  # Will be populated in create_items
+                        'item_id': bundle_item_id,
+                        'location_id': bundle_location_id,
+                        'player': player_name,
+                        'min_size': bundle_min_size,
+                        'max_size': bundle_max_size,
+                        'bundle_index': i
+                    }
+                    
+                    song_bundles[bundle_name] = bundle_data
+                    bundle_locations[bundle_name] = bundle_location_id
+                    
+                    bundle_id_counter = bundle_item_id + 1  # Continue from the actual assigned ID
+                    bundle_location_id_counter = bundle_location_id + 1  # Continue from the actual assigned ID
+                    used_item_ids.add(bundle_item_id)
+                    used_location_ids.add(bundle_location_id)
+
+                bundle_set_counter += target_bundle_count
+                print(f"Reserved {target_bundle_count} bundle IDs for {player_name}")
+
+            # Add victory location with a fixed ID - this is the generic victory goal location
+            victory_location_id = max(used_location_ids) + 1 if used_location_ids else location_id_counter + 1
+            # Ensure victory location ID is unique - increment if it conflicts
+            while victory_location_id in used_location_ids:
+                victory_location_id += 1
+            victory_location_ids = {"Victory Goal": victory_location_id}
+            used_location_ids.add(victory_location_id)
+
+            # Build final name-to-ID mappings
+            bundle_item_ids = {bundle_name: bundle_data['item_id'] for bundle_name, bundle_data in song_bundles.items()}
             
-            print(f"Auto-fixed {fixed_count} duplicate item IDs")
-            
-            # Recount after fixing
-            unique_item_ids = set(item_name_to_id.values())
-            if len(item_name_to_id) != len(unique_item_ids):
-                # Still has duplicates after auto-fix - this is a serious error
-                print(f"ERROR: Still found duplicates after auto-fix!")
+            item_name_to_id = dict(ChainMap(
+                {fnfUtil.SHOW_TICKET_NAME: fnfUtil.SHOW_TICKET_CODE},
+                {fnfUtil.GIRLFRIENDS_LOVE_NAME: fnfUtil.GIRLFRIENDS_LOVE_CODE},
+                fnfUtil.filler_items,
+                fnfUtil.normal_items,
+                fnfUtil.one_time_items,
+                fnfUtil.trap_items,
+                fnfUtil.trap_filler_items,
+                {name: data.code for name, data in song_items.items()},
+                custom_item_ids,  # Add custom items
+                custom_trap_item_ids,  # Add custom trap items
+                sanity_item_ids,  # Add sanity items
+                bundle_item_ids,  # Add bundle items
+                fnfUtil.z11_permatrap_items,
+                fnfUtil.z11_antitrap_items,
+                fnfUtil.z11_hardmode_items,
+            ))
+
+            # Validate and auto-fix any duplicate item IDs
+            all_item_ids = list(item_name_to_id.values())
+            unique_item_ids = set(all_item_ids)
+            if len(all_item_ids) != len(unique_item_ids):
+                # Found duplicates - fix them by reassigning to unique IDs
+                duplicate_count = len(all_item_ids) - len(unique_item_ids)
+                print(f"WARNING: Found {duplicate_count} duplicate item IDs! Auto-fixing...")
+                
+                # Find duplicates and reassign them to unique values
                 seen_ids = set()
-                duplicates = set()
-                for item_name, item_id in item_name_to_id.items():
+                next_available_id = max(used_item_ids) + 1000 if used_item_ids else item_id_index + 1000
+                fixed_count = 0
+                
+                for item_name in list(item_name_to_id.keys()):
+                    item_id = item_name_to_id[item_name]
                     if item_id in seen_ids:
-                        duplicates.add(item_id)
-                        print(f"Duplicate item ID {item_id} used by item: {item_name}")
-                    seen_ids.add(item_id)
-                if duplicates:
-                    raise ValueError(f"Found duplicate item IDs that could not be auto-fixed: {duplicates}")
+                        # This is a duplicate, find a new unique ID for it
+                        while next_available_id in item_name_to_id.values() or next_available_id in seen_ids:
+                            next_available_id += 1
+                        print(f"Fixed duplicate: Reassigned item '{item_name}' from ID {item_id} to {next_available_id}")
+                        item_name_to_id[item_name] = next_available_id
+                        seen_ids.add(next_available_id)
+                        fixed_count += 1
+                    else:
+                        seen_ids.add(item_id)
+                
+                print(f"Auto-fixed {fixed_count} duplicate item IDs")
+                
+                # Recount after fixing
+                unique_item_ids = set(item_name_to_id.values())
+                if len(item_name_to_id) != len(unique_item_ids):
+                    # Still has duplicates after auto-fix - this is a serious error
+                    print(f"ERROR: Still found duplicates after auto-fix!")
+                    seen_ids = set()
+                    duplicates = set()
+                    for item_name, item_id in item_name_to_id.items():
+                        if item_id in seen_ids:
+                            duplicates.add(item_id)
+                            print(f"Duplicate item ID {item_id} used by item: {item_name}")
+                        seen_ids.add(item_id)
+                    if duplicates:
+                        raise ValueError(f"Found duplicate item IDs that could not be auto-fixed: {duplicates}")
 
-        print(f"All item IDs are unique: {len(unique_item_ids)} unique item IDs")
-        print(item_name_to_id)
+            print(f"All item IDs are unique: {len(unique_item_ids)} unique item IDs")
+            print(item_name_to_id)
 
-        location_name_to_id = dict(ChainMap(
-            song_locations,
-            custom_locations,  # Add custom locations
-            sanity_location_ids,  # Add sanity item locations
-            bundle_locations,  # Add bundle locations
-            victory_location_ids  # Add victory location
-        ))
+            location_name_to_id = dict(ChainMap(
+                song_locations,
+                custom_locations,  # Add custom locations
+                sanity_location_ids,  # Add sanity item locations
+                bundle_locations,  # Add bundle locations
+                victory_location_ids  # Add victory location
+            ))
 
-        # Validate and auto-fix any duplicate location IDs
-        all_location_ids = list(location_name_to_id.values())
-        unique_location_ids = set(all_location_ids)
-        if len(all_location_ids) != len(unique_location_ids):
-            # Found duplicates - fix them by reassigning to unique IDs
-            duplicate_count = len(all_location_ids) - len(unique_location_ids)
-            print(f"WARNING: Found {duplicate_count} duplicate location IDs! Auto-fixing...")
-            
-            # Find duplicates and reassign them to unique values
-            seen_ids = set()
-            next_available_id = max(used_location_ids) + 1000 if used_location_ids else location_id_counter + 1000
-            fixed_count = 0
-            
-            for loc_name in list(location_name_to_id.keys()):
-                loc_id = location_name_to_id[loc_name]
-                if loc_id in seen_ids:
-                    # This is a duplicate, find a new unique ID for it
-                    while next_available_id in location_name_to_id.values() or next_available_id in seen_ids:
-                        next_available_id += 1
-                    print(f"Fixed duplicate: Reassigned location '{loc_name}' from ID {loc_id} to {next_available_id}")
-                    location_name_to_id[loc_name] = next_available_id
-                    seen_ids.add(next_available_id)
-                    fixed_count += 1
-                else:
-                    seen_ids.add(loc_id)
-            
-            print(f"Auto-fixed {fixed_count} duplicate location IDs")
-            
-            # Recount after fixing
-            unique_location_ids = set(location_name_to_id.values())
-            if len(location_name_to_id) != len(unique_location_ids):
-                # Still has duplicates after auto-fix - this is a serious error
-                print(f"ERROR: Still found duplicates after auto-fix!")
+            # Validate and auto-fix any duplicate location IDs
+            all_location_ids = list(location_name_to_id.values())
+            unique_location_ids = set(all_location_ids)
+            if len(all_location_ids) != len(unique_location_ids):
+                # Found duplicates - fix them by reassigning to unique IDs
+                duplicate_count = len(all_location_ids) - len(unique_location_ids)
+                print(f"WARNING: Found {duplicate_count} duplicate location IDs! Auto-fixing...")
+                
+                # Find duplicates and reassign them to unique values
                 seen_ids = set()
-                duplicates = set()
-                for loc_name, loc_id in location_name_to_id.items():
+                next_available_id = max(used_location_ids) + 1000 if used_location_ids else location_id_counter + 1000
+                fixed_count = 0
+                
+                for loc_name in list(location_name_to_id.keys()):
+                    loc_id = location_name_to_id[loc_name]
                     if loc_id in seen_ids:
-                        duplicates.add(loc_id)
-                        print(f"Duplicate location ID {loc_id} used by location: {loc_name}")
-                    seen_ids.add(loc_id)
-                if duplicates:
-                    raise ValueError(f"Found duplicate location IDs that could not be auto-fixed: {duplicates}")
+                        # This is a duplicate, find a new unique ID for it
+                        while next_available_id in location_name_to_id.values() or next_available_id in seen_ids:
+                            next_available_id += 1
+                        print(f"Fixed duplicate: Reassigned location '{loc_name}' from ID {loc_id} to {next_available_id}")
+                        location_name_to_id[loc_name] = next_available_id
+                        seen_ids.add(next_available_id)
+                        fixed_count += 1
+                    else:
+                        seen_ids.add(loc_id)
+                
+                print(f"Auto-fixed {fixed_count} duplicate location IDs")
+                
+                # Recount after fixing
+                unique_location_ids = set(location_name_to_id.values())
+                if len(location_name_to_id) != len(unique_location_ids):
+                    # Still has duplicates after auto-fix - this is a serious error
+                    print(f"ERROR: Still found duplicates after auto-fix!")
+                    seen_ids = set()
+                    duplicates = set()
+                    for loc_name, loc_id in location_name_to_id.items():
+                        if loc_id in seen_ids:
+                            duplicates.add(loc_id)
+                            print(f"Duplicate location ID {loc_id} used by location: {loc_name}")
+                        seen_ids.add(loc_id)
+                    if duplicates:
+                        raise ValueError(f"Found duplicate location IDs that could not be auto-fixed: {duplicates}")
 
-        # Store YAML data for instances to use
-        _all_yamls = all_yamls
-        _class_data_initialized = True
+            # Store YAML data for instances to use
+            _all_yamls = all_yamls
+            _class_data_initialized = True
 
-        print(f"Initialized {len(item_name_to_id)} items and {len(location_name_to_id)} locations")
-        print(f"All item IDs are unique: {len(unique_item_ids)} unique item IDs")
-        print(f"All location IDs are unique: {len(unique_location_ids)} unique location IDs")
-        print(f"Custom data: {len(custom_items)} items, {len(custom_trap_items)} trap items, {len(sanity_items_list)} sanity items, {len(custom_locations)} custom locations, {len(sanity_location_ids)} sanity locations")
+            print(f"Initialized {len(item_name_to_id)} items and {len(location_name_to_id)} locations")
+            print(f"All item IDs are unique: {len(unique_item_ids)} unique item IDs")
+            print(f"All location IDs are unique: {len(unique_location_ids)} unique location IDs")
+            print(f"Custom data: {sum(len(items) for items in custom_items.values())} items, {sum(len(traps) for traps in custom_trap_items.values())} trap items, {len(sanity_items_list)} sanity items, {len(custom_locations)} custom locations, {len(sanity_location_ids)} sanity locations")
 
-        # Print all of the special items, and locations using pprint.
-        pprint({"Custom Items": custom_items, "Custom Trap Items": custom_trap_items, "Sanity Items": [item['name'] for item in sanity_items_list], "Custom Locations": list(custom_locations.keys()), "Sanity Locations": list(sanity_location_ids.keys())})
+            # Print all of the special items, and locations using pprint.
+            # Flatten custom items/traps for display
+            all_custom_items_flat = []
+            for player_items in custom_items.values():
+                all_custom_items_flat.extend(player_items)
+            all_custom_traps_flat = []
+            for player_traps in custom_trap_items.values():
+                all_custom_traps_flat.extend(player_traps)
+            
+            pprint({"Custom Items": all_custom_items_flat, "Custom Trap Items": all_custom_traps_flat, "Sanity Items": [item['name'] for item in sanity_items_list], "Custom Locations": list(custom_locations.keys()), "Sanity Locations": list(sanity_location_ids.keys())})
 
-        # Wait for 3 seconds before continuing.
-        import time
-        time.sleep(3)
-        # pprint({
-        #     "items": item_name_to_id,
-        #     "locations": location_name_to_id,
-        #     "custom_access_rules": custom_access_rules,
-        #     "custom_location_data": custom_location_data,
-        #     "custom_items": custom_items,
-        #     "custom_trap_items": custom_trap_items,
-        #     "custom_location_items": custom_location_items,
-        #     "custom_song_additions": custom_song_additions,
-        #     "custom_song_exclusions": custom_song_exclusions,
-        #     "custom_song_requirements": custom_song_requirements,
-        #     "song_items": song_items,
-        #     "song_locations": song_locations,
-        #     "all_yamls": _all_yamls,
-        #     "vip_songs": vip_exclusive_song_additions
-        # })
+            # Wait for 3 seconds before continuing.
+            import time
+            time.sleep(3)
+            # pprint({
+            #     "items": item_name_to_id,
+            #     "locations": location_name_to_id,
+            #     "custom_access_rules": custom_access_rules,
+            #     "custom_location_data": custom_location_data,
+            #     "custom_items": custom_items,
+            #     "custom_trap_items": custom_trap_items,
+            #     "custom_location_items": custom_location_items,
+            #     "custom_song_additions": custom_song_additions,
+            #     "custom_song_exclusions": custom_song_exclusions,
+            #     "custom_song_requirements": custom_song_requirements,
+            #     "song_items": song_items,
+            #     "song_locations": song_locations,
+            #     "all_yamls": _all_yamls,
+            #     "vip_songs": vip_exclusive_song_additions
+            # })
+        except Exception as e:
+            import traceback
+            import time
+            # Print detailed error information with full traceback
+            print("\n" + "="*80)
+            print("[FNF WORLD INITIALIZATION ERROR]")
+            print("="*80)
+            print("\nAn unhandled error occurred during FNF world setup (YAML inspection).")
+            print("\n" + "-"*80)
+            print("ERROR DETAILS:")
+            print("-"*80)
+            print(f"Exception Type: {type(e).__name__}")
+            print(f"Exception Message: {str(e)}")
+            print("\n" + "-"*80)
+            print("FULL TRACEBACK:")
+            print("-"*80)
+            traceback.print_exc()
+            print("-"*80)
+            print("\n⚠️  NOTE: If Archipelago shows an error about 'no functional world',")
+            print("    it is because this YAML inspection failed.")
+            print("    Please check the error details above for more information.")
+            print("\n" + "="*80)
+            print(f"\nContact Yutamon or Z11Gaming on Discord with the above error details for support.")
+            print("="*80 + "\n")
+            input("Press ENTER to acknowledge this error and stop generation...")
+            time.sleep(8)  # Small delay to ensure the message is read
+            print("Stopping generation.")
+
+            class FunkinException(Exception):
+                """Custom exception for FNF world initialization errors."""
+                pass
+            
+            # Raise FunkinException with comprehensive error message
+            raise FunkinException(
+                f"FNF world initialization failed during YAML inspection (stuff() execution). "
+                f"Error: {type(e).__name__}: {str(e)}. "
+                f"This likely indicates an issue with your YAML files or custom logic. "
+                f"Check the detailed error output above for more information."
+            ) from e
 
         return {
             "items": item_name_to_id,
@@ -1017,12 +1089,12 @@ class FunkinWorld(World):
     # Custom data from loaded scripts
     custom_access_rules: dict = _yaml_data.get("custom_access_rules", {})  # Legacy - will be removed
     custom_location_data: dict = _yaml_data.get("custom_location_data", {})  # Legacy - will be removed
-    custom_items_list: list = _yaml_data.get("custom_items", [])
-    custom_trap_items_list: list = _yaml_data.get("custom_trap_items", [])  # New: custom trap items
+    custom_items_list: dict = _yaml_data.get("custom_items", {})  # Dict[player_name: [items]]
+    custom_trap_items_list: dict = _yaml_data.get("custom_trap_items", {})  # Dict[player_name: [trap_items]]
     custom_location_items: Dict[str, LocationData] = _yaml_data.get("custom_location_items", {})
-    custom_song_additions: list = _yaml_data.get("custom_song_additions", [])  # Songs added by scripts
-    custom_song_exclusions: list = _yaml_data.get("custom_song_exclusions", [])  # Songs excluded by scripts
-    custom_song_requirements: list = _yaml_data.get("custom_song_requirements", [])  # Song requirements from scripts
+    custom_song_additions: dict = _yaml_data.get("custom_song_additions", {})  # Dict[player_name: [songs_added]]
+    custom_song_exclusions: dict = _yaml_data.get("custom_song_exclusions", {})  # Dict[player_name: [songs_excluded]]
+    custom_song_requirements: dict = _yaml_data.get("custom_song_requirements", {})  # Dict[player_name: [requirements]]
 
     # Bundle data from class initialization
     song_bundles: dict = _yaml_data.get("song_bundles", {})
@@ -1073,7 +1145,9 @@ class FunkinWorld(World):
                 import traceback
                 traceback.print_exc()
                 # Fall back to normal FunkinWorld
-                return object.__new__(cls)
+                class TrackingError(Exception):
+                    pass
+                raise TrackingError(f"Failed to create tracker world: {e}") from e
         
         # Normal path for real generation
         instance = super(FunkinWorld, cls).__new__(cls)
@@ -1291,10 +1365,10 @@ class FunkinWorld(World):
         self.items_in_general = {}
         self.songLimit = 5
 
-        # Initialize custom song modification tracking
-        self._custom_song_additions = self.custom_song_additions.copy()
-        self._custom_song_exclusions = self.custom_song_exclusions.copy()
-        self._custom_song_requirements = self.custom_song_requirements.copy()
+        # Initialize custom song modification tracking - get player-specific data
+        self._custom_song_additions = self.custom_song_additions.get(self.player_name, []).copy()
+        self._custom_song_exclusions = self.custom_song_exclusions.get(self.player_name, []).copy()
+        self._custom_song_requirements = self.custom_song_requirements.get(self.player_name, []).copy()
         
         # Initialize instance-specific bundle tracking
         self.songs_in_bundles = set()  # Songs that are bundled for this player
@@ -1477,7 +1551,7 @@ class FunkinWorld(World):
         """Process the song list with randomization and limiting using pre-initialized class data"""
         # Get the original song list from YAML
         raw_song_list = self._clean_yaml_song_list(getattr(self, 'original_song_list', []))
-        for song in self._yaml_data['custom_song_additions']:
+        for song in self._custom_song_additions:
             cleaned_custom_song = self._clean_yaml_song_name(song.get('name', ''))
             if cleaned_custom_song:
                 raw_song_list.append(cleaned_custom_song)
@@ -1491,15 +1565,24 @@ class FunkinWorld(World):
         # Filter to only include songs that exist in our class-level song_items
         available_songs = [song for song in cleaned_song_list if song in self.song_items]
 
-        # Add any missing base songs that should be available to all players
-        for song in set(FNFBaseList.omegaList):
-            if song in self.song_items and song not in available_songs:
-                available_songs.append(song)
+        # # Add any missing base songs that should be available to all players
+        # for song in set(FNFBaseList.omegaList):
+        #     if song in self.song_items and song not in available_songs:
+        #         available_songs.append(song)
 
         if not available_songs:
             # Emergency fallback - use any song from class data
-            available_songs = self._clean_yaml_song_list(list(self.song_items.keys())[:5])
+            available_songs = self._clean_yaml_song_list(list(FNFBaseList.omegaList)[:5])
             print(f"Emergency fallback: Using first 5 songs from class data for {self.player_name}")
+            import time
+            time.sleep(2)
+
+            print("Actually, no, you should have songs.")
+            pprint(f"Debug info: cleaned_song_list={cleaned_song_list}, song_items={list(self.song_items.keys())}")
+            print("Make sure that you are generating via Mixtape Engine.")
+            class NoSongsError(Exception):
+                pass
+            raise NoSongsError(f"No valid songs found for player {self.player_name} after processing. Please check your YAML configuration and ensure you have valid songs listed.")
 
         # Randomize the song list
         self.random.shuffle(available_songs)
@@ -1759,8 +1842,22 @@ class FunkinWorld(World):
                 print(f"[UT Re-gen] ✓ Restored {len(restored_song_locations)} song location mappings")
             
             # Restore custom items/locations/bundles
-            self.__class__.custom_items_list = ut_slot_data.get('custom_items', []).copy()
-            self.__class__.custom_trap_items_list = ut_slot_data.get('custom_trap_items', []).copy()
+            # Handle both old (list) and new (dict) formats for backwards compatibility
+            raw_custom_items = ut_slot_data.get('custom_items', {})
+            if isinstance(raw_custom_items, list):
+                # Old format: flat list - convert to dict with empty player
+                self.__class__.custom_items_list = {'': raw_custom_items}
+            else:
+                # New format: dict with player_name keys
+                self.__class__.custom_items_list = raw_custom_items.copy()
+            
+            raw_custom_traps = ut_slot_data.get('custom_trap_items', {})
+            if isinstance(raw_custom_traps, list):
+                # Old format: flat list - convert to dict with empty player
+                self.__class__.custom_trap_items_list = {'': raw_custom_traps}
+            else:
+                # New format: dict with player_name keys
+                self.__class__.custom_trap_items_list = raw_custom_traps.copy()
             
             # Reconstruct custom_location_items from saved data
             restored_custom_locations = ut_slot_data.get('custom_locations', {})
@@ -1787,20 +1884,46 @@ class FunkinWorld(World):
             self.__class__.song_bundles = ut_slot_data.get('song_bundles', {}).copy()
             self.__class__.bundle_locations = ut_slot_data.get('bundle_locations', {}).copy()
             
-            print(f"[UT Re-gen] ✓ Restored custom content ({len(self.custom_items_list)} items, {len(self.custom_trap_items_list)} trap items)")
+            # Count total items and traps across all players
+            total_custom_items = sum(len(items) for items in self.custom_items_list.values())
+            total_custom_traps = sum(len(traps) for traps in self.custom_trap_items_list.values())
+            print(f"[UT Re-gen] ✓ Restored custom content ({total_custom_items} items, {total_custom_traps} trap items)")
             print(f"[UT Re-gen] ✓ Restored sanity data ({len(self.sanity_items_list)} items, {len(self.sanity_location_ids)} locations)")
             print(f"[UT Re-gen] ✓ Restored bundles ({len(self.song_bundles)} bundles)")
             
             # Restore player song additions
             self.__class__.player_song_additions = ut_slot_data.get('player_song_additions', {}).copy()
             
-            # Restore custom song data
-            self.__class__.custom_song_requirements = ut_slot_data.get('custom_song_requirements', []).copy()
-            self.__class__.custom_song_additions = ut_slot_data.get('custom_song_additions', []).copy()
-            self.__class__.custom_song_exclusions = ut_slot_data.get('custom_song_exclusions', []).copy()
-            self._custom_song_requirements = ut_slot_data.get('custom_song_requirements', []).copy()
-            self._custom_song_additions = ut_slot_data.get('custom_song_additions', []).copy()
-            self._custom_song_exclusions = ut_slot_data.get('custom_song_exclusions', []).copy()
+            # Restore custom song data - now player-specific dicts with backwards compatibility
+            raw_song_reqs = ut_slot_data.get('custom_song_requirements', {})
+            if isinstance(raw_song_reqs, list):
+                # Old format compatibility
+                self.__class__.custom_song_requirements = {} 
+                self._custom_song_requirements = []
+            else:
+                self.__class__.custom_song_requirements = raw_song_reqs.copy()
+                # For instance, get only this player's requirements
+                self._custom_song_requirements = raw_song_reqs.get(self.player_name, [])
+            
+            raw_song_adds = ut_slot_data.get('custom_song_additions', {})
+            if isinstance(raw_song_adds, list):
+                # Old format compatibility
+                self.__class__.custom_song_additions = {}
+                self._custom_song_additions = []
+            else:
+                self.__class__.custom_song_additions = raw_song_adds.copy()
+                # For instance, get only this player's additions
+                self._custom_song_additions = raw_song_adds.get(self.player_name, [])
+            
+            raw_song_excls = ut_slot_data.get('custom_song_exclusions', {})
+            if isinstance(raw_song_excls, list):
+                # Old format compatibility
+                self.__class__.custom_song_exclusions = {}
+                self._custom_song_exclusions = []
+            else:
+                self.__class__.custom_song_exclusions = raw_song_excls.copy()
+                # For instance, get only this player's exclusions
+                self._custom_song_exclusions = raw_song_excls.get(self.player_name, [])
             
             # Restore sanity requirements cache if available
             if hasattr(self, '_sanity_requirements_cache') or 'sanity_requirements_cache' in ut_slot_data:
@@ -1994,15 +2117,19 @@ class FunkinWorld(World):
             bundle_id = bundle_data['item_id']
             return FunkinFixedItem(name, ItemClassification.progression_deprioritized_skip_balancing, bundle_id, self.player)
 
-        # Check for custom items (no longer using player prefixes)
-        if name in self.custom_items_list:
+        # Check for custom items (check if in any player's custom items)
+        all_custom_items = []
+        for player_items in self.custom_items_list.values():
+            all_custom_items.extend(player_items)
+        
+        if name in all_custom_items:
             # Get the custom item ID from the mapping
             custom_item_id = self.item_name_to_id.get(name)
             if custom_item_id:
                 # Check if this custom item is required by any song requirement
                 if self._is_item_required_by_songs(name):
                     # Make it a progression item since it's required for song access
-                    return FunkinFixedItem(name, ItemClassification.progression_skip_balancing, custom_item_id, self.player)
+                    return FunkinFixedItem(name, ItemClassification.progression, custom_item_id, self.player)
                 else:
                     # Regular useful item
                     return FunkinFixedItem(name, ItemClassification.useful, custom_item_id, self.player)
@@ -2050,7 +2177,8 @@ class FunkinWorld(World):
             return FunkinFixedItem(name, ItemClassification.progression, z11HardMode, self.player)
 
         # Check for custom trap items
-        if name in self.custom_trap_items_list:
+        # Check if name appears in any player's custom trap items
+        if any(name in traps for traps in self.custom_trap_items_list.values()):
             # Get the custom trap item ID from the mapping
             custom_trap_id = self.item_name_to_id.get(name)
             if custom_trap_id:
@@ -2095,8 +2223,8 @@ class FunkinWorld(World):
     def get_available_traps(self) -> List[str]:
         full_trap_list = list(self.fnfUtil.trap_items.keys())
 
-        # Always add all custom trap items (no gating conditions)
-        player_custom_traps = list(self.custom_trap_items_list)
+        # Always add only THIS PLAYER'S custom trap items
+        player_custom_traps = list(self.custom_trap_items_list.get(self.player_name, []))
 
         full_trap_list.extend(player_custom_traps)
 
@@ -2121,7 +2249,8 @@ class FunkinWorld(World):
             return self.trap_items_weights[theTrap]
 
         # Custom trap items default to weight 1 if not specified
-        if theTrap in self.custom_trap_items_list:
+        # Check if trap appears in any player's custom trap items
+        if any(theTrap in traps for traps in self.custom_trap_items_list.values()):
             return 1
 
         return 0 # if the trap doesn't exist/can't be found, don't try to add it
@@ -2131,8 +2260,11 @@ class FunkinWorld(World):
             return self.filter_items_weights[theFiller]
 
         # Custom trap items default to weight 1 if not specified
-        if theFiller in self.custom_trap_items_list:
+        # Check if filler appears in any player's custom trap items
+        if any(theFiller in traps for traps in self.custom_trap_items_list.values()):
             return 1
+        
+        return 0
 
     def check_item_weight(self, theItem:str):
         if self.items_in_general.keys().__contains__(theItem):
@@ -3104,14 +3236,14 @@ class FunkinWorld(World):
             if self.options.hard_mode.value:
                 estimated_item_count += min(self.location_count - estimated_item_count, len(self.fnfUtil.z11_hardmode_items))
 
-            estimated_item_count += min(self.location_count - estimated_item_count, len(self.custom_items_list))
+            # Custom items (count only for this player)
+            player_custom_items_count = len(self.custom_items_list.get(self.player_name, []))
+            estimated_item_count += min(self.location_count - estimated_item_count, player_custom_items_count)
 
-            # Custom items
-            estimated_item_count += min(self.location_count - estimated_item_count, len(self.custom_items_list))
-
-            # Custom trap items (if traps enabled)
+            # Custom trap items (if traps enabled, count only for this player)
             if self.options.trapAmount.value > 0:
-                estimated_item_count += min(self.location_count - estimated_item_count, len(self.custom_trap_items_list))
+                player_custom_traps_count = len(self.custom_trap_items_list.get(self.player_name, []))
+                estimated_item_count += min(self.location_count - estimated_item_count, player_custom_traps_count)
 
             # Estimate remaining slots for sanity items
             estimated_remaining_for_sanity = max(0, self.location_count - estimated_item_count)
@@ -3302,7 +3434,7 @@ class FunkinWorld(World):
             # then check to see if Hard Mode is enabled, so that we can randomize the elements
             if self.options.hard_mode.value:
                 for element in self.fnfUtil.z11_hardmode_items:
-                    if element == "Stage Access Key" and len(self.multiworld.players) == 1: # "because it'd be impossible otherwise lol" - Someone smarter than me
+                    if element == "Stage Access Key" and (self.multiworld.players) == 1: # "because it'd be impossible otherwise lol" - Someone smarter than me
                         self.multiworld.push_precollected(self.create_item(element))
                     else:
                         self.multiworld.itempool.append(self.create_item(element))
@@ -3349,8 +3481,8 @@ class FunkinWorld(World):
             # Add custom items first (priority items)
             remaining_slots = self.location_count - item_count
             if remaining_slots > 0:
-                # Always include all custom items (no gating conditions)
-                player_custom_items = list(self.custom_items_list)
+                # Get only custom items for this player from the dict structure
+                player_custom_items = list(self.custom_items_list.get(self.player_name, []))
 
                 custom_item_count = min(remaining_slots, len(player_custom_items))
                 print(f"Adding {custom_item_count} custom items: {player_custom_items[:custom_item_count]} (remaining slots: {remaining_slots})")
@@ -3364,8 +3496,8 @@ class FunkinWorld(World):
             # Add custom trap items (only if traps are enabled)
             remaining_slots = self.location_count - item_count
             if self.options.trapAmount.value > 0 and remaining_slots > 0:
-                # Always include all custom trap items (no gating conditions)
-                player_custom_traps = list(self.custom_trap_items_list)
+                # Get only custom trap items for this player from the dict structure
+                player_custom_traps = list(self.custom_trap_items_list.get(self.player_name, []))
 
                 custom_trap_count = min(remaining_slots, len(player_custom_traps))
                 print(f"Adding {custom_trap_count} custom traps: {player_custom_traps[:custom_trap_count]} (remaining slots: {remaining_slots})")
@@ -3523,16 +3655,27 @@ class FunkinWorld(World):
 
             # Validate that we have exactly the right number of items
             if item_count != self.location_count:
+                # Build set of ONLY THIS PLAYER'S custom items and traps
+                player_custom_items = set(self.custom_items_list.get(self.player_name, []))
+                player_custom_traps = set(self.custom_trap_items_list.get(self.player_name, []))
+                
+                # Count sanity items for this player
+                player_sanity_items = set()
+                if hasattr(self, 'sanity_items_list'):
+                    for sanity_item in self.sanity_items_list:
+                        if sanity_item.get('player') == self.player_name:
+                            player_sanity_items.add(sanity_item['name'])
+                
                 print(f"ERROR: Item count ({item_count}) doesn't match location count ({self.location_count}) for player {self.player_name}")
-                print(f"Item breakdown:")
+                print(f"Item breakdown (for {self.player_name} only):")
                 print(f"  - Tickets: {ticket_count}")
                 print(f"  - Songs: {len(song_keys_in_pool)}")
                 print(f"  - One-time items: {one_time_items_to_add}")
-                print(f"  - Custom items: {len([item for item in self.multiworld.itempool if hasattr(item, 'name') and item.name in self.custom_items_list])}")
-                print(f"  - Custom traps: {len([item for item in self.multiworld.itempool if hasattr(item, 'name') and item.name in self.custom_trap_items_list])}")
-                print(f"  - Sanity items: {len([item for item in self.multiworld.itempool if hasattr(item, 'name') and any(sanity['name'] == item.name for sanity in getattr(self, 'sanity_items_list', []))])}")
+                print(f"  - Custom items: {len([item for item in self.multiworld.itempool if hasattr(item, 'name') and item.name in player_custom_items])}")
+                print(f"  - Custom traps: {len([item for item in self.multiworld.itempool if hasattr(item, 'name') and item.name in player_custom_traps])}")
+                print(f"  - Sanity items: {len([item for item in self.multiworld.itempool if hasattr(item, 'name') and item.name in player_sanity_items])}")
                 print(f"  - Other items: {item_count - ticket_count - len(song_keys_in_pool) - one_time_items_to_add}")
-                raise ValueError(f"Item/location count mismatch: {item_count} items vs {self.location_count} locations")
+                raise ValueError(f"Item/location count mismatch for {self.player_name}: {item_count} items vs {self.location_count} locations")
 
             print(f"Successfully created {item_count} items for {self.location_count} locations for player {self.player_name}")
             print(f"=== END ITEM CREATION DEBUG ===\n")
