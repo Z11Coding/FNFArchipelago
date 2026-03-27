@@ -56,6 +56,18 @@ class RemoveEntranceLogic(Toggle):
     default = True
 
 
+class RespectEarlyLocations(Toggle):
+    """
+    Whether to respect early location placement when removing logic.
+    When enabled (True), logic removal happens at stage_pre_fill, which runs after
+    early location placement has already occurred.
+    When disabled (False), logic removal happens at stage_connect_entrances, which
+    runs earlier and ignores early location considerations.
+    """
+    display_name = "Respect Early Locations"
+    default = True
+
+
 class NoProgressionMaze(Toggle):
     """
     RISKY: When enabled, removes the original progression items from the pool and only provides
@@ -73,6 +85,7 @@ class NoLogicOptions(PerGameCommonOptions):
     progression_item_type: ProgressionItemType
     progression_item_locality: ProgressionItemLocality
     remove_entrance_logic: RemoveEntranceLogic
+    respect_early_locations: RespectEarlyLocations
     no_progression_maze: NoProgressionMaze
 
 
@@ -82,6 +95,7 @@ no_logic_option_groups = [
         ProgressionItemType,
         ProgressionItemLocality,
         RemoveEntranceLogic,
+        RespectEarlyLocations,
         NoProgressionMaze,
     ])
 ]

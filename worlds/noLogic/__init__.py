@@ -110,6 +110,7 @@ class NoLogicWorld(World):
         logger.warning("WARNING: No Logic Mode has been activated!")
         logger.warning("All access rules will be removed from ALL worlds.")
         logger.warning(f"Affected worlds: {', '.join(world_names)}")
+        logger.warning(f"Culprit: {self.player_name}")
         logger.warning("=" * 60)
         
         response: str
@@ -124,6 +125,14 @@ class NoLogicWorld(World):
                 raise NoLogicException("No Logic Mode requires confirmation from the host. Use --allow-no-logic to skip confirmation.")
         if response != "y":
             raise NoLogicException("Generation cancelled by host. No Logic Mode was not confirmed.")
+        
+        # Dynamically assign the logic removal method based on Respect Early Locations option
+        if self.options.respect_early_locations:
+            NoLogicWorld.stage_pre_fill = NoLogicWorld._remove_all_logic
+            logger.info("No Logic: Logic removal will run at stage_pre_fill (respecting early locations).")
+        else:
+            NoLogicWorld.stage_connect_entrances = NoLogicWorld._remove_all_logic
+            logger.info("No Logic: Logic removal will run at stage_connect_entrances (ignoring early locations).")
         
         if not self.options.add_progression_item:
             logger.info("No Logic: Progression items disabled via options")
@@ -269,14 +278,15 @@ class NoLogicWorld(World):
     #             self.options.item_links.value.append({"name": self.progression_items[player], "item_pool": item_names, "link_replacement": False})
                     
     def set_rules(self) -> None:
-        """Minimal rules setup - stage_set_rules will handle delogicking."""
+        """Minimal rules setup - stage_pre_fill will handle delogicking."""
         pass
 
     @classmethod
-    def stage_set_rules(cls, multiworld: MultiWorld) -> None:
+    def _remove_all_logic(cls, multiworld: MultiWorld) -> None:
         """
         Remove all logic from all worlds when No Logic is present.
-        This runs after all individual worlds have called their set_rules methods.
+        Dynamically assigned as stage_pre_fill or stage_connect_entrances
+        based on the Respect Early Locations option.
         """
         # Check if No Logic world is actually in the multiworld
         has_no_logic = any(
