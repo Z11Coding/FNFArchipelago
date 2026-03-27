@@ -185,6 +185,12 @@ class FunkinWorld(World):
             folder_path = sys.argv[
                 sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
 
+            print(f"Args Debug: {sys.argv}")
+            print(f"Using folder path: {folder_path}")
+
+            import time
+            time.sleep(1)  # Delay to allow time for user to read debug output before potential auto-fix actions
+
             if not os.path.isdir(folder_path):
                 raise ValueError(f"The path {folder_path} is not a valid directory.")
 
@@ -3701,6 +3707,52 @@ class FunkinWorld(World):
 
         print(f"Completion condition set: Need {self.get_ticket_win_count()} tickets AND '{self.victory_song_name}' song AND '{self.fnfUtil.GIRLFRIENDS_LOVE_NAME}'")
         print(f"=== END COMPLETION CONDITION ===\n")
+        
+        # Report gifting compatibility
+        self._report_gifting_players()
+
+    def _report_gifting_players(self) -> None:
+        """Report which FNF players have gifting enabled and have shared songs for trading."""
+        if not self.options.gifting.value:
+            return
+        
+        # Get this player's songs
+        try:
+            self_songs = set(self.get_songs_map(self.player_name))
+        except Exception:
+            self_songs = set()
+        
+        # Find other FunkinWorld players with gifting enabled
+        gifting_pairs = []
+        
+        try:
+            for player_id in self.multiworld.player_ids:
+                if player_id != self.player:
+                    other_world = self.multiworld.worlds.get(player_id)
+                    # Check if it's a FunkinWorld and has gifting enabled
+                    if (other_world and isinstance(other_world, FunkinWorld) and
+                        other_world.options.gifting.value):
+                        # Get other player's songs
+                        try:
+                            other_songs = set(other_world.get_songs_map(other_world.player_name))
+                        except Exception:
+                            other_songs = set()
+                        
+                        # Find common songs
+                        common_songs = self_songs & other_songs
+                        
+                        if common_songs:
+                            gifting_pairs.append((other_world.player_name, len(common_songs)))
+        except Exception:
+            pass
+        
+        # Report the result
+        if gifting_pairs:
+            for other_player, song_count in gifting_pairs:
+                print(f"[Gifting] {self.player_name} can trade {song_count} song(s) with {other_player}")
+        else:
+            print(f"[Gifting] {self.player_name} has gifting enabled but no shared songs with other FNF players")
+
 
     def get_trap_count(self) -> int:
         return self.options.trapAmount.value

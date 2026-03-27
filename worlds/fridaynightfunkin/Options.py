@@ -302,6 +302,14 @@ class Shop(Toggle):
     default = False
 
 
+class Gifting(Toggle):
+    """If enabled, allows all players with this option enabled to give each other songs that they share in-game.
+    The in-game gifting logic is handled by the client, this option is only needed for configuration.
+    """
+    display_name = "Enable Song Gifting"
+    default = False
+
+
 fnf_option_groups = [
     OptionGroup("Base Settings", [
         AllowMods,
@@ -315,7 +323,8 @@ fnf_option_groups = [
         TicketWinPercentage,
         gradeNeeded,
         accuracyNeeded,
-        AllowDuplicateSongs
+        AllowDuplicateSongs,
+        Gifting
     ]),
     OptionGroup("Traps", [
         trapAmount,
@@ -385,3 +394,4 @@ class FunkinOptions(PerGameCommonOptions):
     perma_traps: PermaTraps
     hard_mode: HardMode
     shop: Shop
+    gifting: Gifting
