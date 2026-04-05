@@ -512,6 +512,35 @@ class NoLogicWorld(World):
         self.progression_items_placed_worlds: Set[int] = set()  # Tracks which worlds have received a progression item
         self.progression_items_provided_by_worlds: Dict[int, Set[Tuple[Item, int]]] = {}  # Items MANUALLLY provided by each world as (Item, count) tuples.
     
+    @staticmethod
+    def _read_incompatibilities() -> Set[str]:
+        """
+        Read the incompatibilities.md file and return a set of incompatible game names.
+        
+        Returns:
+            Set of game names that are incompatible with No Logic
+        """
+        try:
+            incomp_file = Path(__file__).parent / "docs" / "incompatibilities.md"
+            if not incomp_file.exists():
+                return set()
+            
+            with open(incomp_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            incompatible_games = set()
+            for line in content.split('\n'):
+                line = line.strip()
+                if line.startswith('- '):
+                    game_name = line[2:].strip()
+                    if game_name:
+                        incompatible_games.add(game_name)
+            
+            return incompatible_games
+        except Exception as e:
+            logger.warning(f"No Logic: Could not read incompatibilities file: {e}")
+            return set()
+    
     def create_item_copy(self, item: Item) -> Item:
         """Creates an exact copy of an item, used for creating progression item copies.
         This will not only copy every field, but also the type, in case of a subclass with extra information.
@@ -571,6 +600,25 @@ class NoLogicWorld(World):
                 raise NoLogicException("No Logic Mode requires confirmation from the host. Use --allow-no-logic to skip confirmation.")
         if response != "y":
             raise NoLogicException("Generation cancelled by host. No Logic Mode was not confirmed.")
+
+        # Check for incompatible games
+        incompatible_games = self._read_incompatibilities()
+        if incompatible_games:
+            incompatible_in_multiworld = []
+            for player in other_worlds:
+                world = self.multiworld.worlds[player]
+                if world.game in incompatible_games:
+                    incompatible_in_multiworld.append(f"{world.game} (P{player})")
+            
+            if incompatible_in_multiworld:
+                logger.warning("=" * 60)
+                logger.warning("WARNING: Incompatible worlds detected with No Logic!")
+                logger.warning(f"Incompatible: {', '.join(incompatible_in_multiworld)}")
+                logger.warning("This combination may cause generation or bugs when hosting.")
+                logger.warning("=" * 60)
+                response = input("Would you like to proceed anyway? (y/n): ").strip().lower()
+                if response != "y":
+                    raise NoLogicException("Generation cancelled by host due to incompatible worlds.")
 
         for worlds in self.multiworld.worlds.values():
             if not isinstance(worlds, NoLogicWorld):
