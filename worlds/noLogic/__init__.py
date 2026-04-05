@@ -3,10 +3,13 @@
 # This software is released under the MIT License.
 # https://opensource.org/licenses/MIT
 
-from typing import Dict, Set, List, ClassVar, Type, Optional, Tuple
+from collections.abc import Callable, Mapping, Sequence
+from typing import Dict, Set, List, ClassVar, Type, Optional, Tuple, Any, Union, TypeVar, Generic, get_type_hints
+import inspect
 from BaseClasses import Region, Item, Location, ItemClassification, MultiWorld
 from worlds.AutoWorld import World, WebWorld
 from worlds.LauncherComponents import Component, components, Type as ComponentType
+from worlds.generic.Rules import forbid_item
 from .Options import *
 import logging
 import MultiServer
@@ -31,10 +34,278 @@ def launch_client(*args):
 components.append(Component("No Logic Client", func=launch_client, component_type=ComponentType.CLIENT, supports_uri=True, description="Collects progression items from other worlds when they are received."))
 
 # Reserved ID ranges for No Logic world
-# These allow us to generate items without knowing the multiworld size upfront
 NOLOGIC_BASE_ID = 100_000
-RESERVED_PROGRESSION_ITEMS = 500  # Enough for 500 parallel worlds
-RESERVED_LOCATIONS = 10000  # One per Progression item + extras
+RESERVED_PROGRESSION_ITEMS = 100_000  # Enough for most multiworlds... hopefully.
+RESERVED_LOCATIONS = 100_000  # One per Progression item + extras
+
+
+T = TypeVar('T')
+
+# Type alias for valid return_as types (any Sequence or Mapping type)
+ReturnAsType = Union[Type[list], Type[dict]]
+
+
+def _is_mapping_type(tp: type) -> bool:
+    """Check if a type is dict-like (Mapping)."""
+    try:
+        return issubclass(tp, Mapping)
+    except TypeError:
+        return False
+
+
+def _is_sequence_type(tp: type) -> bool:
+    """Check if a type is list-like (Sequence)."""
+    try:
+        return issubclass(tp, Sequence)
+    except TypeError:
+        return False
+
+# Making this as a tool for later. Don't mind me.
+class FuncStack(list, Generic[T]):
+    """
+    A generic stack to call multiple functions in sequence with type-constrained returns.
+    
+    Supports:
+    - Configurable return collection (list, dict, or other Sequence/Mapping types) via return_as parameter
+    - Automatic return type extraction from function annotations
+    - Per-function type constraints (explicit or auto-detected)
+    - Type validation with error raising on mismatch
+    
+    Examples:
+        >>> stack = FuncStack(return_as=list)
+        >>> stack.push(lambda: 42)
+        >>> stack.push(lambda: "hello")
+        >>> stack()  # Returns [42, "hello"]
+        
+        >>> def get_int() -> int: return 10
+        >>> def get_str() -> str: return "test"
+        >>> stack = FuncStack(return_as=dict, global_return_type=int)
+        >>> stack.push(get_int)  # Auto-detected return type: int
+        >>> stack.push(get_str, return_type=str)  # Override with explicit type
+        >>> stack()  # Returns {"get_int": 10, "get_str": "test"}
+        
+        >>> stack = FuncStack(return_as=dict)
+        >>> stack.push(get_int)  # Auto-detected: return type int from annotation
+        >>> stack()
+    """
+    
+    def __init__(
+        self,
+        return_as: ReturnAsType = list,
+        global_return_type: Optional[type] = None
+    ):
+        """
+        Initialize FuncStack with return collection configuration.
+        
+        Args:
+            return_as: Collection type to use for returns - list (default), dict, or other Sequence/Mapping
+            global_return_type: Optional type constraint applied to all functions unless overridden per-function
+            
+        Raises:
+            TypeError: If return_as is not a Sequence or Mapping type
+        """
+        super().__init__()
+        
+        # Validate return_as type
+        if not (_is_sequence_type(return_as) or _is_mapping_type(return_as)):
+            raise TypeError(
+                f"return_as must be a Sequence or Mapping type (list, dict, etc.), "
+                f"got {return_as}"
+            )
+        
+        self.return_as = return_as
+        self.global_return_type = global_return_type
+        self.func_type_constraints: Dict[Callable, Optional[type]] = {}
+    
+    def _extract_return_type(self, func: Callable) -> Optional[type]:
+        """
+        Extract return type annotation from a function.
+        
+        Args:
+            func: The function to inspect
+            
+        Returns:
+            The return type annotation if present and not NoneType, otherwise None
+        """
+        try:
+            hints = get_type_hints(func)
+            return_type = hints.get('return')
+            
+            # Return None if no annotation or annotation is NoneType
+            if return_type is not None and return_type is not type(None):
+                return return_type
+            
+        except Exception:
+            # get_type_hints can fail for various reasons (forward refs, etc.)
+            pass
+        
+        return None
+    
+    def push(self, func: Callable, return_type: Optional[type] = None) -> None:
+        """
+        Add a function to the stack with optional return type constraint.
+        
+        Automatically extracts return type from function annotations if not provided.
+        
+        Args:
+            func: The function to add
+            return_type: Optional type constraint for this function (overrides auto-detected type and global constraint)
+        """
+        self.append(func)
+        
+        # Use explicit return_type if provided, otherwise try to auto-detect
+        if return_type is not None:
+            self.func_type_constraints[func] = return_type
+        else:
+            auto_detected = self._extract_return_type(func)
+            self.func_type_constraints[func] = auto_detected
+    
+    def pop(self) -> Optional[Callable]:
+        """Remove and return the top function from the stack."""
+        if self:
+            func = super().pop()
+            self.func_type_constraints.pop(func, None)
+            return func
+        return None
+    
+    def __call__(self, *args, **kwargs) -> Union[List[Any], Dict[str, Any]]:
+        """
+        Execute all functions in order and return results based on return_as type.
+        
+        Type constraints are validated if specified (auto-detected, per-function, or global).
+        Raises TypeError if a function's return value doesn't match its constraint.
+        
+        Args:
+            *args: Positional arguments passed to each function
+            **kwargs: Keyword arguments passed to each function
+            
+        Returns:
+            Sequence of return values if return_as is a Sequence type (list, tuple, etc.)
+            Mapping of {function_name: return_value} if return_as is a Mapping type (dict, etc.)
+            
+        Raises:
+            TypeError: If a function's return value doesn't match its type constraint
+        """
+        # Initialize result collection based on return_as type
+        is_mapping = _is_mapping_type(self.return_as)
+        results = {} if is_mapping else []
+        
+        for i, func in enumerate(self):
+            result = func(*args, **kwargs)
+            
+            # Determine applicable type constraint (explicit > auto-detected > global)
+            expected_type = self.func_type_constraints.get(func) or self.global_return_type
+            
+            # Validate type constraint if specified
+            if expected_type and not isinstance(result, expected_type):
+                func_name = getattr(func, '__name__', f'func_{i}')
+                raise TypeError(
+                    f"Function {func_name} returned {type(result).__name__}, "
+                    f"expected {expected_type.__name__}"
+                )
+            
+            # Collect result in specified format
+            if is_mapping:
+                func_name = getattr(func, '__name__', f'func_{i}')
+                results[func_name] = result
+            else:
+                results.append(result)
+        
+        return results
+    def as_generator(self, *args, **kwargs):
+        """
+        Execute all functions in order and yield results one by one.
+        
+        Type constraints are validated if specified (auto-detected, per-function, or global).
+        Raises TypeError if a function's return value doesn't match its constraint.
+        
+        Args:
+            *args: Positional arguments passed to each function
+            **kwargs: Keyword arguments passed to each function
+            
+        Yields:
+            Each function's return value in order
+            
+        Raises:
+            TypeError: If a function's return value doesn't match its type constraint
+        """
+        for i, func in enumerate(self.copy()): # Use a copy of the list to allow modifications during iteration
+            result = func(*args, **kwargs)
+            
+            # Determine applicable type constraint (explicit > auto-detected > global)
+            expected_type = self.func_type_constraints.get(func) or self.global_return_type
+            
+            # Validate type constraint if specified
+            if expected_type and not isinstance(result, expected_type):
+                func_name = getattr(func, '__name__', f'func_{i}')
+                raise TypeError(
+                    f"Function {func_name} returned {type(result).__name__}, "
+                    f"expected {expected_type.__name__}"
+                )
+            
+            yield result
+    
+    def combine_to_single_function(self) -> Callable:
+        """
+        Combine all functions in the stack into a single callable that executes them in sequence.
+        
+        Creates a standalone function with no dependency on the FuncStack instance.
+        The returned function is independent and can be used after the FuncStack is destroyed.
+        
+        Returns:
+            A callable that executes all functions in order and returns results based on return_as configuration
+        """
+        # Capture all state needed for the standalone function
+        functions_copy = list(self).copy()  # Copy of all functions
+        constraints_copy = dict(self.func_type_constraints).copy()  # Copy of type constraints
+        return_as_type = self.return_as.copy()  # Return collection type (list, dict, etc.)
+        global_type = self.global_return_type  # Global type constraint
+        
+        def combined(*args, **kwargs) -> Union[List[Any], Dict[str, Any]]:
+            """
+            Standalone function that executes all captured functions in order.
+            
+            Type constraints are validated if specified.
+            Raises TypeError if a function's return value doesn't match its constraint.
+            
+            Args:
+                *args: Positional arguments passed to each function
+                **kwargs: Keyword arguments passed to each function
+                
+            Returns:
+                Sequence of return values if return_as is a Sequence type
+                Mapping of {function_name: return_value} if return_as is a Mapping type
+                
+            Raises:
+                TypeError: If a function's return value doesn't match its type constraint
+            """
+            is_mapping = _is_mapping_type(return_as_type)
+            results = {} if is_mapping else []
+            
+            for i, func in enumerate(functions_copy):
+                result = func(*args, **kwargs)
+                
+                # Determine applicable type constraint (explicit > auto-detected > global)
+                expected_type = constraints_copy.get(func) or global_type
+                
+                # Validate type constraint if specified
+                if expected_type and not isinstance(result, expected_type):
+                    func_name = getattr(func, '__name__', f'func_{i}')
+                    raise TypeError(
+                        f"Function {func_name} returned {type(result).__name__}, "
+                        f"expected {expected_type.__name__}"
+                    )
+                
+                # Collect result in specified format
+                if is_mapping:
+                    func_name = getattr(func, '__name__', f'func_{i}')
+                    results[func_name] = result
+                else:
+                    results.append(result)
+            
+            return results
+        
+        return combined
 
 
 # Generic YAML Parser for reading player names
@@ -88,6 +359,8 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
     """
     Build item_name_to_id mapping by scanning player files for names.
     Resolves player names using Archipelago's name formatting syntax ({number}, {player}, etc).
+    Also registers shard versions of progression items for use in shard mode.
+    Dynamically assigns shard IDs to ensure no collisions.
     """
     item_mapping = {
         "Filler": NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS,
@@ -111,15 +384,28 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                 progression_name = f"{resolved_name}'s Progression"
                 item_id = NOLOGIC_BASE_ID + player_idx
                 item_mapping[progression_name] = item_id
+                # Also register the shard version with next available ID
+                shard_name = f"{progression_name} Shard"
+                next_available_id = max(item_mapping.values()) + 1
+                item_mapping[shard_name] = next_available_id
             else:
                 # Fallback to reserved name
                 reserved_name = f"__RESERVED_PROG_{player_idx}__"
                 item_id = NOLOGIC_BASE_ID + player_idx
                 item_mapping[reserved_name] = item_id
+                # Also register the shard version with next available ID
+                shard_name = f"{reserved_name}SHARD__"
+                next_available_id = max(item_mapping.values()) + 1
+                item_mapping[shard_name] = next_available_id
     else:
         # Fallback to all reserved names if players folder doesn't exist
         for i in range(RESERVED_PROGRESSION_ITEMS):
-            item_mapping[f"__RESERVED_PROG_{i}__"] = NOLOGIC_BASE_ID + i
+            reserved_name = f"__RESERVED_PROG_{i}__"
+            item_mapping[reserved_name] = NOLOGIC_BASE_ID + i
+            # Also register the shard version with next available ID
+            shard_name = f"{reserved_name}SHARD__"
+            next_available_id = max(item_mapping.values()) + 1
+            item_mapping[shard_name] = next_available_id
     
     return item_mapping
 
@@ -184,7 +470,8 @@ class NoLogicWeb(WebWorld):
     option_groups = no_logic_option_groups
 
 
-
+class NoLogicItem(Item):
+    target_player: Optional[int] = None  # Player ID this item is associated with (for progression items)
 
 
 class NoLogicWorld(World):
@@ -222,6 +509,19 @@ class NoLogicWorld(World):
         self.progression_region: Region = None  # Will be created in create_regions
         self.progression_item_hints: list = []  # Hints for progression items (created in stage_fill)
         self.progression_item_id_to_player: Dict[int, int] = {}  # Maps item_id to player_id
+        self.progression_items_placed_worlds: Set[int] = set()  # Tracks which worlds have received a progression item
+        self.progression_items_provided_by_worlds: Dict[int, Set[Tuple[Item, int]]] = {}  # Items MANUALLLY provided by each world as (Item, count) tuples.
+    
+    def create_item_copy(self, item: Item) -> Item:
+        """Creates an exact copy of an item, used for creating progression item copies.
+        This will not only copy every field, but also the type, in case of a subclass with extra information.
+        """
+        item_copy = type(item)(item.name, item.classification)
+        # Grab all attributes first.
+        for attr, value in vars(item).items():
+            setattr(item_copy, attr, value)
+        return item_copy
+        
 
     def generate_early(self) -> None:
         """
@@ -271,14 +571,44 @@ class NoLogicWorld(World):
                 raise NoLogicException("No Logic Mode requires confirmation from the host. Use --allow-no-logic to skip confirmation.")
         if response != "y":
             raise NoLogicException("Generation cancelled by host. No Logic Mode was not confirmed.")
+
+        for worlds in self.multiworld.worlds.values():
+            if not isinstance(worlds, NoLogicWorld):
+                # Check if a world has a nologic_exemptions function and if it doesn't, create a dummy one that returns an empty set to avoid issues with logic removal.
+                if not hasattr(worlds, "nologic_exemptions"):
+                    setattr(worlds, "nologic_exemptions", lambda: set())
         
-        # Dynamically assign the logic removal method based on Respect Early Locations option
+        # Dynamically assign the pre_fill stage based on Respect Early Locations option
         if self.options.respect_early_locations:
-            NoLogicWorld.stage_pre_fill = NoLogicWorld._remove_all_logic
-            logger.info("No Logic: Logic removal will run at stage_pre_fill (respecting early locations).")
+            # If respecting early locations, run both removal AND locality enforcement at pre_fill
+            def combined_pre_fill(multiworld: MultiWorld):
+                NoLogicWorld._remove_all_logic(multiworld)
+                # Enforce locality immediately after removal
+                for player in multiworld.player_ids:
+                    if isinstance(multiworld.worlds[player], NoLogicWorld):
+                        no_logic_world:NoLogicWorld = multiworld.worlds[player]
+                        other_worlds = [
+                            p for p in multiworld.player_ids
+                            if not isinstance(multiworld.worlds[p], NoLogicWorld)
+                        ]
+                        no_logic_world._enforce_item_locality(other_worlds)
+            
+            NoLogicWorld.stage_pre_fill = combined_pre_fill
+            logger.info("No Logic: Logic removal and locality enforcement at stage_pre_fill (respecting early locations).")
         else:
+            # Otherwise, just remove logic at pre_fill and enforce locality at pre_fill by itself.
             NoLogicWorld.stage_connect_entrances = NoLogicWorld._remove_all_logic
-            logger.info("No Logic: Logic removal will run at stage_connect_entrances (ignoring early locations).")
+            def locality(multiworld: MultiWorld):
+                for player in multiworld.player_ids:
+                        if isinstance(multiworld.worlds[player], NoLogicWorld):
+                            no_logic_world:NoLogicWorld = multiworld.worlds[player]
+                            other_worlds = [
+                                p for p in multiworld.player_ids
+                                if not isinstance(multiworld.worlds[p], NoLogicWorld)
+                            ]
+                            no_logic_world._enforce_item_locality(other_worlds)
+            NoLogicWorld.stage_pre_fill = locality
+            logger.info("No Logic: Logic removal at stage_connect_entances (not respecting early locations).")
         
         if not self.options.add_progression_item:
             logger.info("No Logic: Progression items disabled via options")
@@ -310,11 +640,14 @@ class NoLogicWorld(World):
         """
         Enforce item locality for progression items based on the locality option.
         
-        - Local (0): Each progression item can ONLY be in its target player's locations
+        - Local (0): Each progression item can ONLY be in its target player's locations (or No Logic)
         - Non-Local (1): Each progression item CANNOT be in its target player's locations (must go elsewhere)
-        - Anywhere (2): No restrictions, items can go anywhere
+        - One Per World (2): Non-local variant where only ONE progression item total is allowed per world
+        - Anywhere (3): No restrictions, items can go anywhere
         
         Note: This setting is ignored if using the Universal Progression item (global mode).
+
+        TODO: Improve on by making it ID based, instead of name based, and make work for when "Progression Shards" get added.
         """
         if not self.progression_items:
             return
@@ -327,61 +660,87 @@ class NoLogicWorld(World):
         locality_option = self.options.progression_item_locality
         nologic_player = self.player
         
-        if locality_option == 0:  # Local - items stay in their target world
-            logger.info("No Logic: Enforcing LOCAL progression items (each item stays in its target world)")
+        if locality_option == 0:  # Local - items don't cross between other worlds
+            logger.info("No Logic: Enforcing LOCAL progression items (items stay within their world, not crossing between other players)")
             
-            # For each progression item associated with a player, restrict it to that player's locations only
-            for target_player, prog_item_name in self.progression_items.items():
-                # Add rules to all locations that are NOT from the target player
-                for location in self.multiworld.get_locations():
-                    # Skip No Logic locations and target player's own locations
-                    if location.player == nologic_player or location.player == target_player:
-                        continue
-                    
-                    # Get the original item rule if one exists
-                    original_rule = getattr(location, 'item_rule', None)
-                    
-                    # Create a closure to capture both the original rule, target player, and item name
-                    def make_item_rule(orig_rule, target_p, item_name):
-                        def item_rule(item):
-                            # Block the target player's progression item from going here
-                            if item.player == target_p and item.name == item_name:
-                                return False
-                            # If there was an original rule, respect it
-                            if orig_rule is not None:
-                                return orig_rule(item)
-                            return True
-                        return item_rule
-                    
-                    # Set the new item rule
-                    location.item_rule = make_item_rule(original_rule, target_player, prog_item_name)
+            # Build a map of progression item names to their target players
+            # This is the "owner" of each progression item
+            item_to_owner = {name: player for player, name in self.progression_items.items()}
+            
+            # Iterate through all locations and apply custom item rules
+            for location in self.multiworld.get_locations():
+                # Skip No Logic's own locations - they can accept any progression item
+                if location.player == nologic_player:
+                    continue
+                
+                # Check if this location's player has their own progression item
+                allowed_item = self.progression_items.get(location.player)
+                
+                if allowed_item:
+                    # This location's player has a progression item
+                    # At this location, allow:
+                    # 1. This player's own progression item
+                    # 2. Any non-progression items
+                    # Block all OTHER progression items (they can't cross to other worlds)
+                    original_rule = location.item_rule
+                    location.item_rule = lambda i, allow_item=allowed_item, item_map=item_to_owner, orig_rule=original_rule: (
+                        orig_rule(i) and (i.name == allow_item or i.name not in item_map)
+                    )
         
         elif locality_option == 1:  # Non-Local - items cannot be in their target world
             logger.info("No Logic: Enforcing NON-LOCAL progression items (items cannot be in their target world)")
             
             # For each progression item associated with a player, prevent it from being in that player's locations
             for target_player, prog_item_name in self.progression_items.items():
-                # Add rules to the target player's locations to block their own progression item
+                # Block this item from the target player's own locations
                 for location in self.multiworld.get_locations(target_player):
-                    # Get the original item rule if one exists
-                    original_rule = getattr(location, 'item_rule', None)
-                    
-                    # Create a closure to capture both the original rule and target player
-                    def make_item_rule(orig_rule, target_p, item_name):
-                        def item_rule(item):
-                            # Block the target player's progression item from going to their own locations
-                            if item.player == target_p and item.name == item_name:
-                                return False
-                            # If there was an original rule, respect it
-                            if orig_rule is not None:
-                                return orig_rule(item)
-                            return True
-                        return item_rule
-                    
-                    # Set the new item rule
-                    location.item_rule = make_item_rule(original_rule, target_player, prog_item_name)
+                    forbid_item(location, prog_item_name, target_player)
         
-        elif locality_option == 2:  # Anywhere - no restrictions
+        elif locality_option == 2:  # One Per World - ensure only one progression item per world total
+            logger.info("No Logic: Enforcing ONE progression item per world (non-local variant)")
+            
+            # Build a map of progression item names
+            progression_item_names = set(self.progression_items.values())
+            nologic_player_id = self.player
+            
+            # Apply rules to all non-No Logic locations
+            for location in self.multiworld.get_locations():
+                # Skip No Logic's own locations - they can accept multiple progression items
+                if location.player == nologic_player_id:
+                    continue
+                
+                original_rule = location.item_rule
+                world_player = location.player
+                
+                def make_one_per_world_rule(orig_rule, world, prog_names, placed_worlds):
+                    """
+                    Create a rule that allows only one progression item per world.
+                    Tracks which worlds have received items in the placed_worlds set.
+                    """
+                    def rule(item: Item, orig_rule=orig_rule, world=world, prog_names=prog_names, placed_worlds=placed_worlds) -> bool:
+                        # Check original rule first
+                        if not orig_rule(item):
+                            return False
+                        
+                        # Allow non-progression items
+                        if item.name not in prog_names:
+                            return True
+                        
+                        # This is a progression item
+                        # If world already has one, reject
+                        if world in placed_worlds:
+                            return False
+                        
+                        # World doesn't have one yet, accept and track it
+                        placed_worlds.add(world)
+                        logger.info(f"No Logic: Progression item {item.name} placed in world P{world}, marked as received")
+                        return True
+                    
+                    return rule
+                
+                location.item_rule = make_one_per_world_rule(original_rule, world_player, progression_item_names, self.progression_items_placed_worlds)
+        
+        elif locality_option == 3:  # Anywhere - no restrictions
             logger.info("No Logic: Progression items can go ANYWHERE (no restrictions)")
             # No item rules needed - items are unrestricted by default
 
@@ -402,6 +761,45 @@ class NoLogicWorld(World):
         location = Location(self.player, "No Logic Check", NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS, region)
         region.locations.append(location)
 
+    @classmethod
+    def stage_create_items(cls, multiworld:MultiWorld) -> None:
+        """Get items from other worlds, that have decided they wanted progression items to do more."""
+        self: NoLogicWorld = [multiworld.worlds[player] for player in multiworld.player_ids if isinstance(multiworld.worlds[player], NoLogicWorld)][0]
+        for player in self.multiworld.player_ids:
+            if player == self.player:
+                continue
+            
+            world = self.multiworld.worlds[player]
+            if hasattr(world, "nologic_progression_hook") and callable(getattr(world, "nologic_progression_hook")):
+                provided_items = world.nologic_progression_hook(self.multiworld)
+                if provided_items:
+                    items_to_add: Set[Tuple[Item, int]] = set()
+                    
+                    # Case 1: Single tuple (Item, int)
+                    if isinstance(provided_items, tuple) and len(provided_items) == 2 and isinstance(provided_items[0], Item) and isinstance(provided_items[1], int):
+                        items_to_add.add(provided_items)
+                        logger.info(f"No Logic: World P{player} provided 1 progression item (with count {provided_items[1]}) for No Logic")
+                    
+                    # Case 2: Single Item
+                    elif isinstance(provided_items, Item):
+                        items_to_add.add((provided_items, 1))
+                        logger.info(f"No Logic: World P{player} provided 1 progression item for No Logic")
+                    
+                    # Case 3: List or iterable
+                    elif isinstance(provided_items, (list, tuple)):
+                        for item in provided_items:
+                            # Case 3a: List of Items
+                            if isinstance(item, Item):
+                                items_to_add.add((item, 1))
+                            # Case 3b: List of tuples (Item, int)
+                            elif isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], Item) and isinstance(item[1], int):
+                                items_to_add.add(item)
+                        if items_to_add:
+                            logger.info(f"No Logic: World P{player} provided {len(items_to_add)} progression items for No Logic")
+                    
+                    if items_to_add:
+                        self.progression_items_provided_by_worlds[player] = items_to_add
+
     def create_items(self) -> None:
         """Create progression items for No Logic."""
         created_items = []
@@ -421,25 +819,58 @@ class NoLogicWorld(World):
         # Create progression items from NoLogic
         self.progression_item_ids_by_name: Dict[str, int] = {}  # {item_name: item_id}
         
+        # Check if shard mode is enabled
+        progression_mode = self.options.progression_item_mode.value
+        is_shard_mode = progression_mode in [1, 2]  # 1=Shards-All, 2=Shards-Percentage
+        shard_count = self.options.progression_shard_count.value if is_shard_mode else 0
+        
+        # Store mode info for slot_data
+        self.progression_mode = progression_mode
+        self.progression_shard_count = shard_count
+        
         if self.progression_items:
             seen_names = set()
             for other_player, item_name in self.progression_items.items():
                 if item_name not in seen_names:
-                    item = self.create_item(item_name)
-                    
-                    # Check if item name already exists in item_name_to_id mapping
-                    if item_name in self.item_name_to_id:
-                        item.code = self.item_name_to_id[item_name]
+                    if is_shard_mode:
+                        # Shard mode: create multiple shard items with separate ID
+                        shard_item_name = f"{item_name} Shard"
+                        
+                        # Get ID from pre-registered mapping
+                        if shard_item_name not in self.item_name_to_id:
+                            raise NoLogicException(f"Shard item '{shard_item_name}' not found in item_name_to_id mapping. An error must've occurred while reading yamls.")
+                        
+                        shard_id = self.item_name_to_id[shard_item_name]
+                        
+                        # Update progression_items to reference the shard item
+                        self.progression_items[other_player] = shard_item_name
+                        
+                        # Create shard copies with the mapped ID
+                        for i in range(shard_count):
+                            shard_item = NoLogicItem(shard_item_name, ItemClassification.progression, shard_id, self.player)
+                            self.multiworld.itempool.append(shard_item)
+                            created_items.append(shard_item_name)
+                        
+                        self.progression_item_ids_by_name[shard_item_name] = shard_id
+                        logger.info(f"No Logic: Created {shard_count} shard items '{shard_item_name}' (ID: {shard_id}, Mode: {'All' if progression_mode == 1 else 'Percentage'})")
                     else:
-                        # Use an unused ID
-                        item.code = get_unused_item_id()
+                        # Normal mode: create single progression item (existing behavior)
+                        item = self.create_item(item_name)
+                        
+                        # Check if item name already exists in item_name_to_id mapping
+                        if item_name in self.item_name_to_id:
+                            item.code = self.item_name_to_id[item_name]
+                        else:
+                            # Use an unused ID
+                            item.code = get_unused_item_id()
+                        
+                        item.player = self.player
+                        self.multiworld.itempool.append(item)
+                        self.progression_item_ids_by_name[item_name] = item.code
+                        created_items.append(item_name)
+                        logger.info(f"No Logic: Created progression item: {item_name} (ID: {item.code})")
                     
-                    item.player = self.player
-                    self.multiworld.itempool.append(item)
-                    self.progression_item_ids_by_name[item_name] = item.code
-                    created_items.append(item_name)
                     seen_names.add(item_name)
-                    logger.info(f"No Logic: Created progression item: {item_name} (ID: {item.code})")
         
         # Create filler to match base location count (progression locations will be added in post_fill)
         items_created = len(created_items)
@@ -450,7 +881,7 @@ class NoLogicWorld(World):
             filler = self.create_item("Filler")
             self.multiworld.itempool.append(filler)
 
-        logger.info(f"No Logic: Created {len(created_items)} progression items and {max(0, needed_fillers)} filler items.")
+        logger.info(f"No Logic: Created {len(created_items)} progression items and {max(0, needed_fillers)} filler items. Shard mode: {is_shard_mode}")
 
     # def stage_create_items(self) -> None:
     #     items_to_link:dict[int, list[str]] = {}
@@ -495,6 +926,16 @@ class NoLogicWorld(World):
         remove_entrances = bool(no_logic_world.options.remove_entrance_logic.value)
         
         logger.info("No Logic: Removing access rules from the multiworld...")
+        from BaseClasses import Location, Entrance
+        from worlds import AutoWorld
+
+        excemptions: Set[Location | Entrance] = set()
+
+        for world in multiworld.worlds.values():
+            if not isinstance(world, NoLogicWorld):
+                logger.info(f"No Logic: Asking World for exceptions to logic removal for {world.player_name}...")
+                excemptions.update(AutoWorld.call_single(multiworld, "nologic_exemptions", player=world.player))
+                
         
         entrance_count = 0
         location_count = 0
@@ -502,7 +943,7 @@ class NoLogicWorld(World):
         # Remove all access rules from all entrances (if enabled)
         if remove_entrances:
             for region in multiworld.get_regions():
-                for entrance in region.exits:
+                for entrance in set(region.exits).union(region.entrances) - excemptions:
                     entrance.access_rule = lambda state: True
                     entrance_count += 1
             logger.info(f"No Logic: Removed {entrance_count} access rules from entrances.")
@@ -510,35 +951,38 @@ class NoLogicWorld(World):
             logger.info("No Logic: Entrance logic kept intact (disabled via option).")
         
         # Remove all access rules from all locations
-        for location in multiworld.get_locations():
+        for location in set(multiworld.get_locations()) - excemptions:
             location.access_rule = lambda state: True
             location_count += 1
         
         logger.info(f"No Logic: Removed {location_count} access rules from locations.")
+        
+        # # Enforce item locality after removing access rules
+        # other_worlds = [
+        #     p for p in multiworld.player_ids
+        #     if not isinstance(multiworld.worlds[p], NoLogicWorld)
+        # ]
+        # no_logic_world._enforce_item_locality(other_worlds)
+
 
     @classmethod
     def stage_post_fill(cls, multiworld: MultiWorld) -> None:
-        """After fill, create progression item copy locations, lock items to them, and enforce item locality."""
+        """After fill, create progression item copy locations and lock items to them."""
         # Find and process the No Logic world
         for player in multiworld.player_ids:
             if isinstance(multiworld.worlds[player], NoLogicWorld):
                 no_logic_world: NoLogicWorld = multiworld.worlds[player]
                 no_logic_world._create_progression_locations(multiworld)
-                
-                # Enforce item locality after locations are created
-                # This ensures No Logic rules aren't overridden by other worlds
-                other_worlds = [
-                    p for p in multiworld.player_ids
-                    if not isinstance(multiworld.worlds[p], NoLogicWorld)
-                ]
-                no_logic_world._enforce_item_locality(other_worlds)
     
     def _create_progression_locations(self, multiworld: MultiWorld) -> None:
         """Create progression item copy locations and lock items to them."""
         if not self.progression_items:
+            logger.warning("No Logic: No progression items defined, skipping location creation")
             return
         
         logger.info(f"No Logic (P{self.player}): Creating progression item copy locations...")
+        logger.info(f"No Logic: progression_item_ids_by_name = {self.progression_item_ids_by_name}")
+        logger.info(f"No Logic: progression_items = {self.progression_items}")
         
         def get_unused_location_id():
             used_ids = set(loc.address for loc in multiworld.get_locations())
@@ -555,19 +999,29 @@ class NoLogicWorld(World):
         
         # Create locations for progression item copies
         for other_player, prog_item_name in self.progression_items.items():
+            # prog_item_name is already the correct name (either base or shard, depending on mode)
             if prog_item_name not in self.progression_item_ids_by_name:
+                logger.warning(f"No Logic: Item '{prog_item_name}' not found in progression_item_ids_by_name, skipping")
                 continue
+            
+            logger.info(f"No Logic: Creating locations for {prog_item_name} (Player {other_player})")
             
             player_name = multiworld.player_name[other_player]
             target_world = multiworld.worlds[other_player]
             prog_item_id = self.progression_item_ids_by_name[prog_item_name]
+
+            if hasattr(target_world, "nologic_progression_hook") and getattr(target_world, "nologic_progression_override", False):
+                logger.info(f"No Logic: World P{other_player} has nologic_progression_override, skipping automatic item collection for location creation")
+                continue
             
             # Collect progression items from target world
-            progression_items_to_lock = []
+            progression_items_to_lock: List[Item] = []
             for item in multiworld.itempool:
                 if item.player != other_player:
                     continue
-                if item.classification == ItemClassification.progression:
+                if item.classification == ItemClassification.progression or \
+                (self.options.include_unusual_progression_items and ItemClassification.progression in item.classification) or \
+                (self.options.include_useful_progression_items and item.classification == (ItemClassification.progression | ItemClassification.useful)):
                     progression_items_to_lock.append(item)
                 elif self.options.include_lesser_progression and item.classification in [
                     ItemClassification.progression_skip_balancing,
@@ -575,6 +1029,10 @@ class NoLogicWorld(World):
                     ItemClassification.progression_deprioritized_skip_balancing
                 ]:
                     progression_items_to_lock.append(item)
+
+            for item, count in self.progression_items_provided_by_worlds.get(other_player, []):
+                for _ in range(count):
+                    progression_items_to_lock.append(self.create_item_copy(item))
             
             # Create location for each progression item copy and lock it
             location_ids = []
@@ -602,7 +1060,13 @@ class NoLogicWorld(World):
                 location.place_locked_item(item_copy)
                 logger.debug(f"No Logic: Locked {prog_item.name} into {location.name}")
             
-            claim_dict[prog_item_id] = location_ids
+            # In global mode, multiple players share the same item ID, so append instead of replace
+            if prog_item_id in claim_dict:
+                claim_dict[prog_item_id].extend(location_ids)
+                logger.info(f"No Logic: Appended {len(location_ids)} locations to existing item ID {prog_item_id} (global mode)")
+            else:
+                claim_dict[prog_item_id] = location_ids
+            
             # Track which player this item_id belongs to
             self.progression_item_id_to_player[prog_item_id] = other_player
             
@@ -616,6 +1080,17 @@ class NoLogicWorld(World):
         self.nologic_claim_dict = claim_dict
         self.nologic_player_location_mapping = player_location_mapping
         self.nologic_player_name_mapping = player_name_mapping
+        
+        # Shuffle claim_dict for percentage mode NOW (before threaded output)
+        if hasattr(self, 'progression_mode') and self.progression_mode == 2:  # 2 = Shards - Percentage
+            shuffled_claim_dict = {}
+            for item_id in sorted(claim_dict.keys()):
+                # Create a shuffled copy of the item list for this progression item
+                item_list = claim_dict[item_id].copy()
+                self.multiworld.random.shuffle(item_list)
+                shuffled_claim_dict[item_id] = item_list
+            self.nologic_claim_dict = shuffled_claim_dict
+        
         logger.info(f"No Logic: Created {len(claim_dict)} progression item copy groups")
     
     def modify_multidata(self, multidata: dict) -> None:
@@ -633,11 +1108,11 @@ class NoLogicWorld(World):
         
         # Build set of progression item IDs we're tracking
         if not hasattr(self, 'progression_item_ids_by_name'):
-            logger.info("No Logic: No progression_item_ids_by_name found")
+            logger.warning("No Logic: No progression_item_ids_by_name found, cannot add hints")
             return  # No progression items were created
         
         progression_item_ids = set(self.progression_item_ids_by_name.values())
-        logger.info(f"No Logic: Tracking progression item IDs: {progression_item_ids}")
+        logger.info(f"No Logic: Looking for these progression item IDs: {progression_item_ids}")
         logger.info(f"No Logic: Item ID to player mapping: {self.progression_item_id_to_player}")
         
         # Find where each progression item has been filled into the multiworld
@@ -716,14 +1191,22 @@ class NoLogicWorld(World):
     
     def fill_slot_data(self) -> dict:
         """Return slot data for the client."""
-        return {
+        # Get the claim dict (already shuffled if in percentage mode during _create_progression_locations)
+        claim_dict = getattr(self, 'nologic_claim_dict', {})
+        
+        slot_data = {
             "progression_items": self.progression_items,
-            "claim_dict": getattr(self, 'nologic_claim_dict', {}),
+            "claim_dict": claim_dict,
             "item_id_to_player": self.progression_item_id_to_player,
             "player_location_mapping": getattr(self, 'nologic_player_location_mapping', {}),
             "player_name_mapping": getattr(self, 'nologic_player_name_mapping', {}),
-            "include_lesser_progression": self.options.include_lesser_progression.value
+            "include_lesser_progression": self.options.include_lesser_progression.value,
+            "progression_mode": getattr(self, 'progression_mode', 0),  # 0=Normal, 1=Shards-All, 2=Shards-Percentage
+            "shard_count": getattr(self, 'progression_shard_count', 0),  # Number of shards (only relevant if progression_mode > 0)
+            "progression_item_type": self.options.progression_item_type.value,  # 0=Per-world, 1=Global
         }
+        
+        return slot_data
 
     def create_item(self, name: str) -> Item:
         """Create an item for the No Logic world."""
@@ -731,10 +1214,10 @@ class NoLogicWorld(World):
             return Item(name, ItemClassification.filler, self.item_name_to_id["Filler"], self.player)
         elif name.endswith("'s Progression"):
             # Per-world progression items are progression-classified so they can be used with ItemLinks
-            return Item(name, ItemClassification.progression, None, self.player)
+            return NoLogicItem(name, ItemClassification.progression, None, self.player)
         elif name == "Universal Progression":
             # Global progression item with dedicated ID from mapping
-            return Item(name, ItemClassification.progression, self.item_name_to_id["Universal Progression"], self.player)
+            return NoLogicItem(name, ItemClassification.progression, self.item_name_to_id["Universal Progression"], self.player)
         raise ValueError(f"Unknown item: {name}")
 
     def get_filler_item_name(self) -> str:
