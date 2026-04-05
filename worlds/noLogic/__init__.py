@@ -796,9 +796,13 @@ class NoLogicWorld(World):
                                 items_to_add.add(item)
                         if items_to_add:
                             logger.info(f"No Logic: World P{player} provided {len(items_to_add)} progression items for No Logic")
+                    else:
+                        logger.error(f"World of P{player} returned invalid type from nologic_progression_hook: {type(provided_items)}. Expected Item, tuple(Item, int), or list of those.")
+                        raise NoLogicException(f"Invalid return type from nologic_progression_hook in world P{player}. Expected Item, tuple(Item, int), or list of those, but instead got {type(provided_items)}.")
                     
                     if items_to_add:
                         self.progression_items_provided_by_worlds[player] = items_to_add
+                    
 
     def create_items(self) -> None:
         """Create progression items for No Logic."""
