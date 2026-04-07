@@ -70,15 +70,18 @@ class RespectEarlyLocations(Toggle):
     default = True
 
 
-class NoProgressionMaze(Toggle):
+class NoProgressionMaze(Choice):
     """
     RISKY: When enabled, removes the original progression items from the pool and only provides
     the linked progression item. This can make the game unwinnable more often than not.
     Leave disabled for safer gameplay.
-    (Not currently implemented.)
+    Special Mode: Logical - Disables the no logic aspect of this APWorld in favor of a different unique check-hunting experience. (Made by request.)
+    (Requires Progression Shards - In Percentage mode, for this option to work.)
     """
-    display_name = "No Progression Maze (Risky)"
-    default = False
+    display_name = "No Progression Maze"
+    option_disabled = 0
+    option_enabled = 1
+    option_logical_mode = 2
 
 
 class IncludeLesserProgression(Toggle):

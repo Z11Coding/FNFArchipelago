@@ -4,9 +4,12 @@
 # https://opensource.org/licenses/MIT
 
 from collections.abc import Callable, Mapping, Sequence
+import os
+import sys
 from typing import Dict, Set, List, ClassVar, Type, Optional, Tuple, Any, Union, TypeVar, Generic, get_type_hints
 import inspect
 from BaseClasses import Region, Item, Location, ItemClassification, MultiWorld
+import Utils
 from worlds.AutoWorld import World, WebWorld
 from worlds.LauncherComponents import Component, components, Type as ComponentType
 from worlds.generic.Rules import forbid_item
@@ -336,6 +339,9 @@ class GenericYAMLPlayer:
                 yaml_content = f.read()
             
             parsed_data = parse_yaml(yaml_content)
+            print(f"Parsed YAML data from {yaml_path}:")
+            pprint.pprint(parsed_data)
+
             
             if not isinstance(parsed_data, dict):
                 return None, False
@@ -353,6 +359,39 @@ class GenericYAMLPlayer:
             return None, False
         except Exception:
             return None, False
+    
+    @staticmethod
+    def _extract_name_from_parsed(parsed_data) -> Tuple[Optional[str], bool]:
+        """
+        Extract player name from parsed YAML data.
+        Handles both single-document and multi-document YAML parse results.
+        
+        Args:
+            parsed_data: Parsed YAML data (dict or list of dicts)
+            
+        Returns:
+            Tuple of (player_name, success)
+        """
+        # Handle multi-document parse results (list of dicts)
+        if isinstance(parsed_data, list):
+            if not parsed_data:
+                return None, False
+            parsed_data = parsed_data[0]
+        
+        if not isinstance(parsed_data, dict):
+            return None, False
+        
+        # Skip if this is a No Logic player
+        if parsed_data.get('game') == 'No Logic':
+            return None, False
+        
+        # Extract the name
+        if 'name' in parsed_data and isinstance(parsed_data['name'], str):
+            name = parsed_data['name'].strip()
+            if name:
+                return name, True
+        
+        return None, False
 
 
 def build_item_name_to_id_with_yaml() -> Dict[str, int]:
@@ -361,6 +400,8 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
     Resolves player names using Archipelago's name formatting syntax ({number}, {player}, etc).
     Also registers shard versions of progression items for use in shard mode.
     Dynamically assigns shard IDs to ensure no collisions.
+    Multi-document YAML files (separated by ---) are treated as separate players,
+    each getting their own player_idx and thus their own item IDs.
     """
     item_mapping = {
         "Filler": NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS,
@@ -368,35 +409,98 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
     }
     
     # Try to read from players folder
-    players_dir = Path("players")
-    if players_dir.exists():
-        yaml_files = list(players_dir.glob("*.yaml")) + list(players_dir.glob("*.yml"))
+    # Get all player YAML files
+    user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
+    folder_path = sys.argv[sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
+
+    players_dir = Path(folder_path)
+    if os.path.isdir(players_dir):
+        # Get all that are files, and not directories, regardless of extension (Since AP doesn't care.)
+        yaml_files = [f for f in players_dir.glob("*") if f.is_file()]
         
         # Read all player names from YAML files
         name_counter = Counter()
-        for player_idx, yaml_file in enumerate(sorted(yaml_files)[:RESERVED_PROGRESSION_ITEMS]):
-            player_id = player_idx + 1  # Player IDs start at 1
-            player_name, success = GenericYAMLPlayer.read_player_name(str(yaml_file))
+        player_idx = 0
+        
+        for yaml_file in sorted(yaml_files):
+            if player_idx >= RESERVED_PROGRESSION_ITEMS:
+                break
             
-            if success and player_name:
-                # Apply Archipelago's name formatting logic
-                resolved_name = _resolve_player_name(player_name, player_id, name_counter)
-                progression_name = f"{resolved_name}'s Progression"
-                item_id = NOLOGIC_BASE_ID + player_idx
-                item_mapping[progression_name] = item_id
-                # Also register the shard version with next available ID
-                shard_name = f"{progression_name} Shard"
-                next_available_id = max(item_mapping.values()) + 1
-                item_mapping[shard_name] = next_available_id
-            else:
-                # Fallback to reserved name
-                reserved_name = f"__RESERVED_PROG_{player_idx}__"
-                item_id = NOLOGIC_BASE_ID + player_idx
-                item_mapping[reserved_name] = item_id
-                # Also register the shard version with next available ID
-                shard_name = f"{reserved_name}SHARD__"
-                next_available_id = max(item_mapping.values()) + 1
-                item_mapping[shard_name] = next_available_id
+            try:
+                with open(yaml_file, 'r', encoding='utf-8-sig') as f:
+                    yaml_content = f.read()
+                
+                # Check if this is a multi-document YAML file
+                if '---' in yaml_content:
+                    # Split by --- and process each document separately
+                    documents = yaml_content.split('---')
+                    for doc_content in documents:
+                        if player_idx >= RESERVED_PROGRESSION_ITEMS:
+                            break
+                        
+                        doc_content = doc_content.strip()
+                        if not doc_content:
+                            continue
+                        
+                        # Parse this document
+                        try:
+                            parsed_data = parse_yaml(doc_content)
+                            player_name, success = GenericYAMLPlayer._extract_name_from_parsed(parsed_data)
+                        except Exception:
+                            player_name, success = None, False
+                        
+                        player_id = player_idx + 1  # Player IDs start at 1
+                        
+                        if success and player_name:
+                            # Apply Archipelago's name formatting logic
+                            resolved_name = _resolve_player_name(player_name, player_id, name_counter)
+                            progression_name = f"{resolved_name}'s Progression"
+                            item_id = NOLOGIC_BASE_ID + player_idx
+                            item_mapping[progression_name] = item_id
+                            # Also register the shard version with next available ID
+                            shard_name = f"{progression_name} Shard"
+                            next_available_id = max(item_mapping.values()) + 1
+                            item_mapping[shard_name] = next_available_id
+                        else:
+                            # Fallback to reserved name
+                            reserved_name = f"__RESERVED_PROG_{player_idx}__"
+                            item_id = NOLOGIC_BASE_ID + player_idx
+                            item_mapping[reserved_name] = item_id
+                            # Also register the shard version with next available ID
+                            shard_name = f"{reserved_name}SHARD__"
+                            next_available_id = max(item_mapping.values()) + 1
+                            item_mapping[shard_name] = next_available_id
+                        
+                        player_idx += 1
+                else:
+                    # Single document - process normally
+                    player_name, success = GenericYAMLPlayer.read_player_name(str(yaml_file))
+                    player_id = player_idx + 1  # Player IDs start at 1
+                    
+                    if success and player_name:
+                        # Apply Archipelago's name formatting logic
+                        resolved_name = _resolve_player_name(player_name, player_id, name_counter)
+                        progression_name = f"{resolved_name}'s Progression"
+                        item_id = NOLOGIC_BASE_ID + player_idx
+                        item_mapping[progression_name] = item_id
+                        # Also register the shard version with next available ID
+                        shard_name = f"{progression_name} Shard"
+                        next_available_id = max(item_mapping.values()) + 1
+                        item_mapping[shard_name] = next_available_id
+                    else:
+                        # Fallback to reserved name
+                        reserved_name = f"__RESERVED_PROG_{player_idx}__"
+                        item_id = NOLOGIC_BASE_ID + player_idx
+                        item_mapping[reserved_name] = item_id
+                        # Also register the shard version with next available ID
+                        shard_name = f"{reserved_name}SHARD__"
+                        next_available_id = max(item_mapping.values()) + 1
+                        item_mapping[shard_name] = next_available_id
+                    
+                    player_idx += 1
+            
+            except Exception:
+                continue
     else:
         # Fallback to all reserved names if players folder doesn't exist
         for i in range(RESERVED_PROGRESSION_ITEMS):

@@ -55,16 +55,12 @@ class NoLogicCommandProcessor(ClientCommandProcessor):
         for item_id in self.ctx.claim_dict.keys():
             # Determine if item is "completed"
             # Normal mode: check if in collected_progression_items
-            # Shard mode: check if ALL shards are collected
+            # Shard mode: check if ALL shards for THIS ITEM are collected
             if self.ctx.progression_mode == 0:
                 is_completed = item_id in self.ctx.collected_progression_items
-            else:  # Shard mode - check if all shards of all types collected
-                total_shards = sum(self.ctx.shards_received_by_id.values())
-                if self.ctx.progression_item_type == 1:  # Global
-                    total_possible = self.ctx.shard_count
-                else:  # Per-world
-                    total_possible = len(self.ctx.shard_item_ids) * self.ctx.shard_count
-                is_completed = (total_shards == total_possible) and total_possible > 0
+            else:  # Shard mode - check if all shards of THIS SPECIFIC ITEM collected
+                shards_for_this_item = self.ctx.shards_received_by_id.get(item_id, 0)
+                is_completed = (shards_for_this_item == self.ctx.shard_count) and self.ctx.shard_count > 0
             
             status = "[X]" if is_completed else "[ ]"
             item_name = self.ctx.progression_item_names.get(item_id, f"Item {item_id}")
@@ -537,16 +533,12 @@ if gui_enabled:
             # Update item list
             self.items_grid.clear_widgets()
             for item_id in self.ctx.claim_dict.keys():
-                # In shard mode, only mark as complete when ALL shards are collected
+                # In shard mode, only mark as complete when ALL shards are collected FOR THAT ITEM
                 if self.ctx.progression_mode == 0:
                     status = "[X]" if item_id in self.ctx.collected_progression_items else "[ ]"
-                else:  # Shard mode - check if all shards collected
-                    total_shards = sum(self.ctx.shards_received_by_id.values())
-                    if self.ctx.progression_item_type == 1:  # Global
-                        total_possible = self.ctx.shard_count
-                    else:  # Per-world
-                        total_possible = len(self.ctx.shard_item_ids) * self.ctx.shard_count
-                    status = "[X]" if (total_shards == total_possible) and total_possible > 0 else "[ ]"
+                else:  # Shard mode - check if all shards collected FOR THIS SPECIFIC ITEM
+                    shards_for_this_item = self.ctx.shards_received_by_id.get(item_id, 0)
+                    status = "[X]" if (shards_for_this_item == self.ctx.shard_count) and self.ctx.shard_count > 0 else "[ ]"
                 
                 item_name = self.ctx.progression_item_names.get(item_id, f"Item {item_id}")
                 
