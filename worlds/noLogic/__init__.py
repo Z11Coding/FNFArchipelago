@@ -395,7 +395,49 @@ class GenericYAMLPlayer:
         
         return None, False
 
-
+funny_fillers:list[str] = [
+    "Filler",
+    "Placeholder",
+    "Progression Item",
+    "Universal Progression",
+    "Generic Item",
+    "Misc Item",
+    "Useless Item",
+    "Junk Item",
+    "Random Item",
+    "Extra Item",
+    "Spare Item",
+    "Dummy Item",
+    "Test Item",
+    "Sample Item",
+    "Unused Item",
+    "Default Item",
+    "Your Hopes and Dreams",
+    "The Meaning of Life",
+    "Something",
+    "Nothing",
+    "Literally Nothing",
+    "Void",
+    "Air",
+    "An empty pocket",
+    "A single grain of sand",
+    "A drop of water",
+    "A whisper",
+    "A shadow",
+    "A fleeting thought",
+    "That item you thought you had",
+    "Archipelago",
+    "Archipelago Item",
+    "Way too much caffeine",
+    "A bug fix that doesn't actually fix anything",
+    "Trap, I think",
+    "An item that may or may not exist",
+    "An egg in this trying time",
+    "Carlos",
+    "Z11Gaming",
+    "Something you thought was there, but then it completely vanished without a trace",
+    "Wompus",
+]
 def build_item_name_to_id_with_yaml() -> Dict[str, int]:
     """
     Build item_name_to_id mapping by scanning player files for names.
@@ -409,6 +451,7 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
     item_mapping = {
         "Filler": NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS,
         "Universal Progression": NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 1,
+        **{filler: NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 2 + i for i, filler in enumerate(funny_fillers)}
     }
     print(f"[DEBUG] Initial item_mapping: {item_mapping}")
     
@@ -703,10 +746,14 @@ class NoLogicWorld(World):
         """Creates an exact copy of an item, used for creating progression item copies.
         This will not only copy every field, but also the type, in case of a subclass with extra information.
         """
-        item_copy = type(item)(item.name, item.classification)
-        # Grab all attributes first.
-        for attr, value in vars(item).items():
-            setattr(item_copy, attr, value)
+        item_copy = Item(item.name, item.classification)
+        item_copy.__class__ = item.__class__
+        try:
+            item_copy.__dict__ = item.__dict__.copy()
+        except Exception:
+            logger.error(f"Failed to copy __dict__ for item {item.name}, attempting manual attribute copy")
+            for attr, value in vars(item).items():
+                setattr(item_copy, attr, value)
         return item_copy
         
 
@@ -768,7 +815,7 @@ class NoLogicWorld(World):
             response = "y"
         else:
             try:
-                response = input("No Logic Mode is active. All logic will be removed from the multiworld. Proceed? (y/n): ").strip().lower()
+                response = input("This multiworld will be modified with different logic. Proceed? (y/n): ").strip().lower()
             except EOFError:
                 raise NoLogicException("No Logic Mode requires confirmation from the host. Use --allow-no-logic to skip confirmation.")
         if response != "y":
@@ -835,10 +882,15 @@ class NoLogicWorld(World):
             logger.info("No Logic: Progression items disabled via options")
             return
         
-        # If No Progression Maze is enabled, force Progression Shards with Percentage mode
+        # If No Progression Maze is enabled, ensure Progression Shards mode (2 or 3) is used
         if self.options.no_progression_maze:
-            self.options.progression_item_mode.value = 2  # Force Shards - Percentage mode
-            logger.info("No Logic: No Progression Maze enabled - forcing Progression Shards with Percentage mode")
+            current_mode = self.options.progression_item_mode.value
+            if current_mode not in [2, 3]:  # Allow both Percentage (2) and Percentage of Items (3)
+                self.options.progression_item_mode.value = 3  # Default to Percentage of Items for better per-world balance
+                logger.info("No Logic: No Progression Maze enabled - setting Progression mode to Percentage of Items (mode 3) for per-world balance")
+            else:
+                mode_name = "Percentage" if current_mode == 2 else "Percentage of Items"
+                logger.info(f"No Logic: No Progression Maze enabled - using Progression Shards mode: {mode_name} (mode {current_mode})")
         
         logger.info("No Logic: Scanning multiworld for progression items...")
         logger.info(f"No Logic: Found {len(other_worlds)} worlds to create progression items for: {
@@ -1057,19 +1109,31 @@ class NoLogicWorld(World):
         
         # Check if shard mode is enabled
         progression_mode = self.options.progression_item_mode.value
-        is_shard_mode = progression_mode in [1, 2]  # 1=Shards-All, 2=Shards-Percentage
-        shard_count = self.options.progression_shard_count.value if is_shard_mode else 0
+        is_shard_mode = progression_mode in [1, 2]  # 1=Shards-All, 2=Shards-Percentage (Mode 3 handled separately in _create_progression_locations)
+        
+        # Determine shard count based on mode
+        if progression_mode == 3:  # Percentage of items mode
+            # For mode 3, we'll calculate shard_count per progression item in _create_progression_locations
+            shard_count = 0  # No shards created here; calculated and created later per-item
+            shard_percentage = self.options.progression_shard_percentage.value
+            self.progression_shard_percentage = shard_percentage
+        else:
+            shard_count = self.options.progression_shard_count.value if is_shard_mode else 0
+            self.progression_shard_percentage = 0
         
         # Store mode info for slot_data
         self.progression_mode = progression_mode
         self.progression_shard_count = shard_count
+        # For mode 3, we'll store a mapping of item_id -> shard_count in _create_progression_locations
+        self.progression_item_shard_count_map = {}
         
         if self.progression_items:
             seen_names = set()
             for other_player, item_name in self.progression_items.items():
                 if item_name not in seen_names:
-                    if is_shard_mode:
-                        # Shard mode: create multiple shard items with separate ID
+                    # All shard modes (1, 2, 3) get shard naming
+                    if progression_mode > 0:
+                        # Shard mode: create shard item name
                         shard_item_name = f"{item_name} Shard"
                         
                         # Get ID from pre-registered mapping
@@ -1079,17 +1143,23 @@ class NoLogicWorld(World):
                         
                         shard_id = self.item_name_to_id[shard_item_name]
                         
-                        # Update progression_items to reference the shard item
+                        # Update progression_items to reference the shard item (for all modes)
                         self.progression_items[other_player] = shard_item_name
                         
-                        # Create shard copies with the mapped ID
-                        for i in range(shard_count):
-                            shard_item = NoLogicItem(shard_item_name, ItemClassification.progression, shard_id, self.player)
-                            self.multiworld.itempool.append(shard_item)
-                            created_items.append(shard_item_name)
+                        # Create shard items now for modes 1 and 2 (mode 3 creates them in _create_progression_locations)
+                        if progression_mode in [1, 2]:
+                            # Create shard copies with the mapped ID
+                            for i in range(shard_count):
+                                shard_item = NoLogicItem(shard_item_name, ItemClassification.progression, shard_id, self.player)
+                                self.multiworld.itempool.append(shard_item)
+                                created_items.append(shard_item_name)
+                            
+                            logger.info(f"No Logic: Created {shard_count} shard items '{shard_item_name}' (ID: {shard_id}, Mode: {'All' if progression_mode == 1 else 'Percentage'})")
+                        elif progression_mode == 3:
+                            # Mode 3: Just update the mapping, shards created in _create_progression_locations
+                            logger.info(f"No Logic: Prepared '{shard_item_name}' (ID: {shard_id}) for mode 3 - Shards-Percentage of Items (shards created in _create_progression_locations)")
                         
                         self.progression_item_ids_by_name[shard_item_name] = shard_id
-                        logger.info(f"No Logic: Created {shard_count} shard items '{shard_item_name}' (ID: {shard_id}, Mode: {'All' if progression_mode == 1 else 'Percentage'})")
                     else:
                         # Normal mode: create single progression item (existing behavior)
                         item = self.create_item(item_name)
@@ -1342,8 +1412,42 @@ class NoLogicWorld(World):
         self.nologic_player_location_mapping = player_location_mapping
         self.nologic_player_name_mapping = player_name_mapping
         
-        # Shuffle claim_dict for percentage mode NOW (before threaded output)
-        if hasattr(self, 'progression_mode') and self.progression_mode == 2:  # 2 = Shards - Percentage
+        # Calculate shard counts for mode 3 (Percentage of Items)
+        if hasattr(self, 'progression_mode') and self.progression_mode == 3:  # 3 = Shards - Percentage of Items
+            shard_percentage = getattr(self, 'progression_shard_percentage', 100)
+            logger.info(f"No Logic: Calculating shard counts for Percentage of Items mode (percentage: {shard_percentage}%)")
+            
+            for item_id, location_ids in claim_dict.items():
+                num_items = len(location_ids)
+                # Calculate shard count: (num_items * percentage) / 100
+                shard_count = max(1, (num_items * shard_percentage) // 100)
+                self.progression_item_shard_count_map[item_id] = shard_count
+                logger.info(f"No Logic: Item ID {item_id} has {num_items} items, shard count = {shard_count} ({shard_percentage}% of {num_items})")
+            
+            # Create shard items for mode 3 (after knowing per-item shard counts)
+            logger.info("No Logic: Creating shard items for Percentage of Items mode")
+            for item_id, shard_count in self.progression_item_shard_count_map.items():
+                # Find the progression item name for this item_id
+                shard_item_name = None
+                for other_player, prog_item_name in self.progression_items.items():
+                    if self.progression_item_ids_by_name.get(prog_item_name) == item_id:
+                        shard_item_name = prog_item_name
+                        break
+                
+                if not shard_item_name:
+                    logger.warning(f"No Logic: Could not find shard item name for item_id {item_id}")
+                    raise NoLogicException(f"Could not find shard item name for item_id {item_id} when creating shard items for Percentage of Items mode.")
+                    continue
+                
+                # Create shard items
+                for i in range(shard_count):
+                    shard_item = NoLogicItem(shard_item_name, ItemClassification.progression, item_id, self.player)
+                    self.multiworld.itempool.append(shard_item)
+                
+                logger.info(f"No Logic: Created {shard_count} shard items '{shard_item_name}' (ID: {item_id}) for mode 3")
+        
+        # Shuffle claim_dict for percentage modes (2 and 3) NOW (before threaded output)
+        if hasattr(self, 'progression_mode') and self.progression_mode in [2, 3]:  # 2 = Shards - Percentage, 3 = Shards - Percentage of Items
             shuffled_claim_dict = {}
             location_id_to_location = {loc.address: loc for loc in self.progression_region.locations}
             
@@ -1435,7 +1539,13 @@ class NoLogicWorld(World):
             # Create access rule that checks shard collection
             # Matches the client's logic: locations_to_unlock = int(len(all_locations) * shards_for_this_item / self.shard_count)
             # A location at position P is accessible when: int(total_locations * shards_collected / shard_count) > P
-            shard_count = self.options.progression_shard_count.value
+            
+            # For mode 3, use per-item shard count; for modes 1-2, use global shard count
+            if self.progression_mode == 3:
+                shard_count = self.progression_item_shard_count_map.get(item_id, 1)
+            else:
+                shard_count = self.options.progression_shard_count.value
+            
             from BaseClasses import CollectionState
             def make_logical_rule(item_name: str, pos: int, total: int, shards: int) -> callable:
                 """Create a rule that checks if enough shards have been collected."""
@@ -1454,7 +1564,7 @@ class NoLogicWorld(World):
         logger.info("No Logic: Logical mode access rules configured")
     
     def modify_multidata(self, multidata: dict) -> None:
-        """Inject progression item hints into the multidata as precollected hints."""
+        """Inject progression item hints into the multidata."""
         if not self.options.auto_hint_progression_items:
             logger.info("No Logic: Auto-hint progression items disabled")
             return
@@ -1549,10 +1659,78 @@ class NoLogicWorld(World):
         multidata["precollected_hints"] = precollected_hints
         logger.info(f"No Logic: Added {hints_added} progression item hints to precollected hints")
     
+    def _build_shard_item_order(self) -> dict:
+        """Build the shard item order mapping for spoiler log."""
+        shard_item_order = {}
+        claim_dict = getattr(self, 'nologic_claim_dict', {})
+        
+        if self.progression_region and self.progression_region.locations and claim_dict:
+            location_id_to_location = {loc.address: loc for loc in self.progression_region.locations}
+            
+            # For each progression item, determine the items unlocked at each shard threshold
+            for item_id, location_ids in claim_dict.items():
+                item_order = []
+                
+                # Go through each location in order (already ordered by shard threshold in percentage mode)
+                for position, location_id in enumerate(location_ids):
+                    if location_id not in location_id_to_location:
+                        continue
+                    
+                    location = location_id_to_location[location_id]
+                    
+                    # If in percentage or shard mode, calculate shard required
+                    progression_mode = getattr(self, 'progression_mode', 0)
+                    shard_count = getattr(self, 'progression_shard_count', 0)
+                    
+                    if progression_mode == 0:  # Normal mode - all items available at once
+                        shards_required = 1
+                    elif progression_mode == 1:  # Shards-All mode - all items at max shards
+                        shards_required = shard_count
+                    elif progression_mode == 2:  # Shards-Percentage mode - proportional
+                        total_locations = len(location_ids)
+                        # Calculate at which shard count this location becomes available
+                        # position 0 is available at 1 shard, position 1 at ~2 shards, etc.
+                        shards_required = max(1, int((position + 1) * shard_count / total_locations))
+                    elif progression_mode == 3:  # Shards-Percentage of Items mode - proportional based on item count
+                        total_locations = len(location_ids)
+                        # Get the shard count for this specific item from the map
+                        item_shard_count_map = getattr(self, 'progression_item_shard_count_map', {})
+                        item_shard_count = item_shard_count_map.get(item_id, 1)
+                        # Calculate at which shard count this location becomes available
+                        shards_required = max(1, int((position + 1) * item_shard_count / total_locations))
+                    else:
+                        shards_required = 1
+                    
+                    # Get item name directly from the placed item
+                    if location.item:
+                        item_name = location.item.name
+                    else:
+                        # Fallback: extract from location name if item not placed
+                        if location.name.startswith("Copy of "):
+                            item_name = location.name[8:location.name.rfind(" (from")] + " (Missing???)"
+                        else:
+                            item_name = location.name[:location.name.rfind(" (from")] + " (Missing???)"
+                        
+                        if " #" in item_name:
+                            item_name = item_name.rsplit(" #", 1)[0]
+                    
+                    item_order.append({
+                        "item": item_name,
+                        "shards_required": shards_required,
+                        "location_name": location.name
+                    })
+                
+                shard_item_order[item_id] = item_order
+        
+        return shard_item_order
+    
     def fill_slot_data(self) -> dict:
         """Return slot data for the client."""
         # Get the claim dict (already shuffled if in percentage mode during _create_progression_locations)
         claim_dict = getattr(self, 'nologic_claim_dict', {})
+        
+        # Build shard item order mapping (reused by modify_multidata for spoiler log)
+        shard_item_order = self._build_shard_item_order()
         
         slot_data = {
             "progression_items": self.progression_items,
@@ -1561,17 +1739,75 @@ class NoLogicWorld(World):
             "player_location_mapping": getattr(self, 'nologic_player_location_mapping', {}),
             "player_name_mapping": getattr(self, 'nologic_player_name_mapping', {}),
             "include_lesser_progression": self.options.include_lesser_progression.value,
-            "progression_mode": getattr(self, 'progression_mode', 0),  # 0=Normal, 1=Shards-All, 2=Shards-Percentage
-            "shard_count": getattr(self, 'progression_shard_count', 0),  # Number of shards (only relevant if progression_mode > 0)
+            "progression_mode": getattr(self, 'progression_mode', 0),  # 0=Normal, 1=Shards-All, 2=Shards-Percentage, 3=Shards-Percentage of Items
+            "shard_count": getattr(self, 'progression_shard_count', 0),  # Number of shards (only relevant if progression_mode 1 or 2)
+            "shard_percentage": getattr(self, 'progression_shard_percentage', 0),  # Percentage for mode 3 (Percentage of Items)
+            "item_shard_count_map": getattr(self, 'progression_item_shard_count_map', {}),  # Per-item shard counts for mode 3
             "progression_item_type": self.options.progression_item_type.value,  # 0=Per-world, 1=Global
+            "shard_item_order": shard_item_order,  # Mapping of item_id to ordered list of items and their shard requirements
         }
         
         return slot_data
 
+    def write_spoiler(self, spoiler_handle) -> None:
+        """Write shard item order information to the spoiler log."""
+        from typing import TextIO
+        
+        if not isinstance(spoiler_handle, TextIO):
+            spoiler_handle_write = spoiler_handle.write
+        else:
+            spoiler_handle_write = spoiler_handle.write
+        
+        # Only write if we're using shard mode
+        progression_mode = getattr(self, 'progression_mode', 0)
+        if progression_mode == 0:
+            return  # Normal mode, no shard info to display
+        
+        player_name = self.multiworld.get_player_name(self.player)
+        spoiler_handle_write(f"\n\nShard Item Order ({player_name}):\n")
+        
+        shard_item_order = self._build_shard_item_order()
+        
+        for item_id, item_unlock_list in shard_item_order.items():
+            if not item_unlock_list:
+                continue
+            
+            # Find the progression item name for this item_id
+            progression_item_name = None
+            for item_name, saved_id in self.progression_item_ids_by_name.items():
+                if saved_id == item_id:
+                    progression_item_name = item_name
+                    break
+            
+            if not progression_item_name:
+                progression_item_name = f"Unknown Item (ID: {item_id})"
+            
+            spoiler_handle_write(f"\n{progression_item_name}:\n")
+            
+            # Group items by shard requirement
+            items_by_shard: dict[int, list[str]] = {}
+            for entry in item_unlock_list:
+                shards_required = entry.get('shards_required', '?')
+                item_name = entry.get('item', 'Unknown')
+                
+                if shards_required not in items_by_shard:
+                    items_by_shard[shards_required] = []
+                items_by_shard[shards_required].append(item_name)
+            
+            # Write grouped by shard threshold
+            for shards_required in sorted(items_by_shard.keys()):
+                spoiler_handle_write(f"  {shards_required} shard{'s' if shards_required != 1 else ''}: {', '.join(items_by_shard[shards_required])}\n")
+
     def create_item(self, name: str) -> Item:
         """Create an item for the No Logic world."""
         if name == "Filler":
-            return Item(name, ItemClassification.filler, self.item_name_to_id["Filler"], self.player)
+            # Check if funny fillers are enabled
+            if self.options.funny_fillers:
+                # Pick a random filler name from the funny fillers list
+                filler_name = self.multiworld.random.choice(funny_fillers)
+            else:
+                filler_name = "Filler"
+            return Item(filler_name, ItemClassification.filler, self.item_name_to_id[filler_name], self.player)
         elif name.endswith("'s Progression"):
             # Per-world progression items are progression-classified so they can be used with ItemLinks
             return NoLogicItem(name, ItemClassification.progression, None, self.player)
@@ -1582,5 +1818,8 @@ class NoLogicWorld(World):
 
     def get_filler_item_name(self) -> str:
         """Return filler item name."""
+        if self.options.funny_fillers:
+            # Pick a random filler name from the funny fillers list
+            return self.multiworld.random.choice(funny_fillers)
         return "Filler"
 

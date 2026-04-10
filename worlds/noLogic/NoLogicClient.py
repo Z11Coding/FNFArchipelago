@@ -79,6 +79,31 @@ class NoLogicCommandProcessor(ClientCommandProcessor):
     def _cmd_shard_status(self) -> bool:
         """Display current shard collection status (alias for status command)."""
         return self._cmd_status()
+    
+    def _cmd_hints(self) -> bool:
+        """Check and display current hint points available."""
+        if not self.ctx.server or not self.ctx.slot:
+            self.output("Not connected to a server.")
+            return False
+        
+        if not isinstance(self.ctx, NoLogicContext):
+            self.output("Not connected to a No Logic world.")
+            return False
+        
+        # Display hint points locally
+        self.output(f"Hint Points: {self.ctx.hint_points}")
+        self.output(f"Hint Cost Per Hint: {self.ctx.hint_cost}")
+        
+        # Only broadcast to chat if we're NOT the No Logic slot
+        if not self.ctx.nologic_slot_found:
+            import asyncio
+            msg = {
+                "cmd": "Say",
+                "text": f"Checking hint points availability..."
+            }
+            asyncio.create_task(self.ctx.send_msgs([msg]))
+        
+        return True
 
 
 class NoLogicContext(CommonContext):
@@ -103,10 +128,15 @@ class NoLogicContext(CommonContext):
         self._check_task: Optional[asyncio.Task] = None  # Periodic progression check task
         
         # Shard tracking
-        self.progression_mode: int = 0  # 0=Normal, 1=Shards-All, 2=Shards-Percentage
-        self.shard_count: int = 0  # Number of shards per player (only if progression_mode > 0)
+        self.progression_mode: int = 0  # 0=Normal, 1=Shards-All, 2=Shards-Percentage, 3=Shards-Percentage of Items
+        self.progression_item_type: int = 0  # 0=Per-world, 1=Global
+        self.shard_count: int = 0  # Number of shards per player (only if progression_mode 1 or 2)
+        self.shard_percentage: int = 0  # Percentage for mode 3
+        self.item_shard_count_map: Dict[int, int] = {}  # {item_id: shard_count} for mode 3
         self.shard_item_ids: Set[int] = set()  # All shard item IDs being tracked
         self.shards_received_by_id: Dict[int, int] = {}  # {item_id: count of shards received}
+        self.hint_points: int = 0  # Current hint points available
+        self.hint_cost: int = 0  # Cost per hint (received from server)
     
     def load_game_state(self):
         """Load No Logic specific game state from slot_data."""
@@ -158,9 +188,26 @@ class NoLogicContext(CommonContext):
             self.progression_mode = slot_data.get("progression_mode", 0)
             self.progression_item_type = slot_data.get("progression_item_type", 0)
             self.shard_count = slot_data.get("shard_count", 0)
+            self.shard_percentage = slot_data.get("shard_percentage", 0)
             
-            if self.progression_mode > 0 and self.shard_count > 0:
-                logger.info(f"NoLogic: Shard mode enabled - Mode: {self.progression_mode}, Item Type: {'Global' if self.progression_item_type == 1 else 'Per-world'}, Shard count per: {self.shard_count}")
+            # Load per-item shard count map for mode 3
+            item_shard_count_map_raw = slot_data.get("item_shard_count_map", {})
+            self.item_shard_count_map = {}
+            for key, value in item_shard_count_map_raw.items():
+                try:
+                    self.item_shard_count_map[int(key)] = int(value)
+                except (ValueError, TypeError):
+                    self.item_shard_count_map[key] = value
+            
+            if self.progression_mode > 0 and (self.shard_count > 0 or self.item_shard_count_map):
+                mode_name = f"Mode {self.progression_mode}"
+                if self.progression_mode == 1:
+                    mode_name = "Shards-All"
+                elif self.progression_mode == 2:
+                    mode_name = "Shards-Percentage"
+                elif self.progression_mode == 3:
+                    mode_name = "Shards-Percentage of Items"
+                logger.info(f"NoLogic: Shard mode enabled - {mode_name}, Item Type: {'Global' if self.progression_item_type == 1 else 'Per-world'}")
                 # In shard mode, all items in claim_dict are shard items
                 self.shard_item_ids = set(self.claim_dict.keys())
                 # Initialize shard count tracking for each shard item
@@ -205,6 +252,20 @@ class NoLogicContext(CommonContext):
                 
                 return f"({items_unlocked}/{total_items} items, {percentage:.0f}%)"
             return "(0/0 items, 0%)"
+        elif self.progression_mode == 3:  # Shards-Percentage of Items mode
+            if self.item_shard_count_map and self.claim_dict:
+                total_shards = sum(self.shards_received_by_id.values())
+                # Total possible shards is the sum of all item-specific shard counts
+                total_possible = sum(self.item_shard_count_map.values())
+                
+                percentage = (total_shards / total_possible * 100) if total_possible > 0 else 0
+                
+                # Get the actual total items from all shard location lists
+                total_items = sum(len(locations) for locations in self.claim_dict.values())
+                items_unlocked = int(total_items * total_shards / total_possible) if total_possible > 0 else 0
+                
+                return f"({items_unlocked}/{total_items} items, {total_shards}/{total_possible} shards, {percentage:.0f}%)"
+            return "(0/0 items, 0/0 shards, 0%)"
         return ""
     
     def update_shard_count(self) -> None:
@@ -230,9 +291,18 @@ class NoLogicContext(CommonContext):
         # Let parent process first to populate slot_info and slot_data
         super().on_package(cmd, args)
         
-        if cmd == "Connected":
+        # Handle chat messages for hint requests
+        if cmd == "PrintJSON":
+            self._handle_chat_message(args)
+        
+        elif cmd == "Connected":
             logger.info(f"NoLogic: Connected message received")
             logger.info(f"NoLogic: Available args keys: {args.keys()}")
+            
+            # Extract hint cost from Connected message
+            if "hint_cost" in args:
+                self.hint_cost = args["hint_cost"]
+                logger.info(f"NoLogic: Hint cost set to {self.hint_cost} points")
             
             # Extract slot_data directly from Connected message if not yet set
             if not getattr(self, 'slot_data', None) and 'slot_data' in args:
@@ -271,11 +341,18 @@ class NoLogicContext(CommonContext):
             # Update shard count
             self.update_shard_count()
             
+            # Initialize hint points from args if available
+            if "hint_points" in args:
+                self.hint_points = args["hint_points"]
+            
             if self.nologic_tab:
                 self.nologic_tab.update_status()
             
-            # Start periodic progression item checking
+            # Send connection info messages
             import asyncio
+            asyncio.create_task(self._send_connection_info())
+            
+            # Start periodic progression item checking
             if hasattr(self, '_check_task') and self._check_task is not None:
                 # Cancel old task if it exists
                 if not self._check_task.done():
@@ -284,7 +361,154 @@ class NoLogicContext(CommonContext):
         
         elif cmd == "ReceivedItems":
             self._handle_received_items(args)
+        
+        elif cmd == "RoomUpdate":
+            # Extract hint points from room update if available
+            if "hint_points" in args:
+                self.hint_points = args["hint_points"]
+                logger.debug(f"NoLogic: Updated hint points to {self.hint_points}")
     
+    
+    def _handle_chat_message(self, args: dict) -> None:
+        """Handle chat messages and detect @progression hint requests or @nologic_hints queries."""
+        # Extract the message data
+        # PrintJSON format: {"data": {"text": "message"}, "type": "Hint", ...}
+        if "data" not in args:
+            return
+        
+        data = args["data"]
+        if not isinstance(data, dict):
+            return
+        
+        message_text = data.get("text", "")
+        
+        # Check for @nologic_hints command (other players querying hint status)
+        if "@nologic_hints" in message_text.lower():
+            try:
+                # Respond with current hint points in chat
+                import asyncio
+                hint_info = (
+                    f"No Logic Hint Status - Available: {self.hint_points}, "
+                    f"Cost per hint: {self.hint_cost}"
+                )
+                msg = {
+                    "cmd": "Say",
+                    "text": hint_info
+                }
+                asyncio.create_task(self.send_msgs([msg]))
+                logger.info(f"NoLogic: Responded to @nologic_hints query with hint status")
+                return
+            except Exception as e:
+                logger.debug(f"NoLogic: Error responding to @nologic_hints: {e}")
+                return
+        
+        # Check if message contains the @progression command
+        if "@progression" not in message_text.lower():
+            return
+        
+        try:
+            # Extract sender information from the message structure
+            # In PrintJSON, the sender is indicated by "player" or we can infer from context
+            # We need to find which player sent this by checking the print type
+            sender_player = None
+            
+            # Try to extract sender info from args
+            if "player" in args:
+                sender_player = args["player"]
+            elif "data" in args and "player" in data:
+                sender_player = data["player"]
+            
+            # If we still don't have sender info, we can't proceed
+            if sender_player is None:
+                logger.debug("NoLogic: Could not determine sender of @progression command")
+                return
+            
+            # Find this player's progression item ID
+            target_item_id = None
+            for item_id, player_id in self.item_id_to_player.items():
+                if player_id == sender_player:
+                    target_item_id = item_id
+                    break
+            
+            if target_item_id is None:
+                logger.debug(f"NoLogic: Player {sender_player} is not tracked in progression items")
+                return
+            
+            # Get the progression item name for this player
+            target_item_name = self.progression_item_names.get(target_item_id)
+            if not target_item_name:
+                logger.debug(f"NoLogic: Could not find item name for ID {target_item_id}")
+                return
+            
+            # Check if we have enough hint points
+            if self.hint_points >= self.hint_cost:
+                # Send hint command
+                import asyncio
+                asyncio.create_task(self._send_hint_request(target_item_name))
+                logger.info(f"NoLogic: Detected @progression command from player {sender_player}, sending hint for '{target_item_name}'")
+            else:
+                # Not enough hint points - send message with deficit info
+                needed = self.hint_cost - self.hint_points
+                import asyncio
+                asyncio.create_task(self._send_insufficient_hints_message(needed))
+                logger.info(f"NoLogic: Player {sender_player} requested hint but insufficient points ({self.hint_points}/{self.hint_cost})")
+        
+        except Exception as e:
+            logger.debug(f"NoLogic: Error processing @progression command: {e}")
+    
+    async def _send_hint_request(self, item_name: str) -> None:
+        """Send a hint request for the specified item."""
+        if not self.server:
+            return
+        
+        try:
+            # Use the !hint command format
+            msg = {
+                "cmd": "Say",
+                "text": f"!hint {item_name}"
+            }
+            await self.send_msgs([msg])
+            logger.debug(f"NoLogic: Sent hint request for '{item_name}'")
+        except Exception as e:
+            logger.error(f"NoLogic: Error sending hint request for '{item_name}': {e}")
+    
+    async def _send_insufficient_hints_message(self, needed_points: int) -> None:
+        """Send a message indicating insufficient hint points."""
+        if not self.server:
+            return
+        
+        try:
+            msg = {
+                "cmd": "Say",
+                "text": f"Insufficient hint points! Need {needed_points} more (have {self.hint_points}, need {self.hint_cost})"
+            }
+            await self.send_msgs([msg])
+            logger.debug(f"NoLogic: Sent insufficient hints message")
+        except Exception as e:
+            logger.error(f"NoLogic: Error sending insufficient hints message: {e}")
+    
+    async def _send_connection_info(self) -> None:
+        """Send connection info messages describing available commands."""
+        if not self.server:
+            return
+        
+        try:
+            # Send info about available commands
+            messages = [
+                "[AUTOMATED] No Logic Client connected and ready!",
+                "Available commands: /hints (check hint points), @progression (request hint), @nologic_hints (query hint status)"
+            ]
+            
+            for text in messages:
+                msg = {
+                    "cmd": "Say",
+                    "text": text
+                }
+                await self.send_msgs([msg])
+            
+            logger.info(f"NoLogic: Sent connection info messages")
+        except Exception as e:
+            logger.error(f"NoLogic: Error sending connection info messages: {e}")
     
     def _handle_received_items(self, args: dict) -> None:
         """Check for progression item receipts and auto-check locations."""
@@ -295,6 +519,9 @@ class NoLogicContext(CommonContext):
         # Update shard count if in shard mode
         if self.progression_mode > 0:
             self.update_shard_count()
+        
+        # Collect all locations to check in one pass
+        all_locations_to_check = []
         
         for network_item in self.items_received[self.last_item_sync_index:]:
             # Check if this is a progression item we're tracking
@@ -334,6 +561,19 @@ class NoLogicContext(CommonContext):
                         logger.info(f"NoLogic: Percentage mode - unlocking {locations_to_unlock}/{len(all_locations)} locations for this player ({shards_for_this_item}/{self.shard_count} shards)")
                     else:
                         locations_to_check = []
+                elif self.progression_mode == 3:  # Shards-Percentage of Items mode
+                    # Mode 3: Each item_id has its own shard count based on the number of items
+                    shards_for_this_item = self.shards_received_by_id.get(network_item.item, 0)
+                    item_shard_count = self.item_shard_count_map.get(network_item.item, 1)
+                    
+                    if item_shard_count > 0:
+                        # Calculate how many locations should be unlocked based on THIS item's shard progress
+                        locations_to_unlock = int(len(all_locations) * shards_for_this_item / item_shard_count)
+                        # Take the first N locations (they're pre-shuffled by the world)
+                        locations_to_check = all_locations[:locations_to_unlock]
+                        logger.info(f"NoLogic: Percentage of Items mode - unlocking {locations_to_unlock}/{len(all_locations)} locations for this item ({shards_for_this_item}/{item_shard_count} shards)")
+                    else:
+                        locations_to_check = []
                 elif self.progression_mode == 1:  # Shards-All mode
                     # Only unlock all locations when ALL shards are collected
                     shards_for_this_item = self.shards_received_by_id.get(network_item.item, 0)
@@ -346,12 +586,17 @@ class NoLogicContext(CommonContext):
                     # Normal mode: check all locations immediately
                     locations_to_check = all_locations
                 
-                # Schedule async auto-check task
-                import asyncio
-                asyncio.create_task(self._auto_check_locations(locations_to_check))
-                # Update tab if exists
-                if self.nologic_tab:
-                    self.nologic_tab.update_status()
+                # Collect locations instead of checking immediately
+                all_locations_to_check.extend(locations_to_check)
+        
+        # Update tab if exists
+        if self.nologic_tab:
+            self.nologic_tab.update_status()
+        
+        # Send all collected location checks at once
+        if all_locations_to_check:
+            import asyncio
+            asyncio.create_task(self._auto_check_locations(all_locations_to_check))
         
         # Check if goal is achieved based on mode
         if self.claim_dict:
@@ -364,9 +609,11 @@ class NoLogicContext(CommonContext):
             else:
                 # Shard mode: all shards of all types collected
                 total_shards = sum(self.shards_received_by_id.values())
-                if self.progression_item_type == 1:  # Global
+                if self.progression_mode == 3:  # Shards-Percentage of Items mode
+                    total_possible = sum(self.item_shard_count_map.values())
+                elif self.progression_item_type == 1:  # Global (modes 1 and 2)
                     total_possible = self.shard_count
-                else:  # Per-world
+                else:  # Per-world (modes 1 and 2)
                     total_possible = len(self.shard_item_ids) * self.shard_count
                 if total_shards == total_possible and total_possible > 0:
                     logger.info(f"NoLogic: All {total_shards} shards collected! Goal achieved!")
@@ -379,28 +626,18 @@ class NoLogicContext(CommonContext):
     async def _auto_check_locations(self, location_ids: List[int]) -> None:
         """Auto-check the specified locations."""
         if not location_ids:
-            logger.warning("NoLogic: _auto_check_locations called with empty location_ids")
             return
-        
-        logger.info(f"NoLogic: _auto_check_locations called with {len(location_ids)} location IDs: {location_ids}")
-        logger.info(f"NoLogic: Already auto-checked locations: {self.auto_checked_locations}")
         
         unchecked_locations = [loc_id for loc_id in location_ids if loc_id not in self.auto_checked_locations]
         
-        logger.info(f"NoLogic: Unchecked locations after filtering: {unchecked_locations}")
-        
         if unchecked_locations:
-            logger.info(f"NoLogic: Auto-checking {len(unchecked_locations)} progression item copy locations")
+            logger.info(f"NoLogic: Sending {len(unchecked_locations)} location checks")
             msg = {
                 "cmd": "LocationChecks",
                 "locations": unchecked_locations
             }
-            logger.info(f"NoLogic: Sending message: {msg}")
             await self.send_msgs([msg])
             self.auto_checked_locations.update(unchecked_locations)
-            logger.info(f"NoLogic: Auto-checked locations now: {self.auto_checked_locations}")
-        else:
-            logger.warning("NoLogic: All location IDs already auto-checked")
     
     async def server_auth(self, password_requested: bool = False) -> None:
         """Authenticate with the server and auto-detect No Logic world."""
@@ -430,7 +667,7 @@ class NoLogicContext(CommonContext):
         return await super().get_username()
     
     async def disconnect(self, allow_autoreconnect: bool = False) -> None:
-        """Disconnect from server and reset slot tracking."""
+        """Disconnect from server and reset all state."""
         self.nologic_slot_found = False
         
         # Cancel periodic check task
@@ -449,7 +686,16 @@ class NoLogicContext(CommonContext):
         self.item_id_to_player.clear()
         self.shard_item_ids.clear()
         self.shards_received_by_id.clear()
+        self.item_shard_count_map.clear()
         self.last_item_sync_index = 0
+        
+        # Reset progression and shard configuration
+        self.progression_mode = 0
+        self.progression_item_type = 0
+        self.shard_count = 0
+        self.shard_percentage = 0
+        self.hint_points = 0
+        self.hint_cost = 0
         
         # Reset finished_game flag
         self.finished_game = False

@@ -4,6 +4,7 @@
 # https://opensource.org/licenses/MIT
 
 from dataclasses import dataclass
+import logging
 from Options import Toggle, Choice, Range, PerGameCommonOptions, OptionGroup
 
 
@@ -116,22 +117,89 @@ class ProgressionItemMode(Choice):
     - Normal: The collected progression item is provided as-is (single item)
     - Shards - All: The progression item is split into shards; you must collect all shards to get all items
     - Shards - Percentage: As you collect shards, you progressively unlock items based on percentage collected
+    - Shards - Percentage of Items: Shard count is calculated as a percentage of the number of progression items
     """
     display_name = "Progression Item Mode"
     option_normal = 0
     option_shards_all = 1
     option_shards_percentage = 2
+    option_shards_percentage_of_items = 3
     default = 0
 
-class ProgressionShardCount(Range):
+class FlexibleRange(Range):
+    """
+    A Range that allows out-of-bounds values with warnings instead of hard errors.
+    Set allow_below_range and allow_above_range to control whether values outside bounds are permitted.
+    When allowed, a warning is logged and verify() will prompt for confirmation.
+    """
+    allow_below_range: bool = False
+    allow_above_range: bool = False
+    
+    def __init__(self, value: int):
+        # Check bounds but allow if configured to do so
+        if value < self.range_start:
+            if not self.allow_below_range:
+                raise Exception(f"{value} is lower than minimum {self.range_start} for option {self.__class__.__name__}")
+            else:
+                # Value is below range but allowed - store with warning
+                logging.warning(f"{self.__class__.__name__}: {value} is below recommended minimum of {self.range_start}")
+        elif value > self.range_end:
+            if not self.allow_above_range:
+                raise Exception(f"{value} is higher than maximum {self.range_end} for option {self.__class__.__name__}")
+            else:
+                # Value is above range but allowed - store with warning
+                logging.warning(f"{self.__class__.__name__}: {value} is above recommended maximum of {self.range_end}")
+        self.value = value
+    
+    def verify(self, world, player_name: str, plando_options) -> None:
+        """Verify method called during world generation to warn about out-of-bounds values and request confirmation."""
+        display_name = getattr(self, 'display_name', self.__class__.__name__)
+        
+        if self.value < self.range_start and self.allow_below_range:
+            warning_msg = (
+                f"Player {player_name}: {display_name} is set to {self.value}, which is below the recommended "
+                f"minimum of {self.range_start}. This may cause unexpected behavior. Proceed? (y/n): "
+            )
+            response = input(warning_msg).strip().lower()
+            if response != "y":
+                raise Exception(f"Generation cancelled for player {player_name}. {display_name} out-of-bounds value was not confirmed.")
+        elif self.value > self.range_end and self.allow_above_range:
+            warning_msg = (
+                f"Player {player_name}: {display_name} is set to {self.value}, which is above the recommended "
+                f"maximum of {self.range_end}. This may cause unexpected behavior. Proceed? (y/n): "
+            )
+            response = input(warning_msg).strip().lower()
+            if response != "y":
+                raise Exception(f"Generation cancelled for player {player_name}. {display_name} out-of-bounds value was not confirmed.")
+
+class ProgressionShardCount(FlexibleRange):
     """
     How many shards to split progression items into (only applies when using Shards mode).
-    Minimum: 5 shards, Maximum: 200 shards
+    Recommended range: 5-200 shards. Values above 200 are allowed but may impact performance or make things much more difficult.
+    (This option can be set above the maximum, but it's not recommended.)
     """
     display_name = "Progression Shard Count"
     range_start = 5
     range_end = 200
     default = 15
+    allow_below_range = False
+    allow_above_range = True
+
+class ProgressionShardPercentage(FlexibleRange):
+    """
+    When using Shards - Percentage of Items mode, sets the shard count as a percentage of 
+    the number of progression items. For example, if there are 10 progression items and this 
+    is set to 200%, there will be 20 shards total. Recommended range: 10-1000%. 
+    Values above 1000% are allowed but may impact performance, or make things much more difficult.
+    (WARNING: This may cause fill errors at a high percentage! If you encounter fill errors, reduce this percentage or switch to a fixed shard count.)
+    (This option can be set above the maximum, but it's not recommended.)
+    """
+    display_name = "Progression Shard Percentage"
+    range_start = 10
+    range_end = 1000
+    default = 100
+    allow_below_range = False
+    allow_above_range = True
 
 class AutoHintProgressionItems(Toggle):
     """
@@ -139,6 +207,15 @@ class AutoHintProgressionItems(Toggle):
     This makes it easier to track which world each progression item comes from.
     """
     display_name = "Auto-Hint Progression Items"
+    default = False
+
+
+class FunnyFillers(Toggle):
+    """
+    When enabled, filler items will have random funny names instead of just "Filler".
+    Purely cosmetic and doesn't affect gameplay.
+    """
+    display_name = "Funny Fillers"
     default = False
 
 
@@ -155,7 +232,9 @@ class NoLogicOptions(PerGameCommonOptions):
     include_unusual_progression_items: IncludeUnusualProgressionItems
     progression_item_mode: ProgressionItemMode
     progression_shard_count: ProgressionShardCount
+    progression_shard_percentage: ProgressionShardPercentage
     auto_hint_progression_items: AutoHintProgressionItems
+    funny_fillers: FunnyFillers
 
 
 no_logic_option_groups = [
@@ -171,6 +250,8 @@ no_logic_option_groups = [
         IncludeUnusualProgressionItems,
         ProgressionItemMode,
         ProgressionShardCount,
+        ProgressionShardPercentage,
         AutoHintProgressionItems,
+        FunnyFillers,
     ])
 ]

@@ -1,0 +1,7 @@
+{
+    "version": 6,
+    "compatible_version": 5,
+    "game": "Logic Test",
+    "minimum_ap_version": "0.5.1",
+    "world_version": "1.0.0"
+}
