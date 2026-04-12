@@ -52,7 +52,23 @@ class NoLogicCommandProcessor(ClientCommandProcessor):
             shard_info = self.ctx.get_shard_display_info()
             self.output(f"Shard Status: {shard_info}\n")
         
-        for item_id in self.ctx.claim_dict.keys():
+        for key in self.ctx.claim_dict.keys():
+            # Determine the item_id and player_id for this entry
+            if self.ctx.using_per_player_claim_dict:
+                # Per-player mode: key is player_id, find the corresponding item_id
+                player_id = key
+                # Find the item_id for this player (first one that maps to this player)
+                item_id = None
+                for iid, pid in self.ctx.item_id_to_player.items():
+                    if pid == player_id:
+                        item_id = iid
+                        break
+                if item_id is None:
+                    continue  # Skip if we can't find the item_id
+            else:
+                # Normal mode: key is item_id
+                item_id = key
+            
             # Determine if item is "completed"
             # Normal mode: check if in collected_progression_items
             # Shard mode: check if ALL shards for THIS ITEM are collected
@@ -66,10 +82,10 @@ class NoLogicCommandProcessor(ClientCommandProcessor):
             item_name = self.ctx.progression_item_names.get(item_id, f"Item {item_id}")
             
             if self.ctx.progression_mode == 0:  # Normal mode - show item count
-                item_count = len(self.ctx.claim_dict[item_id])
+                item_count = len(self.ctx.claim_dict[key])
                 self.output(f"  {status} {item_name} (contains {item_count} items)")
             else:  # Shard mode - show per-player shard count
-                item_count = len(self.ctx.claim_dict[item_id])
+                item_count = len(self.ctx.claim_dict[key])
                 shards_for_this = self.ctx.shards_received_by_id.get(item_id, 0)
                 self.output(f"  {status} {item_name} ({shards_for_this}/{self.ctx.shard_count} shards, {item_count} items)")
         
@@ -117,7 +133,7 @@ class NoLogicContext(CommonContext):
     def __init__(self, server_address=None, password=None):
         super().__init__(server_address, password)
         self.progression_items: Dict[int, str] = {}  # {player_id: progression_item_name}
-        self.claim_dict: Dict[int, List[int]] = {}  # {progression_item_id: [location_ids]}
+        self.claim_dict: Dict[int, List[int]] = {}  # {progression_item_id or player_id: [location_ids]}
         self.collected_progression_items: Set[int] = set()
         self.auto_checked_locations: Set[int] = set()
         self.progression_item_names: Dict[int, str] = {}  # {item_id: "Player X's Progression"}
@@ -130,6 +146,8 @@ class NoLogicContext(CommonContext):
         # Shard tracking
         self.progression_mode: int = 0  # 0=Normal, 1=Shards-All, 2=Shards-Percentage, 3=Shards-Percentage of Items
         self.progression_item_type: int = 0  # 0=Per-world, 1=Global
+        self.global_shards_behavior: int = 0  # 0=Shared pool, 1=Per-player
+        self.using_per_player_claim_dict: bool = False  # Whether claim_dict uses player_id or item_id as keys
         self.shard_count: int = 0  # Number of shards per player (only if progression_mode 1 or 2)
         self.shard_percentage: int = 0  # Percentage for mode 3
         self.item_shard_count_map: Dict[int, int] = {}  # {item_id: shard_count} for mode 3
@@ -137,6 +155,14 @@ class NoLogicContext(CommonContext):
         self.shards_received_by_id: Dict[int, int] = {}  # {item_id: count of shards received}
         self.hint_points: int = 0  # Current hint points available
         self.hint_cost: int = 0  # Cost per hint (received from server)
+        
+        # Trap tracking (Phase 9 from world)
+        self.trap_mode: int = 0  # 0=Disabled, 1=Global, 2=Per-World, 3=Finders-Keepers
+        self.trap_weight: int = 0  # Percentage (0-100%)
+        self.trap_dict: Dict[int, List] = {}  # {player_id: [locations]} - varies by mode
+        self.trap_item_ids_by_name: Dict[str, int] = {}  # {trap_name: item_id}
+        self.trap_item_ids: Set[int] = set()  # All trap item IDs being tracked
+        self.trap_item_count_received: Dict[int, int] = {}  # {trap_item_id: count_received} - tracks index for array
     
     def load_game_state(self):
         """Load No Logic specific game state from slot_data."""
@@ -187,6 +213,8 @@ class NoLogicContext(CommonContext):
             # Load shard configuration if available
             self.progression_mode = slot_data.get("progression_mode", 0)
             self.progression_item_type = slot_data.get("progression_item_type", 0)
+            self.global_shards_behavior = slot_data.get("global_shards_behavior", 0)  # 0=Shared pool, 1=Per-player
+            self.using_per_player_claim_dict = slot_data.get("using_per_player_claim_dict", False)
             self.shard_count = slot_data.get("shard_count", 0)
             self.shard_percentage = slot_data.get("shard_percentage", 0)
             
@@ -220,6 +248,29 @@ class NoLogicContext(CommonContext):
                 logger.info(f"NoLogic: progression_item_names mapping: {self.progression_item_names}")
             else:
                 logger.warning("NoLogic: Claim dict is empty")
+            
+            # Load trap configuration (Phase 9)
+            self.trap_mode = slot_data.get("trap_mode", 0)
+            self.trap_weight = slot_data.get("trap_weight", 0)
+            
+            # Load trap_dict and convert string keys to int keys
+            trap_dict_raw = slot_data.get("trap_dict", {})
+            self.trap_dict = {}
+            for key, value in trap_dict_raw.items():
+                try:
+                    self.trap_dict[int(key)] = value
+                except (ValueError, TypeError):
+                    self.trap_dict[key] = value
+            
+            # Load trap item IDs mapping
+            trap_item_ids_raw = slot_data.get("trap_item_ids_by_name", {})
+            self.trap_item_ids_by_name = dict(trap_item_ids_raw)  # Keep as string keys for name lookups
+            self.trap_item_ids = set(trap_item_ids_raw.values())  # Extract all trap item IDs
+            
+            if self.trap_mode > 0 and self.trap_weight > 0 and self.trap_dict:
+                mode_names = {1: "Global", 2: "Per-World", 3: "Finders-Keepers"}
+                mode_name = mode_names.get(self.trap_mode, f"Mode {self.trap_mode}")
+                logger.info(f"NoLogic: Trap system enabled - Mode: {mode_name}, Weight: {self.trap_weight}%, Trap Item IDs: {self.trap_item_ids}")
         else:
             logger.warning("NoLogic: No slot_data available yet")
     
@@ -370,17 +421,22 @@ class NoLogicContext(CommonContext):
     
     
     def _handle_chat_message(self, args: dict) -> None:
-        """Handle chat messages and detect @progression hint requests or @nologic_hints queries."""
-        # Extract the message data
-        # PrintJSON format: {"data": {"text": "message"}, "type": "Hint", ...}
-        if "data" not in args:
+        """Handle chat messages and detect @progression hint requests or @nologic_hints queries.
+        
+        Only processes Chat-type PrintJSON messages. For Chat messages, the sender is in the 'slot' field
+        and the message text is extracted from the 'data' list of JSONMessagePart objects.
+        """
+        # Only process Chat type messages, ignore other PrintJSON types (Join, Part, Hint, etc.)
+        if args.get("type") != "Chat":
             return
         
-        data = args["data"]
-        if not isinstance(data, dict):
+        # Extract message text from the data list (list of JSONMessagePart dicts)
+        data = args.get("data", [])
+        if not isinstance(data, list) or not data:
             return
         
-        message_text = data.get("text", "")
+        # Concatenate all text parts to get the full message
+        message_text = "".join(part.get("text", "") for part in data if isinstance(part, dict))
         
         # Check for @nologic_hints command (other players querying hint status)
         if "@nologic_hints" in message_text.lower():
@@ -407,20 +463,12 @@ class NoLogicContext(CommonContext):
             return
         
         try:
-            # Extract sender information from the message structure
-            # In PrintJSON, the sender is indicated by "player" or we can infer from context
-            # We need to find which player sent this by checking the print type
-            sender_player = None
+            # Extract sender information from the Chat message
+            # For Chat-type PrintJSON messages, the sender is in the 'slot' field
+            sender_player = args.get("slot")
             
-            # Try to extract sender info from args
-            if "player" in args:
-                sender_player = args["player"]
-            elif "data" in args and "player" in data:
-                sender_player = data["player"]
-            
-            # If we still don't have sender info, we can't proceed
             if sender_player is None:
-                logger.debug("NoLogic: Could not determine sender of @progression command")
+                logger.debug("NoLogic: Could not determine sender of chat message")
                 return
             
             # Find this player's progression item ID
@@ -494,9 +542,10 @@ class NoLogicContext(CommonContext):
         
         try:
             # Send info about available commands
+            # Note: @commands are for other players to broadcast to, not client-runner specific commands
             messages = [
                 "[AUTOMATED] No Logic Client connected and ready!",
-                "Available commands: /hints (check hint points), @progression (request hint), @nologic_hints (query hint status)"
+                "Available @ commands: @progression (request hint from this client), @nologic_hints (query hint status)"
             ]
             
             for text in messages:
@@ -523,15 +572,51 @@ class NoLogicContext(CommonContext):
         # Collect all locations to check in one pass
         all_locations_to_check = []
         
+        # Special handling: Global percentage mode with per-player claim_dict
+        # Process each player's locations with the global shard percentage applied
+        if self.progression_mode == 2 and self.using_per_player_claim_dict and self.progression_item_type == 1:
+            # Global percentage mode: calculate global shard progress
+            total_shards = sum(self.shards_received_by_id.values())
+            
+            if self.shard_count > 0:
+                # Apply this percentage to each player's locations
+                # Use identical calculation to per-world mode: int(len(locations) * total_shards / shard_count)
+                for player_id, player_locations in self.claim_dict.items():
+                    # Calculate how many of this player's locations should be unlocked
+                    # Using exact same formula as per-world mode for consistency
+                    locations_to_unlock = int(len(player_locations) * total_shards / self.shard_count)
+                    # Take the first N locations (they're pre-shuffled by the world)
+                    locations_to_check = player_locations[:locations_to_unlock]
+                    all_locations_to_check.extend(locations_to_check)
+                    
+                    if locations_to_check:
+                        logger.info(f"NoLogic: Global Percentage mode - player {player_id}: unlocking {len(locations_to_check)}/{len(player_locations)} locations ({total_shards}/{self.shard_count} shards)")
+        
         for network_item in self.items_received[self.last_item_sync_index:]:
             # Check if this is a progression item we're tracking
-            if network_item.item in self.claim_dict.keys():
+            if network_item.item in self.claim_dict.keys() or (self.using_per_player_claim_dict and network_item.item in self.item_id_to_player):
+                # Skip global percentage mode - already handled above
+                if self.progression_mode == 2 and self.using_per_player_claim_dict and self.progression_item_type == 1:
+                    continue
+                
                 # In normal mode, only process the first time we receive each progression item
                 # In shard mode, process every shard received (so we can progressively unlock locations)
                 is_first_receipt = network_item.item not in self.collected_progression_items
                 
                 if self.progression_mode == 0 and not is_first_receipt:
                     # Normal mode: skip if we've already processed this item
+                    continue
+                
+                # Determine the claim_dict key based on mode
+                if self.using_per_player_claim_dict:
+                    # Per-player mode: key is player_id, not item_id
+                    claim_dict_key = self.item_id_to_player.get(network_item.item)
+                else:
+                    # Normal mode: key is item_id
+                    claim_dict_key = network_item.item
+                
+                if claim_dict_key not in self.claim_dict:
+                    logger.warning(f"NoLogic: Received progression item (ID: {network_item.item}) but claim_dict key {claim_dict_key} not found")
                     continue
                 
                 # Add to collected only in normal mode
@@ -546,7 +631,7 @@ class NoLogicContext(CommonContext):
                     logger.info(f"NoLogic: Received shard for '{item_name}' (ID: {network_item.item}) - now have {shards_for_this} shards")
                 
                 # Get locations to auto-check
-                all_locations = self.claim_dict[network_item.item]
+                all_locations = self.claim_dict[claim_dict_key]
                 
                 # In percentage mode, only check proportional locations based on shard count
                 if self.progression_mode == 2:  # Shards-Percentage mode
@@ -588,6 +673,64 @@ class NoLogicContext(CommonContext):
                 
                 # Collect locations instead of checking immediately
                 all_locations_to_check.extend(locations_to_check)
+        
+        # Check for trap items received and auto-check trap locations
+        if self.trap_mode > 0 and self.trap_weight > 0 and self.trap_item_ids:
+            for network_item in self.items_received[self.last_item_sync_index:]:
+                if network_item.item in self.trap_item_ids:
+                    # This is a trap item
+                    if network_item.item not in self.trap_item_count_received:
+                        self.trap_item_count_received[network_item.item] = 0
+                    
+                    self.trap_item_count_received[network_item.item] += 1
+                    trap_count = self.trap_item_count_received[network_item.item]
+                    
+                    trap_name = None
+                    for name, item_id in self.trap_item_ids_by_name.items():
+                        if item_id == network_item.item:
+                            trap_name = name
+                            break
+                    
+                    logger.info(f"NoLogic: Received trap item '{trap_name}' (ID: {network_item.item})")
+                    
+                    # Get ONE trap location to check based on trap mode
+                    trap_location_to_check = None
+                    
+                    if self.trap_mode == 1:  # Global mode
+                        # Global: check one location from EVERY player's trap locations, cycling through their list
+                        for player_id, locations in self.trap_dict.items():
+                            if locations:
+                                # Use trap_count to cycle through this player's locations
+                                location_index = (trap_count - 1) % len(locations)
+                                trap_location_to_check = locations[location_index]
+                                logger.info(f"NoLogic: Global trap - checking player {player_id}'s location {trap_location_to_check} (index {location_index})")
+                                all_locations_to_check.append(trap_location_to_check)
+                    
+                    elif self.trap_mode == 2:  # Per-World mode
+                        # Per-world: check the location for the player who received the trap, cycling through their locations
+                        finding_player = network_item.player
+                        if finding_player in self.trap_dict:
+                            locations = self.trap_dict[finding_player]
+                            if locations:
+                                # Use trap_count to cycle through this player's locations
+                                location_index = (trap_count - 1) % len(locations)
+                                trap_location_to_check = locations[location_index]
+                                logger.info(f"NoLogic: Per-World trap - checking player {finding_player}'s location {trap_location_to_check} (index {location_index})")
+                                all_locations_to_check.append(trap_location_to_check)
+                    
+                    elif self.trap_mode == 3:  # Finders-Keepers mode
+                        # Finders-Keepers: match trap to its source location, then check trap region location
+                        finding_player = network_item.player
+                        trap_source_location = network_item.location
+                        
+                        if finding_player in self.trap_dict:
+                            location_pairs = self.trap_dict[finding_player]
+                            # Find the tuple where first element matches the source location
+                            for source_loc, trap_region_loc in location_pairs:
+                                if source_loc == trap_source_location:
+                                    logger.info(f"NoLogic: Finders-Keepers trap - player {finding_player} found trap at {source_loc}, checking trap region location {trap_region_loc}")
+                                    all_locations_to_check.append(trap_region_loc)
+                                    break
         
         # Update tab if exists
         if self.nologic_tab:
@@ -696,6 +839,14 @@ class NoLogicContext(CommonContext):
         self.shard_percentage = 0
         self.hint_points = 0
         self.hint_cost = 0
+        
+        # Clear trap state
+        self.trap_mode = 0
+        self.trap_weight = 0
+        self.trap_dict.clear()
+        self.trap_item_ids_by_name.clear()
+        self.trap_item_ids.clear()
+        self.trap_item_count_received.clear()
         
         # Reset finished_game flag
         self.finished_game = False

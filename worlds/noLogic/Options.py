@@ -219,6 +219,61 @@ class FunnyFillers(Toggle):
     default = False
 
 
+class ProgressionTrapWeight(Range):
+    """
+    Percentage chance (0-100%) that each filler item becomes a trap item instead.
+    For example, 50% means approximately half of the filler items will be traps.
+    Default: 0 (no traps).
+    """
+    display_name = "Progression Trap Weight"
+    range_start = 0
+    range_end = 100
+    default = 0
+
+
+class ProgressionTrapMode(Choice):
+    """
+    How traps are distributed across the multiworld:
+    - Disabled: No traps are created
+    - Global: Traps are shared randomly among all players
+    - World-Specific: Each player gets their own trap(s) based on weight
+    - Finders-Keepers: Trap goes to whoever finds it during normal fill
+    """
+    display_name = "Progression Trap Mode"
+    option_disabled = 0
+    option_global = 1
+    option_world_specific = 2
+    option_finders_keepers = 3
+    default = 0
+
+
+class ProgressionTrapLocality(Choice):
+    """
+    Where traps can be placed (only applies to World-Specific mode):
+    - Anywhere: No restrictions
+    - Local: Traps stay within their target world
+    - Non-Local: Traps cannot be in their target world
+    """
+    display_name = "Progression Trap Locality"
+    option_anywhere = 0
+    option_local = 1
+    option_non_local = 2
+    default = 0
+
+
+class GlobalShardsBehavior(Choice):
+    """
+    How claim_dict is organized when using global progression items with percentage-based shards:
+    - Shared Pool: All locations stored under the shard item ID (classic behavior)
+    - Per-Player: Locations organized by player ID instead of item ID
+    (This option only affects global progression items with percentage modes.)
+    """
+    display_name = "Global Shards Behavior"
+    option_shared_pool = 0
+    option_per_player = 1
+    default = 0
+
+
 @dataclass
 class NoLogicOptions(PerGameCommonOptions):
     add_progression_item: AddProgressionItem
@@ -233,8 +288,12 @@ class NoLogicOptions(PerGameCommonOptions):
     progression_item_mode: ProgressionItemMode
     progression_shard_count: ProgressionShardCount
     progression_shard_percentage: ProgressionShardPercentage
+    global_shards_behavior: GlobalShardsBehavior
     auto_hint_progression_items: AutoHintProgressionItems
     funny_fillers: FunnyFillers
+    progression_trap_weight: ProgressionTrapWeight
+    progression_trap_mode: ProgressionTrapMode
+    progression_trap_locality: ProgressionTrapLocality
 
 
 no_logic_option_groups = [
@@ -251,7 +310,13 @@ no_logic_option_groups = [
         ProgressionItemMode,
         ProgressionShardCount,
         ProgressionShardPercentage,
+        GlobalShardsBehavior,
         AutoHintProgressionItems,
         FunnyFillers,
+    ]),
+    OptionGroup("Progression Traps", [
+        ProgressionTrapWeight,
+        ProgressionTrapMode,
+        ProgressionTrapLocality,
     ])
 ]

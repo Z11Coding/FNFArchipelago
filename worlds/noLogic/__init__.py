@@ -399,7 +399,7 @@ funny_fillers:list[str] = [
     "Filler",
     "Placeholder",
     "Progression Item",
-    "Universal Progression",
+    "Universal Progression?",
     "Generic Item",
     "Misc Item",
     "Useless Item",
@@ -448,11 +448,15 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
     each getting their own player_idx and thus their own item IDs.
     """
     print("[DEBUG] Starting build_item_name_to_id_with_yaml()")
+    base_id_offset = NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS
     item_mapping = {
-        "Filler": NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS,
-        "Universal Progression": NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 1,
-        **{filler: NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 2 + i for i, filler in enumerate(funny_fillers)}
+        "Filler": base_id_offset,
+        "Universal Progression": base_id_offset + 1,
+        **{filler: base_id_offset + 2 + i for i, filler in enumerate(funny_fillers)},
+        "Global Progression Trap": base_id_offset + 2 + len(funny_fillers),
+        "Progression Trap": base_id_offset + 3 + len(funny_fillers),
     }
+    
     print(f"[DEBUG] Initial item_mapping: {item_mapping}")
     
     # Try to read from players folder
@@ -530,6 +534,12 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                         next_available_id = max(item_mapping.values()) + 1
                         item_mapping[shard_name] = next_available_id
                         print(f"[DEBUG]   Added shard item: '{shard_name}' -> {next_available_id}")
+                        
+                        # Also register the per-player trap item
+                        per_world_trap_name = f"{resolved_name}'s Progression Trap"
+                        next_available_id = max(item_mapping.values()) + 1
+                        item_mapping[per_world_trap_name] = next_available_id
+                        print(f"[DEBUG]   Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
                     else:
                         # Fallback to reserved name
                         reserved_name = f"__RESERVED_PROG_{player_idx}__"
@@ -573,6 +583,12 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                     next_available_id = max(item_mapping.values()) + 1
                     item_mapping[shard_name] = next_available_id
                     print(f"[DEBUG] Added shard item: '{shard_name}' -> {next_available_id}")
+                    
+                    # Also register the per-player trap item
+                    per_world_trap_name = f"{resolved_name}'s Progression Trap"
+                    next_available_id = max(item_mapping.values()) + 1
+                    item_mapping[per_world_trap_name] = next_available_id
+                    print(f"[DEBUG] Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
                 else:
                     # Fallback to reserved name
                     reserved_name = f"__RESERVED_PROG_{player_idx}__"
@@ -712,6 +728,18 @@ class NoLogicWorld(World):
         self.progression_item_id_to_player: Dict[int, int] = {}  # Maps item_id to player_id
         self.progression_items_placed_worlds: Set[int] = set()  # Tracks which worlds have received a progression item
         self.progression_items_provided_by_worlds: Dict[int, Set[Tuple[Item, int]]] = {}  # Items MANUALLLY provided by each world as (Item, count) tuples.
+        
+        # Trap system state (Phase 2)
+        self.trap_items: Dict[str, int] = {}  # {trap_name: frequency_count}
+        self.trap_dict: Dict[int, List] = {}  # {player_id: [locations or tuples]} - varies by mode
+        self.trap_region: Region = None  # Will be created for trap locations
+        self.trap_item_ids_by_name: Dict[str, int] = {}  # {trap_name: unique_item_id}
+        self.trap_weight: float = 0  # Will be set in create_items
+        self.trap_mode: int = 0  # Will be set in create_items
+        self.trap_pool: List[str] = []  # Will be set in create_items
+        self.trap_pool_index: int = 0  # Tracks position in trap pool
+        self.other_worlds: List[int] = []  # Will be set in create_items
+        self.get_unused_location_id: callable = None  # Will be set in create_items
     
     @staticmethod
     def _read_incompatibilities() -> Set[str]:
@@ -746,12 +774,12 @@ class NoLogicWorld(World):
         """Creates an exact copy of an item, used for creating progression item copies.
         This will not only copy every field, but also the type, in case of a subclass with extra information.
         """
-        item_copy = Item(item.name, item.classification)
-        item_copy.__class__ = item.__class__
+        item_copy = Item(item.name, item.classification, item.code, item.player)
         try:
+            item_copy.__class__ = item.__class__
             item_copy.__dict__ = item.__dict__.copy()
-        except Exception:
-            logger.error(f"Failed to copy __dict__ for item {item.name}, attempting manual attribute copy")
+        except Exception as ew:
+            logger.error(f"Failed to change class for item {item.name}, attempting manual attribute override.\n {ew}")
             for attr, value in vars(item).items():
                 setattr(item_copy, attr, value)
         return item_copy
@@ -787,40 +815,43 @@ class NoLogicWorld(World):
         # Warn the host and ask for confirmation
         world_names = [self.multiworld.player_name[p] for p in other_worlds]
         logger.warning("=" * 60)
+        NoLogicWorld.allowed = False if not hasattr(NoLogicWorld, "allowed") else NoLogicWorld.allowed
         
         # Customize warning based on No Progression Maze mode
-        if self.options.no_progression_maze == 0:
-            # Normal No Logic Mode
-            logger.warning("WARNING: No Logic Mode has been activated!")
-            logger.warning("All access rules will be removed from ALL worlds.")
-        elif self.options.no_progression_maze == 2:
-            # Logical Mode
-            logger.warning("WARNING: Progression Maze Mode set to LOGICAL has been activated!")
-            logger.warning("Original world logic is kept in this mode.")
-            logger.warning("Progression items are gated by shard collection. (Percentage mode)")
-        else:
-            # No Progression Maze mode (normal percentage mode)
-            logger.warning("WARNING: No Logic Mode with NO PROGRESSION MAZE has been activated!")
-            logger.warning("All access rules will be removed from ALL worlds.")
-            logger.warning("Progression items are gated by shard collection (Percentage mode).")
-        
-        logger.warning(f"Affected worlds: {', '.join(world_names)}")
-        logger.warning(f"Culprit: {self.player_name}")
-        logger.warning("=" * 60)
-        
-        response: str
-        import sys
-        if "--allow-no-logic" in sys.argv:
-            logger.warning("No Logic: --allow-no-logic flag detected, proceeding without confirmation.")
-            response = "y"
-        else:
-            try:
-                response = input("This multiworld will be modified with different logic. Proceed? (y/n): ").strip().lower()
-            except EOFError:
-                raise NoLogicException("No Logic Mode requires confirmation from the host. Use --allow-no-logic to skip confirmation.")
-        if response != "y":
-            raise NoLogicException("Generation cancelled by host. No Logic Mode was not confirmed.")
+        if not NoLogicWorld.allowed:
+            if self.options.no_progression_maze == 0:
+                # Normal No Logic Mode
+                logger.warning("WARNING: No Logic Mode has been activated!")
+                logger.warning("All access rules will be removed from ALL worlds.")
+            elif self.options.no_progression_maze == 2:
+                # Logical Mode
+                logger.warning("WARNING: Progression Maze Mode set to LOGICAL has been activated!")
+                logger.warning("Original world logic is kept in this mode.")
+                logger.warning("Progression items are gated by shard collection. (Percentage mode)")
+            else:
+                # No Progression Maze mode (normal percentage mode)
+                logger.warning("WARNING: No Logic Mode with NO PROGRESSION MAZE has been activated!")
+                logger.warning("All access rules will be removed from ALL worlds.")
+                logger.warning("Progression items are gated by shard collection (Percentage mode).")
+            
+            logger.warning(f"Affected worlds: {', '.join(world_names)}")
+            logger.warning(f"Culprit: {self.player_name}")
+            logger.warning("=" * 60)
+            
+            response: str
+            import sys
+            if "--allow-no-logic" in sys.argv:
+                logger.warning("No Logic: --allow-no-logic flag detected, proceeding without confirmation.")
+                response = "y"
+            else:
+                try:
+                    response = input("This multiworld will be modified with different logic. Proceed? (y/n): ").strip().lower()
+                except EOFError:
+                    raise NoLogicException("No Logic Mode requires confirmation from the host. Use --allow-no-logic to skip confirmation.")
+            if response != "y":
+                raise NoLogicException("Generation cancelled by host. No Logic Mode was not confirmed.")
 
+        NoLogicWorld.allowed = True
         # Check for incompatible games
         incompatible_games = self._read_incompatibilities()
         if incompatible_games:
@@ -1022,6 +1053,39 @@ class NoLogicWorld(World):
             logger.info("No Logic: Progression items can go ANYWHERE (no restrictions)")
             # No item rules needed - items are unrestricted by default
 
+    def _enforce_trap_locality(self, other_worlds: List[int]) -> None:
+        """
+        Enforce trap locality for traps based on the locality option (Phase 6).
+        Only applies to Per-World trap mode (mode 2).
+        
+        - Anywhere (0): No restrictions
+        - Local (1): Traps stay in target world
+        - Non-Local (2): Traps cannot be in their target world
+        """
+        if not self.options.progression_trap_weight.value or self.options.progression_trap_mode.value != 2:
+            return  # Only applies to Per-World mode (mode 2)
+        
+        locality_option = self.options.progression_trap_locality.value
+        
+        if locality_option == 0:  # Anywhere
+            logger.info("No Logic: Progression traps can go ANYWHERE (no locality restrictions)")
+        elif locality_option == 1:  # Local
+            logger.info("No Logic: Enforcing LOCAL progression traps (traps stay in target world)")
+            for target_player in other_worlds:
+                trap_name = f"{self.multiworld.player_name[target_player]}'s Progression Trap"
+                # Prevent this trap from being placed in other worlds' locations
+                for location in self.multiworld.get_locations():
+                    if location.player == self.player or location.player == target_player:
+                        continue
+                    forbid_item(location, trap_name, target_player)
+        elif locality_option == 2:  # Non-Local
+            logger.info("No Logic: Enforcing NON-LOCAL progression traps (traps cannot be in target world)")
+            for target_player in other_worlds:
+                trap_name = f"{self.multiworld.player_name[target_player]}'s Progression Trap"
+                # Prevent this trap from being placed in its target world
+                for location in self.multiworld.get_locations(target_player):
+                    forbid_item(location, trap_name, target_player)
+
     def create_regions(self) -> None:
         """Create the No Logic regions (main and progression)."""
         region = Region("No Logic Region", self.player, self.multiworld)
@@ -1034,6 +1098,14 @@ class NoLogicWorld(World):
         # Create entrance between regions
         entrance = region.add_exits(["Progression"])[0]
         entrance.connect(self.progression_region)
+        
+        # Create trap region for trap items (Phase 5)
+        self.trap_region = Region("Traps", self.player, self.multiworld)
+        self.multiworld.regions += [self.trap_region]
+        
+        # Create entrance to trap region
+        entrance = region.add_exits(["Traps"])[0]
+        entrance.connect(self.trap_region)
         
         # Add a placeholder location if no other content
         location = Location(self.player, "No Logic Check", NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS, region)
@@ -1086,6 +1158,11 @@ class NoLogicWorld(World):
 
         if self.options.add_progression_item and self.options.no_progression_maze > 0:
             self._create_progression_locations(multiworld)
+        
+        # Phase 7: Handle traps for modes 1 and 2 (now that itempool is complete)
+        if self.options.progression_trap_weight.value > 0 and self.options.progression_trap_mode.value in [1, 2]:
+            self._build_and_apply_traps(multiworld)
+            self._create_modes_1_2_trap_locations(multiworld)
                     
 
     def create_items(self) -> None:
@@ -1184,14 +1261,59 @@ class NoLogicWorld(World):
         base_locations = [loc for loc in all_locations if loc.parent_region.name != "Progression"]
         needed_fillers = len(base_locations) - items_created
         
+        # Phase 3: Store trap configuration for later use
+        trap_weight = self.options.progression_trap_weight.value
+        trap_mode = self.options.progression_trap_mode.value
+        other_worlds = [p for p in self.multiworld.player_ids 
+                       if not isinstance(self.multiworld.worlds[p], NoLogicWorld)]
+        
+        # Store trap state on self for use when creating filler items
+        self.trap_weight = trap_weight
+        self.trap_mode = trap_mode
+        self.other_worlds = other_worlds
+        
+        # Initialize trap_dict for all modes
+        self.trap_dict = {p: [] for p in other_worlds} if trap_weight > 0 and trap_mode > 0 else {}
+        
+        # Register trap item IDs early so create_item() can use them
+        self.trap_item_ids_by_name: Dict[str, int] = {}
+        if trap_weight > 0 and trap_mode > 0:
+            if trap_mode == 1:  # Global
+                trap_name = "Global Progression Trap"
+                if trap_name in self.item_name_to_id:
+                    self.trap_item_ids_by_name[trap_name] = self.item_name_to_id[trap_name]
+            elif trap_mode == 2:  # Per-World
+                for other_player in other_worlds:
+                    trap_name = f"{self.multiworld.player_name[other_player]}'s Progression Trap"
+                    if trap_name in self.item_name_to_id:
+                        self.trap_item_ids_by_name[trap_name] = self.item_name_to_id[trap_name]
+            elif trap_mode == 3:  # Finders-Keepers
+                trap_name = "Progression Trap"
+                if trap_name in self.item_name_to_id:
+                    self.trap_item_ids_by_name[trap_name] = self.item_name_to_id[trap_name]
+        
+        # Initialize pending trap locations list (will be populated by create_item)
+        self.pending_trap_locations = []
+        
+        def get_unused_location_id():
+            used_ids = set(loc.address for loc in self.multiworld.get_locations())
+            for i in range(RESERVED_LOCATIONS):
+                candidate_id = NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 1 + i
+                if candidate_id not in used_ids:
+                    return candidate_id
+            raise NoLogicException("Exceeded reserved location ID space for No Logic world.")
+        
+        # Store get_unused_location_id on self for use in create_item
+        self.get_unused_location_id = get_unused_location_id
+        
+        # Phase 4: Create filler/trap items
         for i in range(max(0, needed_fillers)):
-            filler = self.create_item("Filler")
-            self.multiworld.itempool.append(filler)
+            item = self.create_item("Filler")
+            self.multiworld.itempool.append(item)
 
-        logger.info(f"No Logic: Created {len(created_items)} progression items and {max(0, needed_fillers)} filler items. Shard mode: {is_shard_mode}")
+        logger.info(f"No Logic: Created {len(created_items)} progression items and {max(0, needed_fillers)} filler/trap items (trap_weight: {self.trap_weight}%, trap_mode: {self.trap_mode})")
 
     # def stage_create_items(cls, multiworld: MultiWorld) -> None:
-# 
     def set_rules(self) -> None:
         """Minimal rules setup - stage_pre_fill will handle delogicking."""
         pass
@@ -1277,6 +1399,10 @@ class NoLogicWorld(World):
                 no_logic_world: NoLogicWorld = multiworld.worlds[player]
                 if no_logic_world.options.add_progression_item and not no_logic_world.options.no_progression_maze > 0:
                     no_logic_world._create_progression_locations(multiworld)
+                
+                # Phase 7: Handle traps for mode 3 only (Finders-Keepers needs to know where traps ended up after fill)
+                if no_logic_world.options.progression_trap_weight.value > 0 and no_logic_world.options.progression_trap_mode.value == 3:
+                    no_logic_world._create_finders_keepers_trap_locations(multiworld)
     
     def _create_progression_locations(self, multiworld: MultiWorld) -> None:
         """Create progression item copy locations and lock items to them."""
@@ -1392,11 +1518,20 @@ class NoLogicWorld(World):
                     logger.debug(f"No Logic: Removed {item.name} from itempool (moved to progression location)")
             
             # In global mode, multiple players share the same item ID, so append instead of replace
-            if prog_item_id in claim_dict:
-                claim_dict[prog_item_id].extend(location_ids)
-                logger.info(f"No Logic: Appended {len(location_ids)} locations to existing item ID {prog_item_id} (global mode)")
+            # But if global shards with per-player behavior is enabled, use player ID as key instead of item ID
+            use_player_as_key = (
+                self.options.progression_item_type.value == 1 and  # Global progression
+                self.options.progression_item_mode.value in [2, 3] and  # Percentage-based modes
+                self.options.global_shards_behavior.value == 1  # Per-player behavior
+            )
+            
+            dict_key = other_player if use_player_as_key else prog_item_id
+            
+            if dict_key in claim_dict:
+                claim_dict[dict_key].extend(location_ids)
+                logger.info(f"No Logic: Appended {len(location_ids)} locations to key {dict_key} (using {'player ID' if use_player_as_key else 'item ID'})")
             else:
-                claim_dict[prog_item_id] = location_ids
+                claim_dict[dict_key] = location_ids
             
             # Track which player this item_id belongs to
             self.progression_item_id_to_player[prog_item_id] = other_player
@@ -1411,6 +1546,13 @@ class NoLogicWorld(World):
         self.nologic_claim_dict = claim_dict
         self.nologic_player_location_mapping = player_location_mapping
         self.nologic_player_name_mapping = player_name_mapping
+        
+        # Track whether we're using per-player claim dict
+        self.using_per_player_claim_dict = (
+            self.options.progression_item_type.value == 1 and  # Global progression
+            self.options.progression_item_mode.value in [2, 3] and  # Percentage-based modes
+            self.options.global_shards_behavior.value == 1  # Per-player behavior
+        )
         
         # Calculate shard counts for mode 3 (Percentage of Items)
         if hasattr(self, 'progression_mode') and self.progression_mode == 3:  # 3 = Shards - Percentage of Items
@@ -1508,26 +1650,216 @@ class NoLogicWorld(World):
         
         logger.info(f"No Logic: Created {len(claim_dict)} progression item copy groups")
     
+    def _build_and_apply_traps(self, multiworld: MultiWorld) -> None:
+        """
+        Register trap item IDs from the itempool.
+        Trap creation happens in create_item() when fillers are created with weighted chance.
+        """
+        logger.info("No Logic: Registering trap item IDs...")
+        
+        # Register trap item IDs  
+        trap_mode = self.trap_mode
+        self.trap_item_ids_by_name: Dict[str, int] = {}
+        
+        if trap_mode == 1:  # Global
+            trap_name = "Global Progression Trap"
+            if trap_name in self.item_name_to_id:
+                self.trap_item_ids_by_name[trap_name] = self.item_name_to_id[trap_name]
+        elif trap_mode == 2:  # Per-World
+            for other_player in self.other_worlds:
+                trap_name = f"{multiworld.player_name[other_player]}'s Progression Trap"
+                if trap_name in self.item_name_to_id:
+                    self.trap_item_ids_by_name[trap_name] = self.item_name_to_id[trap_name]
+        elif trap_mode == 3:  # Finders-Keepers
+            trap_name = "Progression Trap"
+            if trap_name in self.item_name_to_id:
+                self.trap_item_ids_by_name[trap_name] = self.item_name_to_id[trap_name]
+        
+        logger.info(f"No Logic: Registered trap item IDs: {self.trap_item_ids_by_name}")
+        
+        # Initialize pending trap locations list (will be populated by create_item)
+        self.pending_trap_locations = []
+    
+    def _create_finders_keepers_trap_locations(self, multiworld: MultiWorld) -> None:
+        """
+        Phase 7: Create trap locations for Finders-Keepers mode.
+        This runs after fill so we know where traps ended up.
+        """
+        logger.info("No Logic: Creating Finders-Keepers trap locations (stage_post_fill)...")
+        
+        trap_name = "Progression Trap"
+        trap_item_id = self.trap_item_ids_by_name.get(trap_name)
+        
+        if not trap_item_id:
+            logger.warning("No Logic: Progression Trap item not found in item_name_to_id mapping")
+            return
+        
+        # Get other worlds
+        other_worlds = [p for p in multiworld.player_ids 
+                       if not isinstance(multiworld.worlds[p], NoLogicWorld)]
+        
+        def get_unused_location_id():
+            used_ids = set(loc.address for loc in multiworld.get_locations())
+            for i in range(RESERVED_LOCATIONS):
+                candidate_id = NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 1 + i
+                if candidate_id not in used_ids:
+                    return candidate_id
+            raise NoLogicException("Exceeded reserved location ID space for No Logic world.")
+        
+        # Track name counts for duplicates
+        name_counts: Dict[str, int] = {}
+        
+        # Scan filled items for "Progression Trap" items
+        trap_count = 0
+        for location in multiworld.get_filled_locations():
+            if not location.item:
+                continue
+            
+            if location.item.name == trap_name and location.item.code == trap_item_id and location.item.player == self.player:
+                finder_player = location.player
+                
+                # Create trap location in trap region
+                loc_name = f"Trap for P{finder_player}"
+                
+                # Track duplicate names
+                if loc_name not in name_counts:
+                    name_counts[loc_name] = 0
+                else:
+                    name_counts[loc_name] += 1
+                
+                # Add number suffix for duplicates
+                if name_counts[loc_name] > 0:
+                    loc_name += f" #{name_counts[loc_name] + 1}"
+                
+                loc_id = get_unused_location_id()
+                trap_location = Location(self.player, loc_name, loc_id, self.trap_region)
+                self.trap_region.locations.append(trap_location)
+                
+                # Get traps from this player's world and place a copy of a random one
+                player_traps = [item for item in multiworld.itempool if item.player == finder_player and item.classification == ItemClassification.trap]
+                
+                if player_traps:
+                    # Pick a random trap from this player's world and create a copy
+                    random_trap = self.multiworld.random.choice(player_traps)
+                    trap_copy = self.create_item_copy(random_trap)
+                    trap_location.place_locked_item(trap_copy)
+                    
+                    # Add to trap_dict: {player_id: [(source_location_id, trap_region_location_id), ...]}
+                    if finder_player not in self.trap_dict:
+                        self.trap_dict[finder_player] = []
+                    self.trap_dict[finder_player].append((location.address, loc_id))
+                    
+                    trap_count += 1
+                    logger.debug(f"No Logic: Created Finders-Keepers trap location {loc_name} (source: {location.name}, trap: {trap_copy.name}, ID: {loc_id})")
+                else:
+                    logger.warning(f"No Logic: Couldn't find a trap. Putting a filler.")
+                    filler_item = self._get_filler_item()
+                    trap_location.place_locked_item(filler_item)
+        
+        logger.info(f"No Logic: Created {trap_count} Finders-Keepers trap locations")
+    
+    def _create_modes_1_2_trap_locations(self, multiworld: MultiWorld) -> None:
+        """
+        Create trap locations for Global (mode 1) and Per-World (mode 2) modes.
+        This runs in stage_create_items after traps have been converted from fillers.
+        """
+        logger.info("No Logic: Creating trap locations for modes 1 and 2 (stage_create_items)...")
+        
+        if not hasattr(self, 'pending_trap_locations') or not self.pending_trap_locations:
+            logger.info("No Logic: No pending trap locations to create")
+            return
+        
+        def get_unused_location_id():
+            used_ids = set(loc.address for loc in multiworld.get_locations())
+            for i in range(RESERVED_LOCATIONS):
+                candidate_id = NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 1 + i
+                if candidate_id not in used_ids:
+                    return candidate_id
+            raise NoLogicException("Exceeded reserved location ID space for No Logic world.")
+        
+        # Track name counts for duplicates
+        name_counts: Dict[str, int] = {}
+        
+        trap_count = 0
+        for mode, target_player, trap_name in self.pending_trap_locations:
+            # Find trap items with this name from the target player
+            player_traps = [item for item in multiworld.itempool 
+                           if item.name == trap_name and item.player == target_player and item.classification == ItemClassification.trap]
+            
+            if not player_traps:
+                logger.warning(f"No Logic: No traps found for player {target_player} with name '{trap_name}', skipping")
+                continue
+            
+            # Create location for this trap
+            if mode == 1:  # Global mode
+                loc_name = f"Trap for P{target_player}"
+            else:  # mode == 2, Per-World mode
+                loc_name = f"Trap for {multiworld.player_name[target_player]}"
+            
+            # Track duplicate names
+            if loc_name not in name_counts:
+                name_counts[loc_name] = 0
+            else:
+                name_counts[loc_name] += 1
+            
+            # Add number suffix for duplicates
+            if name_counts[loc_name] > 0:
+                loc_name += f" #{name_counts[loc_name] + 1}"
+            
+            loc_id = get_unused_location_id()
+            trap_location = Location(self.player, loc_name, loc_id, self.trap_region)
+            self.trap_region.locations.append(trap_location)
+            
+            # Pick a random trap from this player's world and create a copy
+            random_trap = self.multiworld.random.choice(player_traps)
+            trap_copy = self.create_item_copy(random_trap)
+            trap_location.place_locked_item(trap_copy)
+            
+            # Add to trap_dict
+            if target_player not in self.trap_dict:
+                self.trap_dict[target_player] = []
+            self.trap_dict[target_player].append(loc_id)
+            
+            trap_count += 1
+            logger.debug(f"No Logic: Created mode {mode} trap location {loc_name} (trap: {trap_copy.name}, ID: {loc_id})")
+        
+        logger.info(f"No Logic: Created {trap_count} trap locations for modes 1 and 2")
+    
     def _setup_logical_mode_rules(self, multiworld: MultiWorld, claim_dict: Dict[int, List[int]]) -> None:
         """Set up access rules for logical mode based on shard collection."""
         logger.info("No Logic: Setting up logical mode access rules...")
         
-        # Build a mapping of location_id -> (item_id, position_in_list, total_locations_for_item)
+        # Build a mapping of location_id -> (key, position_in_list, total_locations_for_key)
+        # where key is either item_id or player_id depending on claim_dict structure
         location_to_shard_requirement: Dict[int, tuple] = {}
-        for item_id, location_ids in claim_dict.items():
+        for key, location_ids in claim_dict.items():
             for position, location_id in enumerate(location_ids):
-                location_to_shard_requirement[location_id] = (item_id, position, len(location_ids))
+                location_to_shard_requirement[location_id] = (key, position, len(location_ids))
         
         # Get all progression regions (No Logic locations)
         for location in multiworld.get_locations(self.player):
             if location.address not in location_to_shard_requirement:
                 continue
             
-            item_id, position, total_locations = location_to_shard_requirement[location.address]
-            other_player = self.progression_item_id_to_player.get(item_id)
+            key, position, total_locations = location_to_shard_requirement[location.address]
+            
+            # Determine if key is a player_id (per-player mode) or item_id (shared pool mode)
+            if getattr(self, 'using_per_player_claim_dict', False):
+                # Key is a player_id
+                other_player = key
+                # For mode 3, we need to find the corresponding item_id for this player
+                item_id_for_lookup = None
+                if self.progression_mode == 3:
+                    prog_item_name = self.progression_items.get(key)
+                    if prog_item_name:
+                        item_id_for_lookup = self.progression_item_ids_by_name.get(prog_item_name)
+            else:
+                # Key is an item_id
+                item_id_for_lookup = key
+                other_player = self.progression_item_id_to_player.get(key)
             
             if other_player is None:
-                logger.warning(f"No Logic: Could not find player for item_id {item_id}")
+                logger.warning(f"No Logic: Could not find player for key {key}")
                 continue
             
             shard_item_name = self.progression_items.get(other_player)
@@ -1540,9 +1872,9 @@ class NoLogicWorld(World):
             # Matches the client's logic: locations_to_unlock = int(len(all_locations) * shards_for_this_item / self.shard_count)
             # A location at position P is accessible when: int(total_locations * shards_collected / shard_count) > P
             
-            # For mode 3, use per-item shard count; for modes 1-2, use global shard count
-            if self.progression_mode == 3:
-                shard_count = self.progression_item_shard_count_map.get(item_id, 1)
+            # For mode 3, use per-item shard count (mapped by item_id); for mode 2, use global shard count
+            if self.progression_mode == 3 and item_id_for_lookup:
+                shard_count = self.progression_item_shard_count_map.get(item_id_for_lookup, 1)
             else:
                 shard_count = self.options.progression_shard_count.value
             
@@ -1732,6 +2064,7 @@ class NoLogicWorld(World):
         # Build shard item order mapping (reused by modify_multidata for spoiler log)
         shard_item_order = self._build_shard_item_order()
         
+        # Phase 9: Add trap information to slot_data
         slot_data = {
             "progression_items": self.progression_items,
             "claim_dict": claim_dict,
@@ -1744,7 +2077,13 @@ class NoLogicWorld(World):
             "shard_percentage": getattr(self, 'progression_shard_percentage', 0),  # Percentage for mode 3 (Percentage of Items)
             "item_shard_count_map": getattr(self, 'progression_item_shard_count_map', {}),  # Per-item shard counts for mode 3
             "progression_item_type": self.options.progression_item_type.value,  # 0=Per-world, 1=Global
+            "global_shards_behavior": self.options.global_shards_behavior.value,  # 0=Shared pool, 1=Per-player (only relevant if progression_item_type==1 and mode in [2,3])
+            "using_per_player_claim_dict": getattr(self, 'using_per_player_claim_dict', False),  # Whether claim_dict uses player_id or item_id as keys
             "shard_item_order": shard_item_order,  # Mapping of item_id to ordered list of items and their shard requirements
+            "trap_mode": self.options.progression_trap_mode.value,  # 0=Disabled, 1=Global, 2=World-Specific, 3=Finders-Keepers
+            "trap_weight": self.options.progression_trap_weight.value,  # Percentage (0-100%)
+            "trap_dict": getattr(self, 'trap_dict', {}),  # {player_id: [locations]} or {player_id: [(source, trap_region_loc)]}
+            "trap_item_ids_by_name": getattr(self, 'trap_item_ids_by_name', {}),  # {trap_name: item_id}
         }
         
         return slot_data
@@ -1798,22 +2137,57 @@ class NoLogicWorld(World):
             for shards_required in sorted(items_by_shard.keys()):
                 spoiler_handle_write(f"  {shards_required} shard{'s' if shards_required != 1 else ''}: {', '.join(items_by_shard[shards_required])}\n")
 
+    def _get_filler_item(self) -> Item:
+        """Helper to create a filler item, respecting the funny_fillers option."""
+        if self.options.funny_fillers:
+            filler_name = self.multiworld.random.choice(funny_fillers)
+        else:
+            filler_name = "Filler"
+        return Item(filler_name, ItemClassification.filler, self.item_name_to_id[filler_name], self.player)
+
     def create_item(self, name: str) -> Item:
         """Create an item for the No Logic world."""
         if name == "Filler":
-            # Check if funny fillers are enabled
-            if self.options.funny_fillers:
-                # Pick a random filler name from the funny fillers list
-                filler_name = self.multiworld.random.choice(funny_fillers)
-            else:
-                filler_name = "Filler"
-            return Item(filler_name, ItemClassification.filler, self.item_name_to_id[filler_name], self.player)
+            # Check if this filler should become a trap based on weight
+            if self.trap_weight > 0 and self.multiworld.random.random() * 100 < self.trap_weight:
+                # This becomes a trap - determine which trap based on mode
+                trap_mode = self.trap_mode
+                
+                if trap_mode == 1:  # Global
+                    trap_name = "Global Progression Trap"
+                    if trap_name in self.trap_item_ids_by_name:
+                        # Track that each player needs a trap location
+                        for target_player in self.other_worlds:
+                            self.pending_trap_locations.append((1, target_player, trap_name))
+                        trap_item_id = self.trap_item_ids_by_name[trap_name]
+                        return NoLogicItem(trap_name, ItemClassification.trap, trap_item_id, self.player)
+                
+                elif trap_mode == 2:  # Per-World
+                    if self.other_worlds:
+                        target_player = self.multiworld.random.choice(self.other_worlds)
+                        trap_name = f"{self.multiworld.player_name[target_player]}'s Progression Trap"
+                        if trap_name in self.trap_item_ids_by_name:
+                            self.pending_trap_locations.append((2, target_player, trap_name))
+                            trap_item_id = self.trap_item_ids_by_name[trap_name]
+                            return NoLogicItem(trap_name, ItemClassification.trap, trap_item_id, self.player)
+                
+                elif trap_mode == 3:  # Finders-Keepers
+                    trap_name = "Progression Trap"
+                    if trap_name in self.trap_item_ids_by_name:
+                        trap_item_id = self.trap_item_ids_by_name[trap_name]
+                        return NoLogicItem(trap_name, ItemClassification.trap, trap_item_id, self.player)
+            
+            # Not a trap, return filler
+            return self._get_filler_item()
+        
         elif name.endswith("'s Progression"):
             # Per-world progression items are progression-classified so they can be used with ItemLinks
             return NoLogicItem(name, ItemClassification.progression, None, self.player)
+        
         elif name == "Universal Progression":
             # Global progression item with dedicated ID from mapping
             return NoLogicItem(name, ItemClassification.progression, self.item_name_to_id["Universal Progression"], self.player)
+        
         raise ValueError(f"Unknown item: {name}")
 
     def get_filler_item_name(self) -> str:

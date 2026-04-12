@@ -1,0 +1,6 @@
+name: NoLogic_Test
+game: No Logic
+add_progression_item: true
+progression_item_type: 0
+progression_item_locality: 1
+no_progression_maze: false

@@ -12,7 +12,9 @@ from .Options import LogicTestOptions
 from ..AutoWorld import World, call_all
 from worlds.generic.Rules import exclusion_rules
 
-
+class CancelGeneration(Exception):
+    """Custom exception to signal generation cancellation due to a player deciding to cancel it."""
+    pass
 class LogicTestWorld(World):
     """
     Logic Test World - A debugging world that analyzes multiworld logic.
@@ -80,20 +82,17 @@ class LogicTestWorld(World):
                 
                 if should_abort:
                     print("\n" + "="*70)
-                    print("WARNING: No Logic world in no-logic mode detected!")
+                    print("ERROR: No Logic world in no-logic mode detected!")
                     print("="*70)
-                    print("Logic Test world analysis has been aborted.")
+                    print("Logic Test world cannot be used with No Logic!")
                     print(f"No Logic worlds: {no_logic_worlds}")
-                    print("Reason: No Logic world in ENABLED mode (no_progression_maze=1)")
-                    print("        inherently removes all logic, invalidating logic test results.")
+                    print("Reason: No Logic world inherently removes all logic,")
+                    print("        which breaks Logic Test's analysis and makes results invalid.")
                     print("        (Logical mode (no_progression_maze=2) would be acceptable)")
                     print("="*70 + "\n")
-                    response = input("Would you like to continue with generation anyway? (yes/no): ")
-                    if response.strip().lower() not in ['yes', 'y']:
-                        import sys
-                        print("Exiting generation due to incompatible world combination.")
-                        sys.exit(1)
-                    return
+                    raise Exception("Logic Test world is incompatible with No Logic world in no-logic mode. "
+                                  "Use No Logic in Logical mode (no_progression_maze=2) instead. If you for some reason have" \
+                                  "more than one No Logic world, you're definitely doing something wrong.")
         except ImportError:
             # No Logic world not available, continue normally
             pass
@@ -104,6 +103,36 @@ class LogicTestWorld(World):
         except Exception as e:
             import time
             import traceback
+            if isinstance(e, CancelGeneration):
+                print("\nGeneration cancelled by user.")
+                import sys
+                # Show the breakdown and then close.
+                print("\n" + "="*70)
+                print("LOGIC TEST CANCELLED BY USER")
+                print("="*70)
+                print("The logic test results were:")
+                print(f"  No Logic: {results['is_no_logic']}")
+                print(f"  Sphere 1 Only: {results['is_sphere_1_only']}")
+                print(f"  Max Sphere Required: {results['max_sphere']}")
+                print(f"  Other Sphere Items: {results['other_sphere_items']}")
+                print("="*70 + "\n")
+                # PER GAME.
+                print("Per-player logic analysis:")
+                for player_id, analysis in results['per_player'].items():
+                    player_name = self.multiworld.player_name[player_id]
+                    print(f"  Player {player_id} ({player_name}):")
+                    print(f"    Total Items: {analysis['total']}")
+                    print(f"    Sphere 1 Items: {analysis['sphere_1']}")
+                    
+                    if analysis['no_logic']:
+                        print(f"    ✗ NO LOGIC - All items accessible without progression")
+                    elif analysis['sphere_1_only']:
+                        print(f"    ✗ SPHERE 1 ONLY - All items accessible with starting items")
+                    else:
+                        unreachable = analysis['total'] - analysis['sphere_1']
+                        print(f"    ✓ LOGIC REQUIRED - {unreachable} items need progression")
+                print("="*70 + "\n")
+                sys.exit(0)
             
             try:
                 # Display generation info and error details
@@ -115,6 +144,24 @@ class LogicTestWorld(World):
                 print(f"  Error Message: {str(e)}")
                 print("\nTraceback:")
                 traceback.print_exc()
+            
+            # Check if No Logic exists - cannot continue if it does
+            try:
+                from ..noLogic import NoLogicWorld
+                no_logic_worlds = [pid for pid in self.multiworld.player_ids 
+                                  if self.multiworld.game[pid] == "No Logic" and isinstance(self.multiworld.worlds.get(pid), NoLogicWorld)]
+                
+                if no_logic_worlds:
+                    print("\n" + "="*70)
+                    print("ERROR: No Logic world detected!")
+                    print("="*70)
+                    print("Generation cannot continue because No Logic world exists.")
+                    print("No Logic breaks if using player-specific items.")
+                    print("="*70 + "\n")
+                    import sys
+                    sys.exit(1)
+            except ImportError:
+                pass
             
             # Wait before showing input prompt
             time.sleep(3)
@@ -165,6 +212,7 @@ class LogicTestWorld(World):
         test_mw.seed_name = source.seed_name
         test_mw.algorithm = source.algorithm
         test_mw.is_race = source.is_race if hasattr(source, 'is_race') else False
+        test_mw.testing_logic = True  # Flag to indicate this is a logic test multiworld
         print(f"[Logic Test]   Seed: {test_mw.seed_name}, Algorithm: {test_mw.algorithm}")
         
         # Step 3: Build options Namespace (required by set_options)
@@ -326,13 +374,8 @@ class LogicTestWorld(World):
                 
                 # After generate_early, check what was populated
                 if step_name == "generate_early":
-                    print(f"[Logic Test]   Checking dynamic data after generate_early...")
-                    for player_id, world in test_mw.worlds.items():
-                        if hasattr(world, 'Tricks'):
-                            tricks = world.Tricks
-                            print(f"[Logic Test]     Player {player_id}: {world.__class__.__name__} has Tricks enum with {len(tricks)} values")
-                        else:
-                            print(f"[Logic Test]     Player {player_id}: {world.__class__.__name__} - no Tricks enum")
+                    print(f"[Logic Test]   generate_early done. Checking multiworld state...")
+
             except AttributeError as e:
                 print(f"[Logic Test]   ✗ call_all failed with AttributeError: {e}")
                 print(f"[Logic Test]   Trying direct world calls...")
@@ -620,6 +663,25 @@ class LogicTestWorld(World):
         is_no_logic = sphere_0_items >= total_items * 0.95  # 95% threshold for no logic
         is_sphere_1_only = sphere_1_items >= total_items * 0.95 and not is_no_logic
         
+        # Check if multiworld can be beaten immediately with just starting items
+        print(f"\n[Logic Test] Checking if multiworld can be beaten immediately...")
+        starting_only_state = CollectionState(multiworld)
+        can_beat_immediately = multiworld.can_beat_game(starting_only_state)
+        print(f"[Logic Test] Multiworld beatable immediately: {can_beat_immediately}")
+        
+        # Check per-game if games can be beaten immediately
+        print(f"\n[Logic Test] Checking per-game immediate completion...")
+        per_game_beatable = {}
+        for game_name in game_items.keys():
+            # Get all players for this game
+            game_players = [pid for pid in multiworld.player_ids if multiworld.game[pid] == game_name]
+            
+            # Check if they can beat the game with starting items
+            state = CollectionState(multiworld)
+            can_beat = all(multiworld.has_beaten_game(state, pid) for pid in game_players)
+            per_game_beatable[game_name] = can_beat
+            print(f"[Logic Test]   {game_name}: {can_beat}")
+        
         print(f"\n[Logic Test] Analysis complete!")
         print(f"[Logic Test] Results: {total_items} total, {sphere_0_items} in sphere 0, {sphere_1_items} in sphere 1, {other_sphere_items} beyond")
         
@@ -631,6 +693,8 @@ class LogicTestWorld(World):
             "is_no_logic": is_no_logic,
             "is_sphere_1_only": is_sphere_1_only,
             "max_sphere": sphere_index,
+            "can_beat_immediately": can_beat_immediately,
+            "per_game_beatable": per_game_beatable,
             "per_game_analysis": per_game_analysis,
         }
     
@@ -741,18 +805,26 @@ class LogicTestWorld(World):
         
         print("\n" + "-"*60)
         if results['is_no_logic']:
-            print("✓ Result: NO LOGIC DETECTED")
+            print("✗ Result: NO LOGIC DETECTED")
             print("  All items are accessible without any progression items.")
         elif results['is_sphere_1_only']:
-            print("✓ Result: SPHERE 1 ONLY")
+            print("✗ Result: SPHERE 1 ONLY")
             print("  All items are accessible with just starting items.")
         else:
-            print("✗ Result: LOGIC REQUIRED")
+            print("✓ Result: LOGIC REQUIRED")
             print(f"  Items require progression through sphere {results['max_sphere']}.")
             print(f"  {results['other_sphere_items']} items beyond Sphere 1.")
         print("-"*60)
         
-        # Display per-game analysis
+        # Check if multiworld can be beaten immediately
+        print("\nBEATABILITY CHECK:")
+        print("-"*60)
+        if results['can_beat_immediately']:
+            print("✗ Multiworld can be beaten immediately with starting items only!")
+        else:
+            print("✓ Multiworld requires progression items to beat")
+        
+        # Display per-game analysis with beatable status
         if results['per_game_analysis']:
             print("\nPER-GAME ANALYSIS:")
             print("-"*60)
@@ -764,17 +836,47 @@ class LogicTestWorld(World):
                     print(f"  Sphere 1: {analysis['sphere_1']}")
                     
                     if analysis['no_logic']:
-                        print(f"  ✓ NO LOGIC - All items accessible without progression")
+                        print(f"  ✗ NO LOGIC - All items accessible without progression")
                     elif analysis['sphere_1_only']:
-                        print(f"  ✓ SPHERE 1 ONLY - All items accessible with starting items")
+                        print(f"  ✗ SPHERE 1 ONLY - All items accessible with starting items")
                     else:
                         unreachable = analysis['total'] - analysis['sphere_1']
-                        print(f"  ✗ LOGIC REQUIRED - {unreachable} items need progression")
+                        print(f"  ✓ LOGIC REQUIRED - {unreachable} items need progression")
+                    
+                    # Show if this game can be beaten immediately
+                    can_beat = results['per_game_beatable'].get(game_name, False)
+                    if can_beat:
+                        print(f"  ✗ Can be beaten immediately with starting items!")
+                    else:
+                        print(f"  ✓ Requires progression to beat")
             print("-"*60 + "\n")
+        
+        # Check if No Logic exists - cannot continue if it does
+        try:
+            from ..noLogic import NoLogicWorld
+            no_logic_worlds = [pid for pid in self.multiworld.player_ids 
+                              if self.multiworld.game[pid] == "No Logic" and isinstance(self.multiworld.worlds.get(pid), NoLogicWorld)]
+            
+            if no_logic_worlds:
+                print("\n" + "="*70)
+                print("ERROR: No Logic world detected!")
+                print("="*70)
+                print("Generation cannot continue because No Logic world exists.")
+                print("No Logic breaks if using player-specific items.")
+                print("="*70 + "\n")
+                import sys
+                sys.exit(1)
+        except ImportError:
+            pass
         
         # Ask for confirmation
         response = input("Do you want to continue with this seed? (yes/no): ").strip().lower()
         if response not in ['yes', 'y']:
-            raise Exception("Logic test cancelled by user.")
+            raise CancelGeneration("Logic test cancelled by user.")
         
         print("Continuing with generation...\n")
+        # Give Final Results a moment to sink in before proceeding
+        import time
+        time.sleep(2)
+        print("\n" + "="*60 + "\n")
+        print(f"Proceeding with normal generation, filling the multiworld with {len(self.multiworld.itempool)} items.")
