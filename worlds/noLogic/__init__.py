@@ -780,8 +780,18 @@ class NoLogicWorld(World):
             item_copy.__dict__ = item.__dict__.copy()
         except Exception as ew:
             logger.error(f"Failed to change class for item {item.name}, attempting manual attribute override.\n {ew}")
-            for attr, value in vars(item).items():
-                setattr(item_copy, attr, value)
+            try:
+                for attr, value in vars(item).items():
+                    setattr(item_copy, attr, value)
+            except Exception as e:
+                logger.error(f"Failed to copy attributes for item {item.name}.\n {e}")
+                # Use alt method.
+                for attr in dir(item):
+                    if not attr.startswith('__') and not callable(getattr(item, attr)):
+                        try:
+                            setattr(item_copy, attr, getattr(item, attr))
+                        except Exception as e2:
+                            logger.error(f"Failed to copy attribute {attr} for item {item.name}.\n {e2}")
         return item_copy
         
 
@@ -1415,7 +1425,14 @@ class NoLogicWorld(World):
         logger.info(f"No Logic: progression_items = {self.progression_items}")
         
         def get_unused_location_id():
-            used_ids = set(loc.address for loc in multiworld.get_locations())
+            locations = self.multiworld.get_locations()
+            used_ids = set()
+            for loc in locations:
+                # print(f"Location: {loc.name}, ID: {loc.address}, From Game: {loc.game}")
+                if isinstance(loc.address, list):
+                    used_ids.update(loc.address)
+                else:
+                    used_ids.add(loc.address)
             for i in range(RESERVED_LOCATIONS):
                 candidate_id = NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 1 + i
                 if candidate_id not in used_ids:
@@ -1699,7 +1716,13 @@ class NoLogicWorld(World):
                        if not isinstance(multiworld.worlds[p], NoLogicWorld)]
         
         def get_unused_location_id():
-            used_ids = set(loc.address for loc in multiworld.get_locations())
+            locations = self.multiworld.get_locations()
+            used_ids = set()
+            for loc in locations:
+                if isinstance(loc.address, list):
+                    used_ids.update(loc.address)
+                else:
+                    used_ids.add(loc.address)
             for i in range(RESERVED_LOCATIONS):
                 candidate_id = NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 1 + i
                 if candidate_id not in used_ids:
