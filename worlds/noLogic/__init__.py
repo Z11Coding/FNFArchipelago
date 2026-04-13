@@ -490,11 +490,37 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                 yaml_content = f.read()
             print(f"[DEBUG] Read {len(yaml_content)} bytes from file")
             
-            # Check if this is a multi-document YAML file
-            if '---' in yaml_content:
+            # Check if this is a multi-document YAML file, making sure the "---" isn't from something else.
+            def check_lines(content: str) -> bool:
+                if not isinstance(content, str):
+                    return False
+                lines = content.splitlines()
+                # Skip first line if it's just "---" (YAML document start marker)
+                start_idx = 1 if lines and lines[0].strip() == '---' else 0
+                # Check remaining lines for "---" that is ONLY "---" on its line (not in comments or other content)
+                for line in lines[start_idx:]:
+                    if line.strip() == '---':
+                        return True
+                return False
+
+            if check_lines(yaml_content):
                 print(f"[DEBUG] Multi-document YAML detected")
-                # Split by --- and process each document separately
-                documents = yaml_content.split('---')
+                # Split by lines and reconstruct documents, treating only standalone "---" as separators
+                documents = []
+                current_doc = []
+                for line in yaml_content.splitlines():
+                    if line.strip() == '---':
+                        # Only treat as separator if it's the only thing on the line
+                        if current_doc or documents:  # Don't create empty first doc from leading ---
+                            documents.append('\n'.join(current_doc))
+                            current_doc = []
+                    else:
+                        current_doc.append(line)
+                
+                # Add the last document
+                if current_doc:
+                    documents.append('\n'.join(current_doc))
+                
                 for doc_idx, doc_content in enumerate(documents):
                     print(f"[DEBUG]   Processing document {doc_idx}, player_idx={player_idx}")
                     if player_idx >= RESERVED_PROGRESSION_ITEMS:
