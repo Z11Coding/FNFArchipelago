@@ -64,7 +64,8 @@ class FabricMinecraftWorld(World):
 
             "randomized_abilities": self.options.randomized_abilities.value,
             "possible_randomized_abilities": self.options.randomized_abilities.valid_keys,
-            "time_saving_options": self.options.time_saving_options.value
+            "time_saving_options": self.options.time_saving_options.value,
+            "tricky_traps": self.options.tricky_traps.value,
         }
 
     def create_item(self, name: str) -> "Item":

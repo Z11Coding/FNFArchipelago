@@ -96,6 +96,13 @@ class Itemsanity(Toggle):
     display_name = "Itemsanity"
     default = False
 
+class TrickyTraps(Toggle):
+    """
+    Makes it so some traps might mess with you.
+    """
+    display_name = "Tricky Traps"
+    default = False
+
 class ItemsRequiredToGoal(Range):
     """
     Determines the number of Items needed in order to beat the game! You will need to gather this many unique items in
@@ -468,4 +475,5 @@ class FMCOptions(PerGameCommonOptions):
     shuffle_trap_weight: ShuffleTrapWeight
     deathlink_enabled: DeathLink
     traplink_enabled: TrapLink
+    tricky_traps: TrickyTraps
 

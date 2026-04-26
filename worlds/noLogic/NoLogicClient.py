@@ -40,10 +40,14 @@ class NoLogicCommandProcessor(ClientCommandProcessor):
             total_shards = sum(self.ctx.shards_received_by_id.values())
             # In global mode: total = shard_count. In per-world: total = num_item_types * shard_count
             if self.ctx.progression_item_type == 1:  # Global
-                total_possible = self.ctx.shard_count
+                if self.ctx.using_per_player_claim_dict:
+                    # Per-player mode: each player has their own shard count
+                    total_possible_shards = sum(self.ctx.item_shard_count_map.values()) if self.ctx.progression_mode == 3 else self.ctx.shard_count
+                else:
+                    total_possible_shards = self.ctx.shard_count
             else:  # Per-world
-                total_possible = len(self.ctx.shard_item_ids) * self.ctx.shard_count
-            self.output(f"\nNo Logic Progression Items: {total_shards}/{total_possible}")
+                total_possible_shards = len(self.ctx.shard_item_ids) * self.ctx.shard_count
+            self.output(f"\nNo Logic Progression Items: {total_shards}/{total_possible_shards}")
         
         self.output("=" * 60)
         
@@ -52,42 +56,72 @@ class NoLogicCommandProcessor(ClientCommandProcessor):
             shard_info = self.ctx.get_shard_display_info()
             self.output(f"Shard Status: {shard_info}\n")
         
-        for key in self.ctx.claim_dict.keys():
-            # Determine the item_id and player_id for this entry
-            if self.ctx.using_per_player_claim_dict:
-                # Per-player mode: key is player_id, find the corresponding item_id
-                player_id = key
-                # Find the item_id for this player (first one that maps to this player)
-                item_id = None
-                for iid, pid in self.ctx.item_id_to_player.items():
-                    if pid == player_id:
-                        item_id = iid
-                        break
-                if item_id is None:
-                    continue  # Skip if we can't find the item_id
+        # Display per-entry status
+        if self.ctx.using_per_player_claim_dict:
+            # Per-player mode: display each player's progression
+            total_shards = sum(self.ctx.shards_received_by_id.values())
+            
+            # Calculate total possible shards for display (global count)
+            if self.ctx.progression_mode == 2:
+                total_possible_shards = self.ctx.shard_count  # Global shard count
+            elif self.ctx.progression_mode == 3:
+                total_possible_shards = sum(self.ctx.item_shard_count_map.values()) if self.ctx.item_shard_count_map else 0
             else:
-                # Normal mode: key is item_id
-                item_id = key
+                total_possible_shards = self.ctx.shard_count
             
-            # Determine if item is "completed"
-            # Normal mode: check if in collected_progression_items
-            # Shard mode: check if ALL shards for THIS ITEM are collected
-            if self.ctx.progression_mode == 0:
-                is_completed = item_id in self.ctx.collected_progression_items
-            else:  # Shard mode - check if all shards of THIS SPECIFIC ITEM collected
-                shards_for_this_item = self.ctx.shards_received_by_id.get(item_id, 0)
-                is_completed = (shards_for_this_item == self.ctx.shard_count) and self.ctx.shard_count > 0
-            
-            status = "[X]" if is_completed else "[ ]"
-            item_name = self.ctx.progression_item_names.get(item_id, f"Item {item_id}")
-            
-            if self.ctx.progression_mode == 0:  # Normal mode - show item count
-                item_count = len(self.ctx.claim_dict[key])
-                self.output(f"  {status} {item_name} (contains {item_count} items)")
-            else:  # Shard mode - show per-player shard count
-                item_count = len(self.ctx.claim_dict[key])
-                shards_for_this = self.ctx.shards_received_by_id.get(item_id, 0)
-                self.output(f"  {status} {item_name} ({shards_for_this}/{self.ctx.shard_count} shards, {item_count} items)")
+            for player_id in sorted(self.ctx.claim_dict.keys()):
+                player_locations = self.ctx.claim_dict[player_id]
+                
+                if total_possible_shards > 0:
+                    # All players use the same global shard count for unlocking
+                    locations_unlocked = int(len(player_locations) * total_shards / total_possible_shards)
+                    pct = (total_shards / total_possible_shards * 100) if total_possible_shards > 0 else 0
+                    is_completed = locations_unlocked == len(player_locations)
+                    status = "[X]" if is_completed else "[ ]"
+                    
+                    # Get player name and game
+                    player_name = self.ctx.player_names.get(player_id, f"Player {player_id}")
+                    game = self.ctx.slot_info[player_id].game if player_id in self.ctx.slot_info else "Unknown"
+                    
+                    self.output(f"  {status} ({player_name}) ({game}): {locations_unlocked}/{len(player_locations)} items ({pct:.{self.ctx.percentage_precision}f}%)")
+        else:
+            # Normal modes: display by item
+            for key in self.ctx.claim_dict.keys():
+                # Determine the item_id and player_id for this entry
+                if self.ctx.using_per_player_claim_dict:
+                    # Per-player mode: key is player_id, find the corresponding item_id
+                    player_id = key
+                    # Find the item_id for this player (first one that maps to this player)
+                    item_id = None
+                    for iid, pid in self.ctx.item_id_to_player.items():
+                        if pid == player_id:
+                            item_id = iid
+                            break
+                    if item_id is None:
+                        continue  # Skip if we can't find the item_id
+                else:
+                    # Normal mode: key is item_id
+                    item_id = key
+                
+                # Determine if item is "completed"
+                # Normal mode: check if in collected_progression_items
+                # Shard mode: check if ALL shards for THIS ITEM are collected
+                if self.ctx.progression_mode == 0:
+                    is_completed = item_id in self.ctx.collected_progression_items
+                else:  # Shard mode - check if all shards of THIS SPECIFIC ITEM collected
+                    shards_for_this_item = self.ctx.shards_received_by_id.get(item_id, 0)
+                    is_completed = (shards_for_this_item == self.ctx.shard_count) and self.ctx.shard_count > 0
+                
+                status = "[X]" if is_completed else "[ ]"
+                item_name = self.ctx.progression_item_names.get(item_id, f"Item {item_id}")
+                
+                if self.ctx.progression_mode == 0:  # Normal mode - show item count
+                    item_count = len(self.ctx.claim_dict[key])
+                    self.output(f"  {status} {item_name} (contains {item_count} items)")
+                else:  # Shard mode - show per-player shard count
+                    item_count = len(self.ctx.claim_dict[key])
+                    shards_for_this = self.ctx.shards_received_by_id.get(item_id, 0)
+                    self.output(f"  {status} {item_name} ({shards_for_this}/{self.ctx.shard_count} shards, {item_count} items)")
         
         self.output("=" * 60 + "\n")
         return True
@@ -95,6 +129,37 @@ class NoLogicCommandProcessor(ClientCommandProcessor):
     def _cmd_shard_status(self) -> bool:
         """Display current shard collection status (alias for status command)."""
         return self._cmd_status()
+    
+    def _cmd_precision(self, precision: str = "") -> bool:
+        """Set or display the precision for percentage display.
+        
+        Usage: !precision [decimals]
+        Example: !precision 2
+        """
+        if not isinstance(self.ctx, NoLogicContext):
+            self.output("Not connected to a No Logic world.")
+            return False
+        
+        if not precision:
+            # Display current precision
+            self.output(f"Current percentage precision: {self.ctx.percentage_precision} decimal places")
+            return True
+        
+        try:
+            new_precision = int(precision)
+            if new_precision < 0:
+                self.output("Precision must be 0 or greater.")
+                return False
+            if new_precision > 10:
+                self.output("Precision must be 10 or less.")
+                return False
+            
+            self.ctx.percentage_precision = new_precision
+            self.output(f"Percentage precision set to {new_precision} decimal places")
+            return True
+        except ValueError:
+            self.output(f"Invalid precision value: {precision}. Must be a number between 0 and 10.")
+            return False
     
     def _cmd_hints(self) -> bool:
         """Check and display current hint points available."""
@@ -106,9 +171,10 @@ class NoLogicCommandProcessor(ClientCommandProcessor):
             self.output("Not connected to a No Logic world.")
             return False
         
-        # Display hint points locally
+        # Display hint points and cost locally
         self.output(f"Hint Points: {self.ctx.hint_points}")
-        self.output(f"Hint Cost Per Hint: {self.ctx.hint_cost}")
+        hint_cost_points = self.ctx.get_hint_cost_points()
+        self.output(f"Hint Cost Per Hint: {self.ctx.hint_cost}% (= {hint_cost_points} points)")
         
         # Only broadcast to chat if we're NOT the No Logic slot
         if not self.ctx.nologic_slot_found:
@@ -136,8 +202,10 @@ class NoLogicContext(CommonContext):
         self.claim_dict: Dict[int, List[int]] = {}  # {progression_item_id or player_id: [location_ids]}
         self.collected_progression_items: Set[int] = set()
         self.auto_checked_locations: Set[int] = set()
+        self.auto_checked_locations_by_player: Dict[int, Set[int]] = {}  # {player_id: {location_ids}} for per-player tracking
         self.progression_item_names: Dict[int, str] = {}  # {item_id: "Player X's Progression"}
         self.item_id_to_player: Dict[int, int] = {}  # {item_id: player_id}
+        self.player_location_to_player_id: Dict[int, int] = {}  # {location_id: player_id} for location->player mapping in per-player mode
         self.nologic_tab = None
         self.nologic_slot_found = False
         self.last_item_sync_index: int = 0  # Track which items we've processed
@@ -154,7 +222,7 @@ class NoLogicContext(CommonContext):
         self.shard_item_ids: Set[int] = set()  # All shard item IDs being tracked
         self.shards_received_by_id: Dict[int, int] = {}  # {item_id: count of shards received}
         self.hint_points: int = 0  # Current hint points available
-        self.hint_cost: int = 0  # Cost per hint (received from server)
+        self.hint_cost: int = 0  # Hint cost percentage (received from server)
         
         # Trap tracking (Phase 9 from world)
         self.trap_mode: int = 0  # 0=Disabled, 1=Global, 2=Per-World, 3=Finders-Keepers
@@ -163,6 +231,9 @@ class NoLogicContext(CommonContext):
         self.trap_item_ids_by_name: Dict[str, int] = {}  # {trap_name: item_id}
         self.trap_item_ids: Set[int] = set()  # All trap item IDs being tracked
         self.trap_item_count_received: Dict[int, int] = {}  # {trap_item_id: count_received} - tracks index for array
+        
+        # Percentage display formatting
+        self.percentage_precision: int = 0  # Number of decimal places for percentage display (0-10)
     
     def load_game_state(self):
         """Load No Logic specific game state from slot_data."""
@@ -191,32 +262,54 @@ class NoLogicContext(CommonContext):
                 except (ValueError, TypeError):
                     self.item_id_to_player[key] = value
             
-            # Convert string keys to int keys and build progression_item_names mapping
-            self.claim_dict = {}
-            self.progression_item_names = {}
-            claim_dict_raw = slot_data.get("claim_dict", {})
-            logger.info(f"NoLogic: claim_dict_raw: {claim_dict_raw}")
-            
-            for key, value in claim_dict_raw.items():
-                try:
-                    item_id = int(key)
-                    self.claim_dict[item_id] = value
-                    
-                    # Build the progression item name from the player mapping
-                    if item_id in self.item_id_to_player:
-                        player_id = self.item_id_to_player[item_id]
-                        if player_id in self.progression_items:
-                            self.progression_item_names[item_id] = self.progression_items[player_id]
-                except (ValueError, TypeError):
-                    self.claim_dict[key] = value
-            
-            # Load shard configuration if available
+            # Load shard configuration FIRST to determine if we're in per-player mode
             self.progression_mode = slot_data.get("progression_mode", 0)
             self.progression_item_type = slot_data.get("progression_item_type", 0)
             self.global_shards_behavior = slot_data.get("global_shards_behavior", 0)  # 0=Shared pool, 1=Per-player
             self.using_per_player_claim_dict = slot_data.get("using_per_player_claim_dict", False)
             self.shard_count = slot_data.get("shard_count", 0)
             self.shard_percentage = slot_data.get("shard_percentage", 0)
+            
+            # Convert string keys to int keys and build progression_item_names mapping
+            self.claim_dict = {}
+            self.progression_item_names = {}
+            claim_dict_raw = slot_data.get("claim_dict", {})
+            logger.info(f"NoLogic: claim_dict_raw: {claim_dict_raw}")
+            logger.info(f"NoLogic: using_per_player_claim_dict: {self.using_per_player_claim_dict}")
+            
+            for key, value in claim_dict_raw.items():
+                try:
+                    dict_key = int(key)
+                    self.claim_dict[dict_key] = value
+                    
+                    if self.using_per_player_claim_dict:
+                        # In per-player mode, dict_key is player_id
+                        # Get the shard item name from progression_items
+                        if dict_key in self.progression_items:
+                            shard_item_name = self.progression_items[dict_key]
+                            # Find the actual item_id for this shard item
+                            # It's the item_id that maps to this player
+                            for item_id, player_id in self.item_id_to_player.items():
+                                if player_id == dict_key:
+                                    self.progression_item_names[item_id] = shard_item_name
+                                    logger.debug(f"NoLogic: Mapped shard item_id {item_id} -> '{shard_item_name}' for player {dict_key}")
+                                    break
+                    else:
+                        # In normal mode, dict_key is item_id
+                        # Build the progression item name from the player mapping
+                        if dict_key in self.item_id_to_player:
+                            player_id = self.item_id_to_player[dict_key]
+                            if player_id in self.progression_items:
+                                self.progression_item_names[dict_key] = self.progression_items[player_id]
+                except (ValueError, TypeError):
+                    self.claim_dict[key] = value
+            
+            # Build player->locations mapping for per-player mode to track checked locations per player
+            if self.using_per_player_claim_dict:
+                for player_id, location_ids in self.claim_dict.items():
+                    self.auto_checked_locations_by_player[player_id] = set()
+                    for loc_id in location_ids:
+                        self.player_location_to_player_id[loc_id] = player_id
             
             # Load per-item shard count map for mode 3
             item_shard_count_map_raw = slot_data.get("item_shard_count_map", {})
@@ -235,9 +328,16 @@ class NoLogicContext(CommonContext):
                     mode_name = "Shards-Percentage"
                 elif self.progression_mode == 3:
                     mode_name = "Shards-Percentage of Items"
-                logger.info(f"NoLogic: Shard mode enabled - {mode_name}, Item Type: {'Global' if self.progression_item_type == 1 else 'Per-world'}")
-                # In shard mode, all items in claim_dict are shard items
-                self.shard_item_ids = set(self.claim_dict.keys())
+                logger.info(f"NoLogic: Shard mode enabled - {mode_name}, Item Type: {'Global' if self.progression_item_type == 1 else 'Per-world'}, Per-player mode: {self.using_per_player_claim_dict}")
+                
+                # In shard mode, track which item_ids are shard items
+                # In per-player mode: use item_ids from progression_item_names (mapped from player_ids)
+                # In normal mode: use item_ids from claim_dict.keys()
+                if self.using_per_player_claim_dict:
+                    self.shard_item_ids = set(self.progression_item_names.keys())
+                else:
+                    self.shard_item_ids = set(self.claim_dict.keys())
+                
                 # Initialize shard count tracking for each shard item
                 for item_id in self.shard_item_ids:
                     self.shards_received_by_id[item_id] = 0
@@ -287,7 +387,21 @@ class NoLogicContext(CommonContext):
                 total_possible = len(self.shard_item_ids) * self.shard_count
             return f"({total_shards}/{total_possible} shards collected)"
         elif self.progression_mode == 2:  # Shards-Percentage mode
-            if self.shard_count > 0 and self.claim_dict:
+            if self.using_per_player_claim_dict and self.progression_item_type == 1:
+                # Per-player global mode: use the global shard count (not summed across players)
+                total_shards = sum(self.shards_received_by_id.values())
+                total_possible_shards = self.shard_count  # Global shard count
+                
+                if total_possible_shards > 0:
+                    # Show per-player status inline
+                    player_statuses = []
+                    for player_id, player_locations in self.claim_dict.items():
+                        locations_unlocked = int(len(player_locations) * total_shards / total_possible_shards)
+                        player_statuses.append(f"P{player_id}:{locations_unlocked}/{len(player_locations)}")
+                    pct = (total_shards / total_possible_shards * 100) if total_possible_shards > 0 else 0
+                    return f"({total_shards}/{total_possible_shards} shards, {', '.join(player_statuses)} - {pct:.{self.percentage_precision}f}%)"
+                return "(0/0 shards, 0%)"
+            elif self.shard_count > 0 and self.claim_dict:
                 total_shards = sum(self.shards_received_by_id.values())
                 # In global mode: total = shard_count. In per-world: total = num_item_types * shard_count
                 if self.progression_item_type == 1:  # Global
@@ -301,10 +415,25 @@ class NoLogicContext(CommonContext):
                 total_items = sum(len(locations) for locations in self.claim_dict.values())
                 items_unlocked = int(total_items * total_shards / total_possible) if total_possible > 0 else 0
                 
-                return f"({items_unlocked}/{total_items} items, {percentage:.0f}%)"
+                return f"({items_unlocked}/{total_items} items, {percentage:.{self.percentage_precision}f}%)"
             return "(0/0 items, 0%)"
         elif self.progression_mode == 3:  # Shards-Percentage of Items mode
-            if self.item_shard_count_map and self.claim_dict:
+            if self.using_per_player_claim_dict and self.progression_item_type == 1:
+                # Per-player global mode: calculate total possible shards across all players
+                total_shards = sum(self.shards_received_by_id.values())
+                # Calculate total possible shards across all players
+                total_possible_shards = sum(self.item_shard_count_map.values()) if self.item_shard_count_map else 0
+                
+                if total_possible_shards > 0:
+                    # Show per-player status inline
+                    player_statuses = []
+                    for player_id, player_locations in self.claim_dict.items():
+                        locations_unlocked = int(len(player_locations) * total_shards / total_possible_shards)
+                        pct = (total_shards / total_possible_shards * 100) if total_possible_shards > 0 else 0
+                        player_statuses.append(f"P{player_id}:{locations_unlocked}/{len(player_locations)}")
+                    return f"({total_shards}/{total_possible_shards} shards, {', '.join(player_statuses)} - {pct:.{self.percentage_precision}f}%)"
+                return "(0/0 shards, 0%)"
+            elif self.item_shard_count_map and self.claim_dict:
                 total_shards = sum(self.shards_received_by_id.values())
                 # Total possible shards is the sum of all item-specific shard counts
                 total_possible = sum(self.item_shard_count_map.values())
@@ -315,9 +444,26 @@ class NoLogicContext(CommonContext):
                 total_items = sum(len(locations) for locations in self.claim_dict.values())
                 items_unlocked = int(total_items * total_shards / total_possible) if total_possible > 0 else 0
                 
-                return f"({items_unlocked}/{total_items} items, {total_shards}/{total_possible} shards, {percentage:.0f}%)"
+                return f"({items_unlocked}/{total_items} items, {total_shards}/{total_possible} shards, {percentage:.{self.percentage_precision}f}%)"
             return "(0/0 items, 0/0 shards, 0%)"
         return ""
+    
+    def get_hint_cost_points(self) -> int:
+        """Calculate the actual hint cost in points based on hint_cost percentage and total locations.
+        
+        hint_cost is a percentage. The actual cost in points = percentage x 0.01 x total_locations
+        Total locations = len(missing_locations) + len(locations_checked)
+        """
+        if not self.hint_cost:
+            return 0
+        
+        # Calculate total locations available to this player
+        total_locations = len(self.missing_locations) + len(self.locations_checked)
+        if total_locations == 0:
+            return 0
+        
+        # Apply the percentage to get points cost (minimum 1 if hint_cost is non-zero)
+        return max(1, int(self.hint_cost * 0.01 * total_locations))
     
     def update_shard_count(self) -> None:
         """Update shard count based on items received (per shard item type)."""
@@ -350,10 +496,11 @@ class NoLogicContext(CommonContext):
             logger.info(f"NoLogic: Connected message received")
             logger.info(f"NoLogic: Available args keys: {args.keys()}")
             
-            # Extract hint cost from Connected message
+            # Extract hint cost from Connected message (it's a percentage)
             if "hint_cost" in args:
-                self.hint_cost = args["hint_cost"]
-                logger.info(f"NoLogic: Hint cost set to {self.hint_cost} points")
+                self.hint_cost = int(args["hint_cost"])
+                hint_cost_points = self.get_hint_cost_points()
+                logger.info(f"NoLogic: Hint cost set to {self.hint_cost}% (= {hint_cost_points} points for {len(self.missing_locations) + len(self.locations_checked)} total locations)")
             
             # Extract slot_data directly from Connected message if not yet set
             if not getattr(self, 'slot_data', None) and 'slot_data' in args:
@@ -408,7 +555,8 @@ class NoLogicContext(CommonContext):
                 # Cancel old task if it exists
                 if not self._check_task.done():
                     self._check_task.cancel()
-            self._check_task = asyncio.create_task(self._periodic_progression_check())
+            import random
+            self._check_task = asyncio.create_task(self._periodic_progression_check(random.randrange(30, 60)))  # Random, because why not?
         
         elif cmd == "ReceivedItems":
             self._handle_received_items(args)
@@ -443,9 +591,10 @@ class NoLogicContext(CommonContext):
             try:
                 # Respond with current hint points in chat
                 import asyncio
+                hint_cost_points = self.get_hint_cost_points()
                 hint_info = (
                     f"No Logic Hint Status - Available: {self.hint_points}, "
-                    f"Cost per hint: {self.hint_cost}"
+                    f"Cost per hint: {self.hint_cost}% (= {hint_cost_points} points)"
                 )
                 msg = {
                     "cmd": "Say",
@@ -489,17 +638,18 @@ class NoLogicContext(CommonContext):
                 return
             
             # Check if we have enough hint points
-            if self.hint_points >= self.hint_cost:
+            hint_cost_points = self.get_hint_cost_points()
+            if self.hint_points >= hint_cost_points:
                 # Send hint command
                 import asyncio
                 asyncio.create_task(self._send_hint_request(target_item_name))
                 logger.info(f"NoLogic: Detected @progression command from player {sender_player}, sending hint for '{target_item_name}'")
             else:
                 # Not enough hint points - send message with deficit info
-                needed = self.hint_cost - self.hint_points
+                needed = hint_cost_points - self.hint_points
                 import asyncio
                 asyncio.create_task(self._send_insufficient_hints_message(needed))
-                logger.info(f"NoLogic: Player {sender_player} requested hint but insufficient points ({self.hint_points}/{self.hint_cost})")
+                logger.info(f"NoLogic: Player {sender_player} requested hint but insufficient points ({self.hint_points}/{hint_cost_points})")
         
         except Exception as e:
             logger.debug(f"NoLogic: Error processing @progression command: {e}")
@@ -526,9 +676,10 @@ class NoLogicContext(CommonContext):
             return
         
         try:
+            hint_cost_points = self.get_hint_cost_points()
             msg = {
                 "cmd": "Say",
-                "text": f"Insufficient hint points! Need {needed_points} more (have {self.hint_points}, need {self.hint_cost})"
+                "text": f"Insufficient hint points! Need {needed_points} more (have {self.hint_points}, need {hint_cost_points})"
             }
             await self.send_msgs([msg])
             logger.debug(f"NoLogic: Sent insufficient hints message")
@@ -572,31 +723,45 @@ class NoLogicContext(CommonContext):
         # Collect all locations to check in one pass
         all_locations_to_check = []
         
-        # Special handling: Global percentage mode with per-player claim_dict
-        # Process each player's locations with the global shard percentage applied
-        if self.progression_mode == 2 and self.using_per_player_claim_dict and self.progression_item_type == 1:
-            # Global percentage mode: calculate global shard progress
+        # Special handling: Global percentage modes with per-player claim_dict
+        # Process each player's locations with their shard progress applied
+        if self.using_per_player_claim_dict and self.progression_item_type == 1:
+            # Per-player global mode: claim_dict keys are player_ids
+            # All players unlock based on the GLOBAL shard count, not individual player counts
             total_shards = sum(self.shards_received_by_id.values())
             
-            if self.shard_count > 0:
-                # Apply this percentage to each player's locations
-                # Use identical calculation to per-world mode: int(len(locations) * total_shards / shard_count)
-                for player_id, player_locations in self.claim_dict.items():
-                    # Calculate how many of this player's locations should be unlocked
-                    # Using exact same formula as per-world mode for consistency
-                    locations_to_unlock = int(len(player_locations) * total_shards / self.shard_count)
-                    # Take the first N locations (they're pre-shuffled by the world)
-                    locations_to_check = player_locations[:locations_to_unlock]
-                    all_locations_to_check.extend(locations_to_check)
-                    
-                    if locations_to_check:
-                        logger.info(f"NoLogic: Global Percentage mode - player {player_id}: unlocking {len(locations_to_check)}/{len(player_locations)} locations ({total_shards}/{self.shard_count} shards)")
+            if self.progression_mode == 2:  # Shards-Percentage mode
+                if self.shard_count > 0:
+                    # Apply global shard count to each player's locations
+                    for player_id, player_locations in self.claim_dict.items():
+                        # All players use the same global shard count for unlocking
+                        locations_to_unlock = int(len(player_locations) * total_shards / self.shard_count)
+                        locations_to_check = player_locations[:locations_to_unlock]
+                        all_locations_to_check.extend(locations_to_check)
+                        
+                        if locations_to_check:
+                            logger.info(f"NoLogic: Global Percentage mode - player {player_id}: unlocking {len(locations_to_check)}/{len(player_locations)} locations ({total_shards}/{self.shard_count} shards)")
+            
+            elif self.progression_mode == 3:  # Shards-Percentage of Items mode
+                # Global mode: use the global shard count (sum of all items' percentages)
+                total_possible_shards = sum(self.item_shard_count_map.values()) if self.item_shard_count_map else 0
+                
+                if total_possible_shards > 0:
+                    # Apply global shard count to each player's locations
+                    for player_id, player_locations in self.claim_dict.items():
+                        # All players use the same global shard count for unlocking
+                        locations_to_unlock = int(len(player_locations) * total_shards / total_possible_shards)
+                        locations_to_check = player_locations[:locations_to_unlock]
+                        all_locations_to_check.extend(locations_to_check)
+                        
+                        if locations_to_check:
+                            logger.info(f"NoLogic: Global Percentage of Items mode - player {player_id}: unlocking {len(locations_to_check)}/{len(player_locations)} locations ({total_shards}/{total_possible_shards} shards)")
         
         for network_item in self.items_received[self.last_item_sync_index:]:
             # Check if this is a progression item we're tracking
             if network_item.item in self.claim_dict.keys() or (self.using_per_player_claim_dict and network_item.item in self.item_id_to_player):
-                # Skip global percentage mode - already handled above
-                if self.progression_mode == 2 and self.using_per_player_claim_dict and self.progression_item_type == 1:
+                # Skip per-player global modes - already handled above
+                if self.using_per_player_claim_dict and self.progression_item_type == 1:
                     continue
                 
                 # In normal mode, only process the first time we receive each progression item
@@ -673,6 +838,16 @@ class NoLogicContext(CommonContext):
                 
                 # Collect locations instead of checking immediately
                 all_locations_to_check.extend(locations_to_check)
+        
+        # Sync already-checked locations on first connect (when last_item_sync_index is 0 before this call)
+        # This ensures that if locations were already checked in previous session, we track them
+        if self.last_item_sync_index == 0 and self.using_per_player_claim_dict and all_locations_to_check:
+            # Mark these locations as already checked in our per-player tracking
+            for loc_id in all_locations_to_check:
+                player_id = self.player_location_to_player_id.get(loc_id)
+                if player_id is not None and player_id in self.auto_checked_locations_by_player:
+                    self.auto_checked_locations_by_player[player_id].add(loc_id)
+            logger.info(f"NoLogic: Synced {len(all_locations_to_check)} already-checked locations on first connect")
         
         # Check for trap items received and auto-check trap locations
         if self.trap_mode > 0 and self.trap_weight > 0 and self.trap_item_ids:
@@ -781,6 +956,13 @@ class NoLogicContext(CommonContext):
             }
             await self.send_msgs([msg])
             self.auto_checked_locations.update(unchecked_locations)
+            
+            # Track which player each location belongs to (for per-player mode)
+            if self.using_per_player_claim_dict:
+                for loc_id in unchecked_locations:
+                    player_id = self.player_location_to_player_id.get(loc_id)
+                    if player_id is not None and player_id in self.auto_checked_locations_by_player:
+                        self.auto_checked_locations_by_player[player_id].add(loc_id)
     
     async def server_auth(self, password_requested: bool = False) -> None:
         """Authenticate with the server and auto-detect No Logic world."""
@@ -825,6 +1007,8 @@ class NoLogicContext(CommonContext):
         self.claim_dict.clear()
         self.collected_progression_items.clear()
         self.auto_checked_locations.clear()
+        self.auto_checked_locations_by_player.clear()
+        self.player_location_to_player_id.clear()
         self.progression_item_names.clear()
         self.item_id_to_player.clear()
         self.shard_item_ids.clear()
@@ -920,8 +1104,11 @@ if gui_enabled:
                 self.status_label.text = f"No Logic - Progression Items: {collected}/{total}"
             else:  # Shard mode - show correct total based on item type
                 total_shards = sum(self.ctx.shards_received_by_id.values())
+                # In mode 3 (Percentage of Items): total varies per item, sum all item shard counts
+                if self.ctx.progression_mode == 3 and self.ctx.item_shard_count_map:  # 3 = Shards - Percentage of Items
+                    total_possible = sum(self.ctx.item_shard_count_map.values())
                 # In global mode: total = shard_count. In per-world: total = num_item_types * shard_count
-                if self.ctx.progression_item_type == 1:  # Global
+                elif self.ctx.progression_item_type == 1:  # Global
                     total_possible = self.ctx.shard_count
                 else:  # Per-world
                     total_possible = len(self.ctx.shard_item_ids) * self.ctx.shard_count
@@ -929,31 +1116,99 @@ if gui_enabled:
             
             # Update item list
             self.items_grid.clear_widgets()
-            for item_id in self.ctx.claim_dict.keys():
-                # In shard mode, only mark as complete when ALL shards are collected FOR THAT ITEM
-                if self.ctx.progression_mode == 0:
-                    status = "[X]" if item_id in self.ctx.collected_progression_items else "[ ]"
-                else:  # Shard mode - check if all shards collected FOR THIS SPECIFIC ITEM
-                    shards_for_this_item = self.ctx.shards_received_by_id.get(item_id, 0)
-                    status = "[X]" if (shards_for_this_item == self.ctx.shard_count) and self.ctx.shard_count > 0 else "[ ]"
+            
+            # Handle per-player mode specially (display each player's progress)
+            if self.ctx.using_per_player_claim_dict:
                 
-                item_name = self.ctx.progression_item_names.get(item_id, f"Item {item_id}")
-                
-                # Show item count in shard mode
-                if self.ctx.progression_mode > 0:
-                    item_count = len(self.ctx.claim_dict[item_id])
-                    shards_for_this = self.ctx.shards_received_by_id.get(item_id, 0)
-                    label_text = f"{status} {item_name} ({shards_for_this}/{self.ctx.shard_count} shards, {item_count} items)"
-                else:  # Normal mode
-                    item_count = len(self.ctx.claim_dict[item_id])
-                    label_text = f"{status} {item_name} (contains {item_count} items)"
-                
-                label = MDLabel(
-                    text=label_text,
-                    size_hint_y=None,
-                    height=40
-                )
-                self.items_grid.add_widget(label)
+                for player_id in sorted(self.ctx.claim_dict.keys()):
+                    player_locations = self.ctx.claim_dict[player_id]
+                    
+                    # Count how many of this player's locations have actually been checked
+                    checked_for_player = len(self.ctx.auto_checked_locations_by_player.get(player_id, set()))
+                    
+                    # Calculate percentage based on actual checked locations vs total locations
+                    if len(player_locations) > 0:
+                        pct = (checked_for_player / len(player_locations) * 100)
+                    else:
+                        pct = 0
+                    
+                    # Get player name and game
+                    player_name = self.ctx.player_names.get(player_id, f"Player {player_id}")
+                    game_name = "Unknown"
+                    if player_id in self.ctx.slot_info:
+                        game_name = self.ctx.slot_info[player_id].game
+                    
+                    player_display = f"{player_name} ({game_name})"
+                    
+                    # Per-player completion: all of this player's items are unlocked
+                    is_completed = checked_for_player == len(player_locations)
+                    status = "[X]" if is_completed else "[ ]"
+                    
+                    if self.ctx.progression_mode == 2:  # Shards-Percentage
+                        label_text = f"{status} {player_display}: {checked_for_player}/{len(player_locations)} items ({pct:.{self.ctx.percentage_precision}f}%)"
+                    elif self.ctx.progression_mode == 3:  # Shards-Percentage of Items
+                        label_text = f"{status} {player_display}: {checked_for_player}/{len(player_locations)} items ({pct:.{self.ctx.percentage_precision}f}%)"
+                    else:  # Mode 1 (Shards-All)
+                        label_text = f"{status} {player_display}: {checked_for_player}/{len(player_locations)} items ({pct:.{self.ctx.percentage_precision}f}%)"
+                    
+                    label = MDLabel(
+                        text=label_text,
+                        size_hint_y=None,
+                        height=40
+                    )
+                    self.items_grid.add_widget(label)
+            else:
+                # Normal modes: display by item
+                for claim_dict_key in sorted(self.ctx.claim_dict.keys()):
+                    # Determine the actual item_id
+                    if self.ctx.using_per_player_claim_dict:
+                        # This shouldn't happen, but just in case
+                        player_id = claim_dict_key
+                        item_id = None
+                        for iid, pid in self.ctx.item_id_to_player.items():
+                            if pid == player_id:
+                                item_id = iid
+                                break
+                        if item_id is None:
+                            continue
+                    else:
+                        # Normal mode: key is item_id
+                        item_id = claim_dict_key
+                    
+                    # In shard mode, only mark as complete when ALL shards are collected FOR THAT ITEM
+                    if self.ctx.progression_mode == 0:
+                        status = "[X]" if item_id in self.ctx.collected_progression_items else "[ ]"
+                    else:  # Shard mode - check if all shards collected FOR THIS SPECIFIC ITEM
+                        shards_for_this_item = self.ctx.shards_received_by_id.get(item_id, 0)
+                        # For mode 3, use the item-specific shard count from the map
+                        if self.ctx.progression_mode == 3 and self.ctx.item_shard_count_map:  # 3 = Shards - Percentage of Items
+                            max_shards_for_item = self.ctx.item_shard_count_map.get(item_id, self.ctx.shard_count)
+                        else:
+                            max_shards_for_item = self.ctx.shard_count
+                        status = "[X]" if (shards_for_this_item == max_shards_for_item) and max_shards_for_item > 0 else "[ ]"
+                    
+                    item_name = self.ctx.progression_item_names.get(item_id, f"Item {item_id}")
+                    
+                    # Show item count in shard mode
+                    if self.ctx.progression_mode > 0:
+                        item_count = len(self.ctx.claim_dict[claim_dict_key])
+                        shards_for_this = self.ctx.shards_received_by_id.get(item_id, 0)
+                        # For mode 3, use the item-specific shard count in the label
+                        if self.ctx.progression_mode == 3 and self.ctx.item_shard_count_map:  # 3 = Shards - Percentage of Items
+                            max_shards_for_item = self.ctx.item_shard_count_map.get(item_id, self.ctx.shard_count)
+                        else:
+                            max_shards_for_item = self.ctx.shard_count
+                        label_text = f"{status} {item_name} ({shards_for_this}/{max_shards_for_item} shards, {item_count} items)"
+                    else:  # Normal mode
+                        item_count = len(self.ctx.claim_dict[claim_dict_key])
+                        label_text = f"{status} {item_name} (contains {item_count} items)"
+                    
+                    label = MDLabel(
+                        text=label_text,
+                        size_hint_y=None,
+                        height=40
+                    )
+                    self.items_grid.add_widget(label)
 else:
     # Stub for CLI mode
     class NoLogicTab:

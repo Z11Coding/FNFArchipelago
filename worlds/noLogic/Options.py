@@ -5,7 +5,7 @@
 
 from dataclasses import dataclass
 import logging
-from Options import Toggle, Choice, Range, PerGameCommonOptions, OptionGroup
+from Options import Toggle, Choice, Range, PerGameCommonOptions, OptionGroup, OptionSet
 
 
 
@@ -274,6 +274,29 @@ class GlobalShardsBehavior(Choice):
     default = 0
 
 
+class MetaForceProgressionItems(OptionSet):
+    """
+    [No Logic Integration]
+    Item names in this game that should be force-treated as Progression in a No Logic
+    multiworld, regardless of their actual item classification.
+    Useful for including Shards or other items not normally classified as Progression.
+    List item names exactly as they appear in-game, comma-separated.
+    """
+    display_name = "Force Items as Progression (No Logic)"
+    default = frozenset()
+
+
+class MetaExcludeProgressionItems(OptionSet):
+    """
+    [No Logic Integration]
+    Item names in this game that should be excluded from Progression collection in a No
+    Logic multiworld, even if they would otherwise qualify by classification.
+    List item names exactly as they appear in-game, comma-separated.
+    """
+    display_name = "Exclude Items from Progression (No Logic)"
+    default = frozenset()
+
+
 @dataclass
 class NoLogicOptions(PerGameCommonOptions):
     add_progression_item: AddProgressionItem
@@ -294,6 +317,8 @@ class NoLogicOptions(PerGameCommonOptions):
     progression_trap_weight: ProgressionTrapWeight
     progression_trap_mode: ProgressionTrapMode
     progression_trap_locality: ProgressionTrapLocality
+    nl_force_progression_items: MetaForceProgressionItems
+    nl_exclude_progression_items: MetaExcludeProgressionItems
 
 
 no_logic_option_groups = [
@@ -318,5 +343,158 @@ no_logic_option_groups = [
         ProgressionTrapWeight,
         ProgressionTrapMode,
         ProgressionTrapLocality,
-    ])
+    ]),
+    OptionGroup("No Logic Meta Options", [
+        MetaForceProgressionItems,
+        MetaExcludeProgressionItems,
+    ], start_collapsed=True),
 ]
+
+
+# =============================================================================
+# Import-time injection into PerGameCommonOptions and WebWorld option groups
+# =============================================================================
+# Done entirely within the NoLogic APWorld — no main Archipelago files modified.
+#
+# Strategy:
+#   • Add nl_ to PerGameCommonOptions.__annotations__ → type_hints returns them
+#     for every game → they appear in YAML templates universally.
+#   • __init_subclass__ hook: injects nl_ into each new subclass's __annotations__
+#     BEFORE @dataclass processes it, so the generated __init__ natively accepts
+#     nl_ kwargs for worlds loaded after noLogic.
+#   • MultiWorld.set_options patch: for worlds already compiled before noLogic,
+#     strips nl_ kwargs from the constructor call (avoiding TypeError) and
+#     attaches the values as plain attributes afterward.
+#   • Insert "No Logic Meta Options" OptionGroup into WebWorld.option_groups
+#     (covers all worlds without custom WebWorlds) and into each registered
+#     custom WebWorld subclass — so the group appears by name in the
+#     OptionsCreator and YAML templates for every game.
+#   • Patch WebWorldRegister.__new__ so future custom WebWorld subclasses also
+#     get the group inserted after their class is created.
+# =============================================================================
+
+_nl_meta_option_group = OptionGroup("No Logic Meta Options", [
+    MetaForceProgressionItems,
+    MetaExcludeProgressionItems,
+], start_collapsed=True)
+
+
+def _insert_nl_group_into(option_groups_list):
+    """Insert _nl_meta_option_group before 'Item & Location Options' in the list.
+    No-ops if the group is already present."""
+    if any(g.name == "No Logic Meta Options" for g in option_groups_list):
+        return
+    for i, g in enumerate(option_groups_list):
+        if g.name == "Item & Location Options":
+            option_groups_list.insert(i, _nl_meta_option_group)
+            return
+    option_groups_list.append(_nl_meta_option_group)
+
+
+def _inject_nologic_meta_options():
+    """Inject nl_force/exclude_progression_items into PerGameCommonOptions so the
+    options appear in every game's YAML template and OptionsCreator."""
+    if 'nl_force_progression_items' in PerGameCommonOptions.__annotations__:
+        return  # already injected (e.g. module reloaded)
+
+    # 1. Add annotations to PerGameCommonOptions so type_hints includes them for all
+    #    games, which makes them appear in YAML templates and OptionsCreator universally.
+    PerGameCommonOptions.__annotations__['nl_force_progression_items'] = MetaForceProgressionItems
+    PerGameCommonOptions.__annotations__['nl_exclude_progression_items'] = MetaExcludeProgressionItems
+
+    # 2. Clear the type_hints LRU cache so the updated annotations are visible.
+    try:
+        from Options import OptionsMetaProperty
+        OptionsMetaProperty.type_hints.fget.cache_clear()
+    except Exception:
+        pass
+
+    # 3. Install __init_subclass__ on PerGameCommonOptions so that worlds loaded AFTER
+    #    noLogic have nl_ added to their cls.__annotations__ BEFORE @dataclass processes
+    #    them.  The @dataclass-generated __init__ then naturally accepts nl_ kwargs —
+    #    no manual wrapping of any subclass __init__ is needed.
+    _existing_subclass_hook = PerGameCommonOptions.__dict__.get('__init_subclass__')
+
+    @classmethod
+    def _nl_init_subclass_hook(cls, **kwargs):
+        if _existing_subclass_hook is not None:
+            _existing_subclass_hook.__func__(cls, **kwargs)
+        else:
+            super(PerGameCommonOptions, cls).__init_subclass__(**kwargs)
+        if issubclass(cls, PerGameCommonOptions) and cls is not NoLogicOptions:
+            cls.__annotations__.setdefault('nl_force_progression_items', MetaForceProgressionItems)
+            cls.__annotations__.setdefault('nl_exclude_progression_items', MetaExcludeProgressionItems)
+
+    PerGameCommonOptions.__init_subclass__ = _nl_init_subclass_hook
+
+    # 4. Patch MultiWorld.set_options to handle worlds whose @dataclass __init__ was
+    #    already compiled before this injection (alphabetically earlier worlds).
+    #    For those worlds, nl_ kwargs are excluded from the constructor call to avoid
+    #    TypeError, then set as plain attributes so NoLogic can read them uniformly.
+    try:
+        from BaseClasses import MultiWorld
+
+        _orig_set_options = MultiWorld.set_options
+
+        def _nl_set_options(multiworld_self, args):
+            from worlds import AutoWorld as _AutoWorld
+            for player in multiworld_self.player_ids:
+                world_type = _AutoWorld.AutoWorldRegister.world_types[
+                    multiworld_self.game[player]]
+                multiworld_self.worlds[player] = world_type(multiworld_self, player)
+                options_dataclass = world_type.options_dataclass
+                dc_fields = getattr(options_dataclass, '__dataclass_fields__', {})
+                # Build kwargs filtered to only the fields the constructor actually knows.
+                multiworld_self.worlds[player].options = options_dataclass(**{
+                    k: getattr(args, k)[player]
+                    for k in options_dataclass.type_hints
+                    if k in dc_fields
+                })
+                # For worlds without native nl_ support, attach values as plain attributes
+                # so NoLogic can always read them regardless of loading order.
+                if 'nl_force_progression_items' not in dc_fields:
+                    opts = multiworld_self.worlds[player].options
+                    opts.nl_force_progression_items = getattr(
+                        args, 'nl_force_progression_items', {}
+                    ).get(player, MetaForceProgressionItems(frozenset()))
+                    opts.nl_exclude_progression_items = getattr(
+                        args, 'nl_exclude_progression_items', {}
+                    ).get(player, MetaExcludeProgressionItems(frozenset()))
+
+        MultiWorld.set_options = _nl_set_options
+    except Exception:
+        pass
+
+    # 5. Insert the "No Logic Meta Options" group into WebWorld.option_groups
+    #    (the base class list, shared by all worlds without a custom WebWorld),
+    #    and into the option_groups list of each already-registered custom
+    #    WebWorld subclass.  noLogic's own WebWorld already has the group defined
+    #    in no_logic_option_groups, so _insert_nl_group_into is a no-op for it.
+    try:
+        from worlds.AutoWorld import WebWorld, WebWorldRegister, AutoWorldRegister
+
+        # Patch the base WebWorld.option_groups (covers all worlds using the default web)
+        _insert_nl_group_into(WebWorld.option_groups)
+
+        # Patch each registered world whose WebWorld subclass owns its own option_groups
+        for _world_cls in AutoWorldRegister.world_types.values():
+            _web_cls = type(_world_cls.web)
+            if _web_cls is not WebWorld and 'option_groups' in _web_cls.__dict__:
+                _insert_nl_group_into(_web_cls.option_groups)
+
+        # Patch WebWorldRegister.__new__ so future custom WebWorld subclasses get
+        # the group inserted right after their class is created by the metaclass.
+        _orig_webworld_new = WebWorldRegister.__new__
+
+        def _nl_webworld_new(mcs, name, bases, dct):
+            cls = _orig_webworld_new(mcs, name, bases, dct)
+            if 'option_groups' in dct and any(issubclass(b, WebWorld) for b in bases):
+                _insert_nl_group_into(cls.option_groups)
+            return cls
+
+        WebWorldRegister.__new__ = _nl_webworld_new
+    except Exception:
+        pass
+
+
+_inject_nologic_meta_options()

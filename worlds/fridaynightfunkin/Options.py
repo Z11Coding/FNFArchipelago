@@ -110,7 +110,7 @@ class trapAmount(Range):
     """The amount of traps that will be added to the game"""
     display_name = "Trap Weight"
     range_start = 0
-    range_end = 100
+    range_end = int(1e9)  # Effectively no upper limit, since the actual number of traps is limited by filler and songs.
     default = 10
 
 

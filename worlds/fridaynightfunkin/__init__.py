@@ -2234,7 +2234,7 @@ class FunkinWorld(World):
 
         full_trap_list.extend(player_custom_traps)
 
-        return [trap for trap in full_trap_list if self.options.trapAmount.value > 0 and self.check_trap_weight(trap) > 0]
+        return [trap for trap in full_trap_list if self.check_trap_weight(trap) > 0]
 
     def get_available_filler(self) -> List[str]:
         full_filler_list = list(self.fnfUtil.filler_items.keys())
@@ -2244,7 +2244,7 @@ class FunkinWorld(World):
     def get_available_filler_traps(self) -> List[str]:
         full_filler_trap_list = list(self.fnfUtil.trap_filler_item_weights.keys())
 
-        return [filler for filler in full_filler_trap_list if self.options.trapAmount.value > 0 and self.check_filler_trap_weight(filler) > 0]
+        return [filler for filler in full_filler_trap_list if self.check_filler_trap_weight(filler) > 0]
 
     def get_available_items(self) -> List[str]:
         full_item_list = self.fnfUtil.normal_items.keys()
@@ -3620,8 +3620,8 @@ class FunkinWorld(World):
                     weighted_items = []
                     weights = []
 
-                    # Add traps with their weights (if traps are enabled)
-                    if self.options.trapAmount.value > 0:
+                    # Add traps with their weights (if any weight is more than 0.)
+                    if any(self.trap_items_weights[trap_name] > 0 for trap_name in self.trap_items_weights):
                         available_traps = self.get_available_traps()
                         for trap_name in available_traps:
                             trap_weight = self.check_trap_weight(trap_name)
