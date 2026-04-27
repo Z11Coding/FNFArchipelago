@@ -280,7 +280,7 @@ class MetaForceProgressionItems(OptionSet):
     Item names in this game that should be force-treated as Progression in a No Logic
     multiworld, regardless of their actual item classification.
     Useful for including Shards or other items not normally classified as Progression.
-    List item names exactly as they appear in-game, comma-separated.
+    List item names exactly as they appear in-game.
     """
     display_name = "Force Items as Progression (No Logic)"
     default = frozenset()
@@ -289,9 +289,9 @@ class MetaForceProgressionItems(OptionSet):
 class MetaExcludeProgressionItems(OptionSet):
     """
     [No Logic Integration]
-    Item names in this game that should be excluded from Progression collection in a No
+    Item names in this game that should be excluded from Progression Shard/Item collection in a No
     Logic multiworld, even if they would otherwise qualify by classification.
-    List item names exactly as they appear in-game, comma-separated.
+    List item names exactly as they appear in-game.
     """
     display_name = "Exclude Items from Progression (No Logic)"
     default = frozenset()

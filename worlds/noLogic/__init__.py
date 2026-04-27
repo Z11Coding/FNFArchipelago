@@ -841,13 +841,7 @@ class NoLogicWorld(World):
             client_logger = logging.getLogger("Client")
             client_logger.info("No Logic detected! This seed might be unbeatable! (Ignore this if in NPM Logical Mode.)")
             return
-
-        # ── No Logic Meta Options injection ──────────────────────────────────────
-        # nl_force_progression_items and nl_exclude_progression_items are now part of
-        # PerGameCommonOptions (defined in Options.py) and are rolled from each player's
-        # YAML by the standard generation pipeline — no runtime injection needed here.
-        # ─────────────────────────────────────────────────────────────────────────────
-
+        
         # Check for multiple No Logic worlds
         no_logic_count = sum(1 for player in self.multiworld.player_ids 
                              if isinstance(self.multiworld.worlds[player], NoLogicWorld))
