@@ -316,23 +316,25 @@ class GenericYAMLPlayer:
     """Generic YAML parser for extracting player name from any player YAML file."""
     
     @staticmethod
-    def read_player_name(yaml_path: Optional[str]) -> Tuple[Optional[str], bool]:
+    def read_player_name(yaml_path: Optional[str]) -> Tuple[List[str], bool]:
         """
-        Read player name from a YAML file, ignoring No Logic players.
+        Read all potential player names from a YAML file, ignoring No Logic players.
+        Extracts names from both main 'name' field and all 'triggers' entries.
+        Since triggers are random/conditional, collects ALL potential names.
         
         Args:
             yaml_path: Path to the YAML file
             
         Returns:
-            Tuple of (player_name, success): Name extracted from YAML and success flag
-                The name may contain {number} placeholders which will be resolved by build_item_name_to_id_with_yaml()
+            Tuple of (list_of_names, success): All names extracted from YAML and success flag
+                The names may contain {number} placeholders which will be resolved by build_item_name_to_id_with_yaml()
         """
         if not yaml_path:
-            return None, False
+            return [], False
         
         yaml_file = Path(yaml_path)
         if not yaml_file.exists():
-            return None, False
+            return [], False
         
         with open(yaml_file, 'r', encoding='utf-8-sig') as f:
             yaml_content = f.read()
@@ -343,32 +345,51 @@ class GenericYAMLPlayer:
 
         
         if not isinstance(parsed_data, dict):
-            return None, False
+            return [], False
         
         # Raise specific exception if this is a No Logic player
         if parsed_data.get('game') == 'No Logic':
             print(f"[DEBUG] YAML file {yaml_path} is for a No Logic player, raising NoLogicPlayerEncountered")
             raise NoLogicPlayerEncountered(f"YAML file {yaml_path} is for a No Logic player")
         
-        for key in ['name']:
-            if key in parsed_data and isinstance(parsed_data[key], str):
-                name = parsed_data[key].strip()
-                if name:
-                    return name, True
+        all_names = []
         
-        return None, False
+        # Extract the name from main 'name' field (primary name)
+        if 'name' in parsed_data and isinstance(parsed_data['name'], str):
+            name = parsed_data['name'].strip()
+            if name:
+                all_names.append(name)
+        
+        # Extract ALL potential names from triggers section (since triggers are random/conditional)
+        if 'triggers' in parsed_data and isinstance(parsed_data['triggers'], list):
+            for trigger in parsed_data['triggers']:
+                if isinstance(trigger, dict):
+                    # Look for name in options -> null -> name
+                    if 'options' in trigger and isinstance(trigger['options'], dict):
+                        options = trigger['options']
+                        if None in options and isinstance(options[None], dict):
+                            trigger_name = options[None].get('name')
+                            if isinstance(trigger_name, str):
+                                name = trigger_name.strip()
+                                if name and name not in all_names:  # Avoid duplicates
+                                    all_names.append(name)
+        
+        success = len(all_names) > 0
+        return all_names, success
     
     @staticmethod
-    def _extract_name_from_parsed(parsed_data) -> Tuple[Optional[str], bool]:
+    def _extract_name_from_parsed(parsed_data) -> Tuple[List[str], bool]:
         """
-        Extract player name from parsed YAML data.
+        Extract all potential player names from parsed YAML data.
         Handles both single-document and multi-document YAML parse results.
+        Supports extracting names from the main 'name' field or from 'triggers' section.
+        Since triggers are random/conditional, collects ALL potential names.
         
         Args:
             parsed_data: Parsed YAML data (dict or list of dicts)
             
         Returns:
-            Tuple of (player_name, success)
+            Tuple of (list_of_names, success) - list_of_names may contain primary name and all trigger names
             
         Raises:
             NoLogicPlayerEncountered: When the parsed data is for a No Logic player
@@ -376,26 +397,43 @@ class GenericYAMLPlayer:
         # Handle multi-document parse results (list of dicts)
         if isinstance(parsed_data, list):
             if not parsed_data:
-                return None, False
+                return [], False
             parsed_data = parsed_data[0]
         
         if not isinstance(parsed_data, dict):
-            return None, False
+            return [], False
         
         # Raise specific exception if this is a No Logic player
         if parsed_data.get('game') == 'No Logic':
             print(f"[DEBUG] Parsed data is a No Logic player, raising NoLogicPlayerEncountered")
             raise NoLogicPlayerEncountered("Encountered a No Logic player in YAML data")
         
-        # Extract the name
+        all_names = []
+        
+        # Extract the name from main 'name' field (primary name)
         if 'name' in parsed_data and isinstance(parsed_data['name'], str):
             name = parsed_data['name'].strip()
             if name:
-                return name, True
+                all_names.append(name)
         
-        return None, False
+        # Extract ALL potential names from triggers section (since triggers are random/conditional)
+        if 'triggers' in parsed_data and isinstance(parsed_data['triggers'], list):
+            for trigger in parsed_data['triggers']:
+                if isinstance(trigger, dict):
+                    # Look for name in options -> null -> name
+                    if 'options' in trigger and isinstance(trigger['options'], dict):
+                        options = trigger['options']
+                        if None in options and isinstance(options[None], dict):
+                            trigger_name = options[None].get('name')
+                            if isinstance(trigger_name, str):
+                                name = trigger_name.strip()
+                                if name and name not in all_names:  # Avoid duplicates
+                                    all_names.append(name)
+        
+        success = len(all_names) > 0
+        return all_names, success
 
-funny_fillers:list[str] = [
+funny_fillers:set[str] = set([
     "Filler",
     "Placeholder",
     "Progression Item",
@@ -441,8 +479,9 @@ funny_fillers:list[str] = [
     "ewksdkkedswe",
     "TThe weather is nice today, isn't it?",
     "Unfortunate Circumstances",
-
-]
+    "Potato the Cat",
+    "Meow"
+])
 def build_item_name_to_id_with_yaml() -> Dict[str, int]:
     """
     Build item_name_to_id mapping by scanning player files for names.
@@ -451,52 +490,47 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
     Dynamically assigns shard IDs to ensure no collisions.
     Multi-document YAML files (separated by ---) are treated as separate players,
     each getting their own player_idx and thus their own item IDs.
+    
+    Raises:
+        NoLogicException: If YAML reading fails, after displaying an error message
+            and waiting for user confirmation.
     """
-    print("[DEBUG] Starting build_item_name_to_id_with_yaml()")
-    base_id_offset = NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS
-    item_mapping = {
-        "Filler": base_id_offset,
-        "Universal Progression": base_id_offset + 1,
-        "Universal Progression Shard": base_id_offset + 2,
-        **{filler: base_id_offset + 3 + i for i, filler in enumerate(funny_fillers)},
-        "Global Progression Trap": base_id_offset + 3 + len(funny_fillers),
-        "Progression Trap": base_id_offset + 4 + len(funny_fillers),
-    }
-    
-    print(f"[DEBUG] Initial item_mapping: {item_mapping}")
-    
-    # Try to read from players folder
-    # Get all player YAML files
-    user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
-    print(f"[DEBUG] user_path from settings: {user_path}")
-    
-    folder_path = sys.argv[sys.argv.index("--player_files_path") + 1] if "--player_files_path" in sys.argv else user_path
-    print(f"[DEBUG] Using folder_path: {folder_path}")
+    try:
+        print("[DEBUG] Starting build_item_name_to_id_with_yaml()")
+        base_id_offset = NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS
+        item_mapping = {
+            "Filler": base_id_offset,
+            "Universal Progression": base_id_offset + 1,
+            "Universal Progression Shard": base_id_offset + 2,
+            **{filler: base_id_offset + 3 + i for i, filler in enumerate(funny_fillers)},
+            "Global Progression Trap": base_id_offset + 3 + len(funny_fillers),
+            "Progression Trap": base_id_offset + 4 + len(funny_fillers),
+        }
+        
+        print(f"[DEBUG] Initial item_mapping: {item_mapping}")
+        
+        # Try to read from players folder
+        # Get all player YAML files
+        user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
+        print(f"[DEBUG] user_path from settings: {user_path}")
+        
+        folder_path = sys.argv[sys.argv.index("--player_files_path") + 1] if "--player_files_path" in sys.argv else user_path
+        print(f"[DEBUG] Using folder_path: {folder_path}")
 
-    players_dir = Path(folder_path)
-    print(f"[DEBUG] players_dir converted to Path: {players_dir}")
-    print(f"[DEBUG] Is directory? {os.path.isdir(players_dir)}")
-    
-    if os.path.isdir(players_dir):
-        # Get all that are files, and not directories, regardless of extension (Since AP doesn't care.)
-        yaml_files = [f for f in players_dir.glob("*") if f.is_file()]
-        print(f"[DEBUG] Found {len(yaml_files)} YAML files: {[f.name for f in yaml_files]}")
+        players_dir = Path(folder_path)
+        print(f"[DEBUG] players_dir converted to Path: {players_dir}")
+        print(f"[DEBUG] Is directory? {os.path.isdir(players_dir)}")
         
-        # Read all player names from YAML files
-        name_counter = Counter()
-        player_idx = 0
-        
-        for yaml_file in sorted(yaml_files):
-            print(f"\n[DEBUG] Processing file: {yaml_file}")
-            if player_idx >= RESERVED_PROGRESSION_ITEMS:
-                print(f"[DEBUG] Reached max player_idx ({RESERVED_PROGRESSION_ITEMS}), breaking")
-                break
+        if os.path.isdir(players_dir):
+            # Get all that are files, and not directories, regardless of extension (Since AP doesn't care.)
+            yaml_files = [f for f in players_dir.glob("*") if f.is_file() and f.name != "desktop.ini"]
+            print(f"[DEBUG] Found {len(yaml_files)} YAML files: {[f.name for f in yaml_files]}")
             
-            with open(yaml_file, 'r', encoding='utf-8-sig') as f:
-                yaml_content = f.read()
-            print(f"[DEBUG] Read {len(yaml_content)} bytes from file")
+            # Read all player names from YAML files
+            name_counter = Counter()
+            player_idx = 0
             
-            # Check if this is a multi-document YAML file, making sure the "---" isn't from something else.
+            # Define helper function to check for multi-document YAML files
             def check_lines(content: str) -> bool:
                 if not isinstance(content, str):
                     return False
@@ -508,27 +542,37 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                     if line.strip() == '---':
                         return True
                 return False
-
-            if check_lines(yaml_content):
-                print(f"[DEBUG] Multi-document YAML detected")
-                # Split by lines and reconstruct documents, treating only standalone "---" as separators
-                documents = []
-                current_doc = []
-                for line in yaml_content.splitlines():
-                    if line.strip() == '---':
-                        # Only treat as separator if it's the only thing on the line
-                        if current_doc or documents:  # Don't create empty first doc from leading ---
-                            documents.append('\n'.join(current_doc))
-                            current_doc = []
-                    else:
-                        current_doc.append(line)
+            
+            for yaml_file in sorted(yaml_files):
+                print(f"\n[DEBUG] Processing file: {yaml_file}")
+                if player_idx >= RESERVED_PROGRESSION_ITEMS:
+                    print(f"[DEBUG] Reached max player_idx ({RESERVED_PROGRESSION_ITEMS}), breaking")
+                    break
                 
-                # Add the last document
-                if current_doc:
-                    documents.append('\n'.join(current_doc))
+                with open(yaml_file, 'r', encoding='utf-8-sig') as f:
+                    yaml_content = f.read()
+                print(f"[DEBUG] Read {len(yaml_content)} bytes from file")
                 
-                for doc_idx, doc_content in enumerate(documents):
-                    print(f"[DEBUG]   Processing document {doc_idx}, player_idx={player_idx}")
+                if check_lines(yaml_content):
+                    print(f"[DEBUG] Multi-document YAML detected")
+                    # Split by lines and reconstruct documents, treating only standalone "---" as separators
+                    documents = []
+                    current_doc = []
+                    for line in yaml_content.splitlines():
+                        if line.strip() == '---':
+                            # Only treat as separator if it's the only thing on the line
+                            if current_doc or documents:  # Don't create empty first doc from leading ---
+                                documents.append('\n'.join(current_doc))
+                                current_doc = []
+                        else:
+                            current_doc.append(line)
+                    
+                    # Add the last document
+                    if current_doc:
+                        documents.append('\n'.join(current_doc))
+                    
+                    for doc_idx, doc_content in enumerate(documents):
+                        print(f"[DEBUG]   Processing document {doc_idx}, player_idx={player_idx}")
                     if player_idx >= RESERVED_PROGRESSION_ITEMS:
                         break
                     
@@ -543,35 +587,43 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                     print(f"[DEBUG]   Parsed data: {parsed_data}")
                     
                     try:
-                        player_name, success = GenericYAMLPlayer._extract_name_from_parsed(parsed_data)
+                        player_names, success = GenericYAMLPlayer._extract_name_from_parsed(parsed_data)
                     except NoLogicPlayerEncountered:
                         print(f"[DEBUG]   Document {doc_idx} is a No Logic player, skipping")
                         continue
                     
-                    print(f"[DEBUG]   Extracted name: '{player_name}', success: {success}")
+                    print(f"[DEBUG]   Extracted names: {player_names}, success: {success}")
                     
                     player_id = player_idx + 1  # Player IDs start at 1
                     
-                    if success and player_name:
-                        # Apply Archipelago's name formatting logic
-                        resolved_name = _resolve_player_name(player_name, player_id, name_counter)
-                        print(f"[DEBUG]   Resolved name: '{resolved_name}'")
-                        progression_name = f"{resolved_name}'s Progression"
-                        item_id = NOLOGIC_BASE_ID + player_idx
-                        item_mapping[progression_name] = item_id
-                        print(f"[DEBUG]   Added progression item: '{progression_name}' -> {item_id}")
+                    if success and player_names:
+                        # Compute counter value once for all names from this document
+                        # All variant names from the same document should use the same counter
+                        counter_key = f"_player_{player_idx}"
+                        name_counter[counter_key] += 1
+                        common_counter_value = name_counter[counter_key]
                         
-                        # Also register the shard version with next available ID
-                        shard_name = f"{progression_name} Shard"
-                        next_available_id = max(item_mapping.values()) + 1
-                        item_mapping[shard_name] = next_available_id
-                        print(f"[DEBUG]   Added shard item: '{shard_name}' -> {next_available_id}")
-                        
-                        # Also register the per-player trap item
-                        per_world_trap_name = f"{resolved_name}'s Progression Trap"
-                        next_available_id = max(item_mapping.values()) + 1
-                        item_mapping[per_world_trap_name] = next_available_id
-                        print(f"[DEBUG]   Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
+                        # Create progression items for all potential player names
+                        for idx, player_name in enumerate(player_names):
+                            # Apply Archipelago's name formatting logic with shared counter value
+                            resolved_name = _resolve_player_name_with_counter(player_name, player_id, common_counter_value)
+                            print(f"[DEBUG]   Resolved name: '{resolved_name}'")
+                            progression_name = f"{resolved_name}'s Progression"
+                            item_id = NOLOGIC_BASE_ID + player_idx
+                            item_mapping[progression_name] = item_id
+                            print(f"[DEBUG]   Added progression item: '{progression_name}' -> {item_id}")
+                            
+                            # Also register the shard version with next available ID
+                            shard_name = f"{progression_name} Shard"
+                            next_available_id = max(item_mapping.values()) + 1
+                            item_mapping[shard_name] = next_available_id
+                            print(f"[DEBUG]   Added shard item: '{shard_name}' -> {next_available_id}")
+                            
+                            # Also register the per-player trap item
+                            per_world_trap_name = f"{resolved_name}'s Progression Trap"
+                            next_available_id = max(item_mapping.values()) + 1
+                            item_mapping[per_world_trap_name] = next_available_id
+                            print(f"[DEBUG]   Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
                     else:
                         # Fallback to reserved name
                         reserved_name = f"__RESERVED_PROG_{player_idx}__"
@@ -584,74 +636,106 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                         next_available_id = max(item_mapping.values()) + 1
                         item_mapping[shard_name] = next_available_id
                         print(f"[DEBUG]   Added reserved shard item: '{shard_name}' -> {next_available_id}")
-                        raise NoLogicException(f"Failed to extract player name from document {doc_idx} in {yaml_file}. Using reserved name {reserved_name}. This may indicate an issue with the YAML formatting.")
+                        raise NoLogicException(f"Failed to extract player name from document {doc_idx} in {yaml_file}. This may indicate an issue with the YAML formatting.")
                     
                     player_idx += 1
-            else:
-                # Single document - process normally
-                print(f"[DEBUG] Single-document YAML detected")
-                
-                try:
-                    player_name, success = GenericYAMLPlayer.read_player_name(str(yaml_file))
-                except NoLogicPlayerEncountered:
-                    print(f"[DEBUG] File {yaml_file} is a No Logic player, skipping")
-                    continue
-                
-                print(f"[DEBUG] Extracted name: '{player_name}', success: {success}")
-                
-                player_id = player_idx + 1  # Player IDs start at 1
-                
-                if success and player_name:
-                    # Apply Archipelago's name formatting logic
-                    resolved_name = _resolve_player_name(player_name, player_id, name_counter)
-                    print(f"[DEBUG] Resolved name: '{resolved_name}'")
-                    progression_name = f"{resolved_name}'s Progression"
-                    item_id = NOLOGIC_BASE_ID + player_idx
-                    item_mapping[progression_name] = item_id
-                    print(f"[DEBUG] Added progression item: '{progression_name}' -> {item_id}")
-                    
-                    # Also register the shard version with next available ID
-                    shard_name = f"{progression_name} Shard"
-                    next_available_id = max(item_mapping.values()) + 1
-                    item_mapping[shard_name] = next_available_id
-                    print(f"[DEBUG] Added shard item: '{shard_name}' -> {next_available_id}")
-                    
-                    # Also register the per-player trap item
-                    per_world_trap_name = f"{resolved_name}'s Progression Trap"
-                    next_available_id = max(item_mapping.values()) + 1
-                    item_mapping[per_world_trap_name] = next_available_id
-                    print(f"[DEBUG] Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
                 else:
-                    # Fallback to reserved name
-                    reserved_name = f"__RESERVED_PROG_{player_idx}__"
-                    item_id = NOLOGIC_BASE_ID + player_idx
-                    item_mapping[reserved_name] = item_id
-                    print(f"[DEBUG] Added reserved item: '{reserved_name}' -> {item_id}")
+                    # Single document - process normally
+                    print(f"[DEBUG] Single-document YAML detected")
                     
-                    # Also register the shard version with next available ID
-                    shard_name = f"{reserved_name}SHARD__"
-                    next_available_id = max(item_mapping.values()) + 1
-                    item_mapping[shard_name] = next_available_id
-                    print(f"[DEBUG] Added reserved shard item: '{shard_name}' -> {next_available_id}")
-                    raise NoLogicException(f"Failed to extract player name from {yaml_file}. Using reserved name {reserved_name}. This may indicate an issue with the YAML formatting.")
-                
-                player_idx += 1
-    else:
-        # Fallback to all reserved names if players folder doesn't exist
-        print(f"[DEBUG] Folder does not exist or is not a directory, using reserved names fallback")
-        for i in range(RESERVED_PROGRESSION_ITEMS):
-            reserved_name = f"__RESERVED_PROG_{i}__"
-            item_mapping[reserved_name] = NOLOGIC_BASE_ID + i
-            # Also register the shard version with next available ID
-            shard_name = f"{reserved_name}SHARD__"
-            next_available_id = max(item_mapping.values()) + 1
-            item_mapping[shard_name] = next_available_id
+                    try:
+                        parsed_data = parse_yaml(yaml_content)
+                        player_names, success = GenericYAMLPlayer._extract_name_from_parsed(parsed_data)
+                    except NoLogicPlayerEncountered:
+                        print(f"[DEBUG] File {yaml_file} is a No Logic player, skipping")
+                        continue
+                    
+                    print(f"[DEBUG] Extracted names: {player_names}, success: {success}")
+                    
+                    player_id = player_idx + 1  # Player IDs start at 1
+                    
+                    if success and player_names:
+                        # Compute counter value once for all names from this file
+                        # All variant names from the same file should use the same counter
+                        counter_key = f"_player_{player_idx}"
+                        name_counter[counter_key] += 1
+                        common_counter_value = name_counter[counter_key]
+                        
+                        # Create progression items for all potential player names
+                        for idx, player_name in enumerate(player_names):
+                            # Apply Archipelago's name formatting logic with shared counter value
+                            resolved_name = _resolve_player_name_with_counter(player_name, player_id, common_counter_value)
+                            print(f"[DEBUG] Resolved name: '{resolved_name}'")
+                            progression_name = f"{resolved_name}'s Progression"
+                            item_id = NOLOGIC_BASE_ID + player_idx
+                            item_mapping[progression_name] = item_id
+                            print(f"[DEBUG] Added progression item: '{progression_name}' -> {item_id}")
+                            
+                            # Also register the shard version with next available ID
+                            shard_name = f"{progression_name} Shard"
+                            next_available_id = max(item_mapping.values()) + 1
+                            item_mapping[shard_name] = next_available_id
+                            print(f"[DEBUG] Added shard item: '{shard_name}' -> {next_available_id}")
+                            
+                            # Also register the per-player trap item
+                            per_world_trap_name = f"{resolved_name}'s Progression Trap"
+                            next_available_id = max(item_mapping.values()) + 1
+                            item_mapping[per_world_trap_name] = next_available_id
+                            print(f"[DEBUG] Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
+                    else:
+                        # Fallback to reserved name
+                        reserved_name = f"__RESERVED_PROG_{player_idx}__"
+                        item_id = NOLOGIC_BASE_ID + player_idx
+                        item_mapping[reserved_name] = item_id
+                        print(f"[DEBUG] Added reserved item: '{reserved_name}' -> {item_id}")
+                        
+                        # Also register the shard version with next available ID
+                        shard_name = f"{reserved_name}SHARD__"
+                        next_available_id = max(item_mapping.values()) + 1
+                        item_mapping[shard_name] = next_available_id
+                        print(f"[DEBUG] Added reserved shard item: '{shard_name}' -> {next_available_id}")
+                        raise NoLogicException(f"Failed to extract player name from {yaml_file}. Using reserved name {reserved_name}. This may indicate an issue with the YAML formatting.")
+                    
+                    player_idx += 1
+        else:
+            # Fallback to all reserved names if players folder doesn't exist
+            print(f"[DEBUG] Folder does not exist or is not a directory, using reserved names fallback")
+            for i in range(RESERVED_PROGRESSION_ITEMS):
+                reserved_name = f"__RESERVED_PROG_{i}__"
+                item_mapping[reserved_name] = NOLOGIC_BASE_ID + i
+                # Also register the shard version with next available ID
+                shard_name = f"{reserved_name}SHARD__"
+                next_available_id = max(item_mapping.values()) + 1
+                item_mapping[shard_name] = next_available_id
     
-    print(f"\n[DEBUG] Final item_mapping:")
-    for key, value in sorted(item_mapping.items()):
-        print(f"[DEBUG]   '{key}' -> {value}")
+        print(f"\n[DEBUG] Final item_mapping:")
+        for key, value in sorted(item_mapping.items()):
+            print(f"[DEBUG]   '{key}' -> {value}")
+        
+        # Register single Linked Item Bundle ID (all instances share this ID)
+        # Bundle instances will have unique display names but same code
+        bundle_id = max(item_mapping.values()) + 1
+        item_mapping["Linked Item Bundle"] = bundle_id
+        print(f"[DEBUG] Registered Linked Item Bundle with ID {bundle_id}")
+        
+        return item_mapping
     
-    return item_mapping
+    except Exception as e:
+        # Handle all other exceptions with custom error message and user input
+        print("\n" + "="*80)
+        print("ERROR: Cannot load No Logic World due to a YAML Reading Error")
+        print("="*80)
+        print(f"\nException Details: {type(e).__name__}: {e}")
+        print("\nPlease check your YAML files for formatting errors.")
+        print("Press Enter to continue or Ctrl+C to abort...")
+        print ("Generation won't be able to continue, but if there are YAML errors, they will appear after this.")
+        print("If this is a mistake, and it is a YAML Format unknown to this World, let Yutamon know so it can be fixed!")
+        try:
+            input()
+        except (KeyboardInterrupt, EOFError):
+            pass
+        
+        raise NoLogicException("Cannot load No Logic World due to a YAML Reading Error.")
 
 # a copy to be as accurate as possible.
 class SafeFormatter(string.Formatter):
@@ -666,19 +750,17 @@ class SafeFormatter(string.Formatter):
             return kwargs.get(key, "{" + key + "}")
 
 
-def _resolve_player_name(name: str, player: int, name_counter: Counter) -> str:
+def _resolve_player_name_with_counter(name: str, player: int, number: int) -> str:
     """
-    Resolve Archipelago's name formatting syntax using the same logic as Generate.py's handle_name.
+    Resolve Archipelago's name formatting syntax using a pre-computed counter value.
+    This is used when multiple name variants should share the same counter value.
     
     Substitutes:
-    - {number}: How many times this name has been used (1-based)
+    - {number}: The provided number (1-based)
     - {NUMBER}: Same as {number}, but blank if 1
     - {player}: The player ID
     - {PLAYER}: Same as {player}, but blank if 1
     """
-    name_counter[name.lower()] += 1
-    number = name_counter[name.lower()]
-    
     # Replace %number% and %player% syntax with {number} and {player}
     resolved = "%".join([x.replace("%number%", "{number}").replace("%player%", "{player}") 
                         for x in name.split("%%")])
@@ -692,6 +774,20 @@ def _resolve_player_name(name: str, player: int, name_counter: Counter) -> str:
     })
     
     return resolved.strip()
+
+def _resolve_player_name(name: str, player: int, name_counter: Counter) -> str:
+    """
+    Resolve Archipelago's name formatting syntax using the same logic as Generate.py's handle_name.
+    
+    Substitutes:
+    - {number}: How many times this name has been used (1-based)
+    - {NUMBER}: Same as {number}, but blank if 1
+    - {player}: The player ID
+    - {PLAYER}: Same as {player}, but blank if 1
+    """
+    name_counter[name.lower()] += 1
+    number = name_counter[name.lower()]
+    return _resolve_player_name_with_counter(name, player, number)
 
 # Custom Exceptions
 class NoLogicException(Exception):
@@ -721,6 +817,94 @@ class NoLogicWeb(WebWorld):
 
 class NoLogicItem(Item):
     target_player: Optional[int] = None  # Player ID this item is associated with (for progression items)
+
+class NoLogicItemBundle(Item):
+    """A bundle of multiple items that can be placed in a single location. Used to contain multiple items in locations."""
+    # Array of all progression-related classifications that match Progression Shards capture logic
+    # These are the individual configurations checked by the Progression Shards system
+    PROGRESSION_TYPES = [
+        ItemClassification.progression,
+        ItemClassification.progression_skip_balancing,
+        ItemClassification.progression_deprioritized,
+        ItemClassification.progression_deprioritized_skip_balancing,
+        (ItemClassification.progression | ItemClassification.useful),  # Combination for especially useful items.
+    ]
+    
+    contained_items: List[Item]  # List of items contained in this bundle
+    assigned_to_player: Optional[int] = None  # Which player this bundle is assigned to for progression purposes
+
+    def __init__(self, name: str, code: int, player: int, contained_items: List[Item] = None):
+        # Calculate best classification from contained items
+        best_classification = self._get_best_classification(contained_items or [])
+        super().__init__(name, best_classification, code, player)
+        self.contained_items = contained_items or []
+        self.players_involved: Set[int] = set(item.player for item in self.contained_items if item.player is not None)
+
+    @property
+    def hint_text(self) -> str:
+        """Generate hint text based on contained items."""
+        if not self.contained_items:
+            return "Empty Bundle"
+        # Create a summary of contained items
+        item_names = [item.name for item in self.contained_items]
+        if len(item_names) == 2:
+            return f"{item_names[0]} & {item_names[1]}"
+        elif len(item_names) <= 3:
+            return "Bundle containing: " + ", ".join(item_names)
+        else:
+            return f"Bundle containing {len(item_names)} items"
+
+    @property
+    def pedestal_hint_text(self) -> str:
+        """Generate pedestal hint text based on contained items."""
+        if not self.contained_items:
+            return "Empty Bundle"
+        # Create a summary of contained items for pedestal
+        item_names = [item.name for item in self.contained_items]
+        if len(item_names) == 2:
+            return f"{item_names[0]} & {item_names[1]}"
+        elif len(item_names) <= 3:
+            return "Bundle with: " + ", ".join(item_names)
+        else:
+            return f"Bundle with {len(item_names)} items"
+
+    @staticmethod
+    def _get_best_classification(items: List[Item]) -> ItemClassification:
+        """
+        Determine the best classification for this bundle based on contained items using IntFlag logic.
+        Priority: (progression | useful) > Progression > Useful > Trap > Filler
+        """
+        has_progression_useful = False
+        has_progression = False
+        has_useful = False
+        has_trap = False
+        
+        for item in items:
+            # Check for the specific progression | useful combination first
+            if item.classification == (ItemClassification.progression | ItemClassification.useful):
+                has_progression_useful = True
+            # Check if item matches any progression-related configuration
+            elif item.classification in NoLogicItemBundle.PROGRESSION_TYPES or \
+                   ItemClassification.progression in item.classification:
+                has_progression = True
+            # Check for useful flag
+            elif ItemClassification.useful in item.classification:
+                has_useful = True
+            # Check for trap flag
+            elif ItemClassification.trap in item.classification:
+                has_trap = True
+        
+        # Return based on priority: (progression | useful) > progression > useful > trap > filler
+        if has_progression_useful:
+            return ItemClassification.progression | ItemClassification.useful
+        elif has_progression:
+            return ItemClassification.progression
+        elif has_useful:
+            return ItemClassification.useful
+        elif has_trap:
+            return ItemClassification.trap
+        else:
+            return ItemClassification.filler
 
 
 class NoLogicWorld(World):
@@ -884,6 +1068,9 @@ class NoLogicWorld(World):
                 logger.warning("WARNING: No Logic Mode with NO PROGRESSION MAZE has been activated!")
                 logger.warning("All access rules will be removed from ALL worlds.")
                 logger.warning("Progression items are gated by shard collection (Percentage mode).")
+
+            if self.options.linked_items_chance > 0:
+                logger.warning(f"Linked Items Chance is set to {self.options.linked_items_chance}%, so multiple items may appear in one location.")
             
             logger.warning(f"Affected worlds: {', '.join(world_names)}")
             logger.warning(f"Culprit: {self.player_name}")
@@ -942,6 +1129,11 @@ class NoLogicWorld(World):
                             if not isinstance(multiworld.worlds[p], NoLogicWorld)
                         ]
                         no_logic_world._enforce_item_locality(other_worlds)
+                # Create linked items after logic removal and locality enforcement
+                for player in multiworld.player_ids:
+                    if isinstance(multiworld.worlds[player], NoLogicWorld):
+                        no_logic_world = multiworld.worlds[player]
+                        no_logic_world._create_linked_items()
             
             NoLogicWorld.stage_pre_fill = combined_pre_fill
             logger.info("No Logic: Logic removal and locality enforcement at stage_pre_fill (respecting early locations).")
@@ -957,6 +1149,11 @@ class NoLogicWorld(World):
                                 if not isinstance(multiworld.worlds[p], NoLogicWorld)
                             ]
                             no_logic_world._enforce_item_locality(other_worlds)
+                # Create linked items after locality enforcement
+                for player in multiworld.player_ids:
+                    if isinstance(multiworld.worlds[player], NoLogicWorld):
+                        no_logic_world = multiworld.worlds[player]
+                        no_logic_world._create_linked_items()
             NoLogicWorld.stage_pre_fill = locality
             logger.info("No Logic: Logic removal at stage_connect_entances (not respecting early locations).")
         
@@ -1162,6 +1359,14 @@ class NoLogicWorld(World):
         # Create entrance to trap region
         entrance = region.add_exits(["Traps"])[0]
         entrance.connect(self.trap_region)
+        
+        # Create bundle region for linked item bundles
+        self.bundle_region = Region("Bundles", self.player, self.multiworld)
+        self.multiworld.regions += [self.bundle_region]
+        
+        # Create entrance to bundle region
+        entrance = region.add_exits(["Bundles"])[0]
+        entrance.connect(self.bundle_region)
         
         # Add a placeholder location if no other content
         location = Location(self.player, "No Logic Check", NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS, region)
@@ -1389,6 +1594,220 @@ class NoLogicWorld(World):
 
         logger.info(f"No Logic: Created {len(created_items)} progression items and {max(0, needed_fillers)} filler/trap items (trap_weight: {self.trap_weight}%, trap_mode: {self.trap_mode})")
 
+    def _create_linked_items(self) -> None:
+        """
+        Create linked item bundles that combine random items from the pool.
+        Bundles replace ANY filler items (from all worlds) and take on the best classification of their contained items.
+        
+        Direct itempool manipulation pattern similar to Progression Shards for safety and clarity.
+        """
+        linked_items_chance = self.options.linked_items_chance.value
+        linked_items_min = self.options.linked_items_minimum.value
+        linked_items_max = self.options.linked_items_maximum.value
+        
+        # Skip if chance is 0 or invalid range
+        if linked_items_chance == 0 or linked_items_min < 2 or linked_items_max < linked_items_min:
+            return
+        
+        # Work directly with itempool copy to avoid iteration weirdness
+        itempool_copy = self.multiworld.itempool[:]
+        
+        bundle_info = {}  # {bundle_name: [contained_item_names]}
+        bundled_items_set = set()  # Track items already bundled by identity
+        
+        # Get the shared bundle ID from item_name_to_id
+        bundle_id = self.item_name_to_id.get("Linked Item Bundle")
+        if bundle_id is None:
+            raise NoLogicException("Linked Item Bundle not found in item_name_to_id mapping")
+        
+        # Initialize bundle tracking
+        if not hasattr(self, '_bundles'):
+            self._bundles = []
+            self._bundle_info = {}
+            self._bundle_assigned_players = {}
+            self._bundle_location_ids = {}
+        
+        def get_unused_bundle_location_id():
+            used_ids = set(loc.address for loc in self.multiworld.get_locations())
+            for i in range(RESERVED_LOCATIONS):
+                candidate_id = NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 1 + i
+                if candidate_id not in used_ids:
+                    return candidate_id
+            raise NoLogicException("Exceeded reserved location ID space for No Logic world.")
+        
+        # FIRST PASS: Decide which fillers become bundles and collect all data
+        # Don't modify pool yet - just collect what needs to be created
+        bundles_to_create = []  # [{filler, selected_items, bundle}, ...]
+        
+        for filler in itempool_copy[:]:
+            # Only process items that are still in the actual pool and are fillers
+            if filler not in self.multiworld.itempool or filler.classification != ItemClassification.filler:
+                continue
+            
+            # Check if this filler should become a bundle using multiworld.random
+            if self.multiworld.random.randint(0, 100) > linked_items_chance:
+                continue
+            
+            # Determine how many items to bundle
+            bundle_size = self.multiworld.random.randint(linked_items_min, linked_items_max)
+            
+            # Get current available items from other worlds (not already bundled)
+            available_for_bundling = [
+                item for item in self.multiworld.itempool
+                if item.player != self.player and item not in bundled_items_set
+            ]
+            
+            if len(available_for_bundling) < bundle_size:
+                continue
+            
+            # Select random items to bundle
+            selected_items = self.multiworld.random.sample(available_for_bundling, bundle_size)
+            
+            # Create the bundle
+            bundle_display_name = f"Linked Item Bundle #{len(bundles_to_create) + 1}"
+            bundle = NoLogicItemBundle(
+                name=bundle_display_name,
+                code=bundle_id,
+                player=self.player,
+                contained_items=selected_items
+            )
+            
+            # Track bundle info
+            bundle_item_names = [item.name for item in selected_items]
+            bundle_info[bundle_display_name] = bundle_item_names
+            
+            # Track bundled items to avoid selecting them again
+            for item in selected_items:
+                bundled_items_set.add(item)
+            
+            # Store for later processing
+            bundles_to_create.append({
+                'filler': filler,
+                'selected_items': selected_items,
+                'bundle': bundle,
+                'bundle_display_name': bundle_display_name
+            })
+        
+        if not bundles_to_create:
+            return
+        
+        # SECOND PASS: Modify itempool ONCE with all changes
+        # Collect all items to remove using object identity (id()), not by value
+        # This prevents removing ALL items with the same name/ID
+        item_ids_to_remove = set()
+        for bundle_data in bundles_to_create:
+            item_ids_to_remove.add(id(bundle_data['filler']))
+            for item in bundle_data['selected_items']:
+                item_ids_to_remove.add(id(item))
+        
+        # Collect all fillers to add: N fillers per bundle (one for each bundled item)
+        fillers_to_add = []
+        for bundle_data in bundles_to_create:
+            for _ in bundle_data['selected_items']:
+                fillers_to_add.append(self.create_item("Filler"))
+        
+        # Collect all bundles to add
+        bundles_to_add = [bundle_data['bundle'] for bundle_data in bundles_to_create]
+        
+        # NOW do the single modification to itempool
+        # Remove only the specific item instances we selected (by identity, not by value)
+        self.multiworld.itempool[:] = [
+            item for item in self.multiworld.itempool
+            if id(item) not in item_ids_to_remove
+        ]
+        self.multiworld.itempool.extend(bundles_to_add)
+        self.multiworld.itempool.extend(fillers_to_add)
+        
+        # THIRD PASS: Create locations and assign bundles (after pool is stable)
+        for bundle_data in bundles_to_create:
+            bundle = bundle_data['bundle']
+            selected_items = bundle_data['selected_items']
+            bundle_display_name = bundle_data['bundle_display_name']
+            
+            # Assign bundle to appropriate player
+            players_in_bundle = set(item.player for item in selected_items)
+            relevant_players = [p for p in players_in_bundle if p != self.player]
+            
+            assigned_player = self.multiworld.random.choice(relevant_players) if relevant_players else self.player
+            bundle.assigned_to_player = assigned_player
+            logger.debug(f"No Logic: Bundle '{bundle_display_name}' assigned to player {assigned_player}")
+            
+            # Create locations for each contained item in the bundle region
+            if hasattr(self, 'bundle_region') and self.bundle_region:
+                bundle_location_ids = []
+                bundle_item_info = []  # [{item_name, item_id, location_id}, ...]
+                item_name_counts: Dict[str, int] = {}
+                
+                # Create locations for each contained item and place them immediately
+                for contained_item in selected_items:
+                    # Track duplicate names
+                    if contained_item.name not in item_name_counts:
+                        item_name_counts[contained_item.name] = 0
+                    else:
+                        item_name_counts[contained_item.name] += 1
+                    
+                    # Create unique location name
+                    item_location_name = f"{bundle_display_name} - {contained_item.name}"
+                    if item_name_counts[contained_item.name] > 0:
+                        item_location_name += f" #{item_name_counts[contained_item.name] + 1}"
+                    
+                    # Create location and place item
+                    bundle_location_id = get_unused_bundle_location_id()
+                    bundle_location = Location(self.player, item_location_name, bundle_location_id, self.bundle_region)
+                    self.bundle_region.locations.append(bundle_location)
+                    
+                    # Place the item directly to the location
+                    bundle_location.place_locked_item(contained_item)
+                    bundle_location_ids.append(bundle_location_id)
+                    bundle_item_info.append({
+                        "item_name": contained_item.name,
+                        "item_id": contained_item.code,
+                        "item_player": contained_item.player,
+                        "location_id": bundle_location_id,
+                        "location_name": item_location_name
+                    })
+                    
+                    logger.debug(f"No Logic: Locked '{contained_item.name}' to '{item_location_name}'")
+                
+                self._bundle_location_ids[bundle_display_name] = bundle_location_ids
+                # Store bundle item info for slot_data
+                self._bundle_info[bundle_display_name] = bundle_item_info
+            
+            # Track bundle
+            self._bundles.append(bundle)
+            self._bundle_assigned_players[bundle_display_name] = assigned_player
+        
+        bundles_created = len(bundles_to_create)
+        items_bundled = sum(len(bd['selected_items']) for bd in bundles_to_create)
+        
+        if bundles_created > 0:
+            logger.info(f"No Logic: Created {bundles_created} linked item bundles containing {items_bundled} items total")
+            
+            # CRITICAL DIAGNOSTIC: Check for items still in pool with locations set
+            items_with_locations = [item for item in self.multiworld.itempool if item.location is not None]
+            
+            if items_with_locations:
+                logger.error(f"No Logic: ERROR - Found {len(items_with_locations)} items in itempool with location set!")
+                
+                # Direct correction: Remove any items with locations already set
+                for item in items_with_locations:
+                    logger.error(f"  - REMOVING: {item.name} (code {item.code}, player {item.player}): location={item.location.name if item.location else None}")
+                    self.multiworld.itempool.remove(item)
+                
+                logger.error(f"No Logic: Removed {len(items_with_locations)} items with locations from itempool")
+                
+                # Verify correction
+                items_with_locations_after = [item for item in self.multiworld.itempool if item.location is not None]
+                if items_with_locations_after:
+                    raise NoLogicException(f"No Logic: CRITICAL - Still have {len(items_with_locations_after)} items with locations after correction! This indicates a fundamental issue.")
+                else:
+                    logger.info(f"No Logic: Correction successful - all items in itempool now have location=None ✓")
+            else:
+                logger.info(f"No Logic: DIAGNOSTIC - Confirmed: All items in itempool have location=None ✓")
+            
+            self._bundle_info = bundle_info
+            self.linked_items_bundle_mapping = bundle_info
+
     # def stage_create_items(cls, multiworld: MultiWorld) -> None:
     def set_rules(self) -> None:
         """Minimal rules setup - stage_pre_fill will handle delogicking."""
@@ -1470,16 +1889,43 @@ class NoLogicWorld(World):
         # ]
         # no_logic_world._enforce_item_locality(other_worlds)
 
+    def item_can_be_progression(self, item: Item) -> bool:
+        """Determine if an item can be considered progression based on options."""
+        return (
+            item.classification == ItemClassification.progression or
+            (self.options.include_unusual_progression_items and ItemClassification.progression in item.classification) or
+            (self.options.include_useful_progression_items and item.classification == (ItemClassification.progression | ItemClassification.useful)) or
+            (self.options.include_useful_bloat and item.classification == ItemClassification.useful) or
+            (self.options.include_lesser_progression and item.classification in [
+                ItemClassification.progression_skip_balancing,
+                ItemClassification.progression_deprioritized,
+                ItemClassification.progression_deprioritized_skip_balancing
+            ])
+        )
 
     @classmethod
     def stage_post_fill(cls, multiworld: MultiWorld) -> None:
-        """After fill, create progression item copy locations and lock items to them."""
+        """After fill, handle progression locations and logical mode setup."""
         # Find and process the No Logic world
         for player in multiworld.player_ids:
             if isinstance(multiworld.worlds[player], NoLogicWorld):
                 no_logic_world: NoLogicWorld = multiworld.worlds[player]
+                
+                # DIAGNOSTIC: Check if any items with locations are still in itempool (shouldn't happen)
+                items_with_locations = [item for item in multiworld.itempool if item.location is not None]
+                if items_with_locations:
+                    logger.error(f"No Logic: DIAGNOSTIC POST_FILL - Found {len(items_with_locations)} items in itempool with location set AFTER FILL!")
+                    for item in items_with_locations[:5]:
+                        logger.error(f"  - {item.name} at location {item.location.name}")
+                
+                # Bundle items were already locked to bundle locations during pre-fill, so no post-fill locking needed
+                
                 if no_logic_world.options.add_progression_item and not no_logic_world.options.no_progression_maze > 0:
                     no_logic_world._create_progression_locations(multiworld)
+                
+                # Set up access rules for bundle locations in logical mode
+                if no_logic_world.options.no_progression_maze == 2 and hasattr(no_logic_world, '_bundle_location_ids'):
+                    no_logic_world._setup_bundle_location_access_rules(multiworld)
                 
                 # Phase 7: Handle traps for mode 3 only (Finders-Keepers needs to know where traps ended up after fill)
                 if no_logic_world.options.progression_trap_weight.value > 0 and no_logic_world.options.progression_trap_mode.value == 3:
@@ -1558,6 +2004,22 @@ class NoLogicWorld(World):
         player_location_mapping: Dict[int, Dict[str, List[int]]] = {}
         player_name_mapping: Dict[str, List[int]] = {}
         
+        # Collect bundles that should be included in progression locations (if not in global mode)
+        bundles_by_player: Dict[int, List[NoLogicItemBundle]] = {}  # {player_id: [bundles]}
+        if hasattr(self, '_bundles') and self._bundles and self.options.progression_item_type.value != 1:
+            # Non-global mode: assign bundles to their assigned players
+            for bundle in self._bundles:
+                if bundle.assigned_to_player is not None:
+                    if bundle.assigned_to_player not in bundles_by_player:
+                        bundles_by_player[bundle.assigned_to_player] = []
+                    bundles_by_player[bundle.assigned_to_player].append(bundle)
+            if bundles_by_player:
+                total_bundles = sum(len(b) for b in bundles_by_player.values())
+                logger.info(f"No Logic: Found {total_bundles} bundles to include in progression locations")
+        elif hasattr(self, '_bundles') and self._bundles and self.options.progression_item_type.value == 1:
+            # Global mode: bundles can be assigned to any player's progression
+            logger.info(f"No Logic: Global mode - {len(self._bundles)} bundles will be distributed across progression items")
+        
         # Create locations for progression item copies
         for other_player, prog_item_name in self.progression_items.items():
             # prog_item_name is already the correct name (either base or shard, depending on mode)
@@ -1580,20 +2042,24 @@ class NoLogicWorld(World):
             for item in multiworld.itempool:
                 if item.player != other_player:
                     continue
-                if item.classification == ItemClassification.progression or \
-                (self.options.include_unusual_progression_items and ItemClassification.progression in item.classification) or \
-                (self.options.include_useful_progression_items and item.classification == (ItemClassification.progression | ItemClassification.useful)):
-                    progression_items_to_lock.append(item)
-                elif self.options.include_lesser_progression and item.classification in [
-                    ItemClassification.progression_skip_balancing,
-                    ItemClassification.progression_deprioritized,
-                    ItemClassification.progression_deprioritized_skip_balancing
-                ]:
+                if item.name in multiworld.worlds[other_player].options.nl_exclude_progression_items:
+                    logger.debug(f"No Logic: Excluding {item.name} from progression items for player {other_player} based on world options")
+                    continue
+                if self.item_can_be_progression(item) or item.name in multiworld.worlds[other_player].options.nl_force_progression_items:
                     progression_items_to_lock.append(item)
 
             for item, count in self.progression_items_provided_by_worlds.get(other_player, []):
                 for _ in range(count):
                     progression_items_to_lock.append(self.create_item_copy(item))
+
+            
+            
+            # Add bundles assigned to this player (non-global mode only)
+            # Bundles are always added to progression locations, but whether they're locked depends on classification
+            if other_player in bundles_by_player:
+                for bundle in bundles_by_player[other_player]:
+                    progression_items_to_lock.append(bundle)
+                    logger.debug(f"No Logic: Added bundle '{bundle.name}' to progression items for player {other_player}")
             
             # Create location for each progression item copy and lock it
             location_ids = []
@@ -1603,17 +2069,25 @@ class NoLogicWorld(World):
             items_to_remove_from_pool: List[Item] = []
             
             for prog_item in progression_items_to_lock:
+                # Determine if this is a bundle and if it's from the itempool
+                is_bundle = isinstance(prog_item, NoLogicItemBundle)
+                is_from_itempool = any(
+                    item is prog_item and item.player == other_player 
+                    for item in multiworld.itempool
+                )
+                
                 # Track duplicate item names
                 if prog_item.name not in item_name_counts:
                     item_name_counts[prog_item.name] = 0
                 else:
                     item_name_counts[prog_item.name] += 1
                 
-                # Determine if this is an actual item from the world or a manually provided one
-                is_from_itempool = any(
-                    item is prog_item and item.player == other_player 
-                    for item in multiworld.itempool
-                )
+                # Determine if this progression item should be locked based on classification
+                # For bundles, check using the standard progression criteria
+                # For regular items, they were already filtered during collection, so assume they match
+                if is_bundle and not self.item_can_be_progression(prog_item):
+                    logger.debug(f"No Logic: Skipping {prog_item.name} - classification {prog_item.classification} doesn't match progression criteria")
+                    continue
                 
                 # Create unique location name for duplicates
                 if self.options.no_progression_maze.value > 0 and is_from_itempool:
@@ -1629,13 +2103,23 @@ class NoLogicWorld(World):
                 location_ids.append(location.address)
                 
                 # Handle item locking based on No Progression Maze setting
-                if self.options.no_progression_maze.value > 0 and is_from_itempool:
-                    # Lock the actual item directly (not a copy)
+                if is_bundle and self.options.no_progression_maze.value > 0:
+                    # Bundles in No Progression Maze mode - lock and remove from pool
+                    location.place_locked_item(prog_item)
+                    items_to_remove_from_pool.append(prog_item)
+                    logger.debug(f"No Logic: Locked bundle '{prog_item.name}' into {location.name}")
+                elif is_bundle:
+                    # Bundles in normal mode - add to a copy list (they're included in progression but not locked)
+                    # So we don't remove them from the pool
+                    logger.debug(f"No Logic: Added bundle '{prog_item.name}' to progression location {location.name} (not locked in normal mode)")
+                    # We still need to track this location for slot_data
+                elif self.options.no_progression_maze.value > 0 and is_from_itempool:
+                    # No Progression Maze mode - lock the actual item directly (not a copy)
                     location.place_locked_item(prog_item)
                     items_to_remove_from_pool.append(prog_item)
                     logger.debug(f"No Logic: Locked actual {prog_item.name} into {location.name} (No Progression Maze enabled)")
                 else:
-                    # Create and lock a copy of the item (normal behavior)
+                    # Normal mode - create and lock a copy
                     item_copy = target_world.create_item(prog_item.name)
                     item_copy.classification = prog_item.classification
                     location.place_locked_item(item_copy)
@@ -2102,6 +2586,58 @@ class NoLogicWorld(World):
         
         logger.info("No Logic: Logical mode access rules configured")
     
+    def _setup_bundle_location_access_rules(self, multiworld: MultiWorld) -> None:
+        """Set up access rules for bundle locations based on where the bundle is placed."""
+        logger.info("No Logic: Setting up bundle location access rules for logical mode...")
+        
+        if not hasattr(self, '_bundles') or not self._bundles:
+            logger.info("No Logic: No bundles to set access rules for")
+            return
+        
+        # Find where each bundle is placed
+        bundle_locations = {}  # {bundle_name: (location, location.address)}
+        for location in multiworld.get_filled_locations():
+            for bundle in self._bundles:
+                if location.item is bundle:
+                    bundle_locations[bundle.name] = (location, location.address)
+                    logger.debug(f"No Logic: Bundle '{bundle.name}' is at location '{location.name}' (region: {location.parent_region.name})")
+                    break
+        
+        if not bundle_locations:
+            logger.warning("No Logic: No bundle placements found")
+            return
+        
+        # Get all bundle locations in the bundle region
+        if not hasattr(self, 'bundle_region') or not self.bundle_region:
+            logger.warning("No Logic: Bundle region not found")
+            return
+        
+        from BaseClasses import CollectionState
+        
+        # For each bundle location, set access rule to check if bundle can be reached
+        for bundle_location in self.bundle_region.locations:
+            # Find which bundle this location belongs to by matching against bundle items
+            location_bundle_name = None
+            for bundle in self._bundles:
+                # Check if this location contains one of the bundle's items
+                if bundle_location.item and bundle_location.item in bundle.contained_items:
+                    location_bundle_name = bundle.name
+                    break
+            
+            if location_bundle_name and location_bundle_name in bundle_locations:
+                bundle_location_obj, bundle_location_address = bundle_locations[location_bundle_name]
+                
+            # Create access rule: can access this item location if we can reach the location where the bundle is placed
+            def make_bundle_rule(bundle_location_name, bundle_location_player):
+                def rule(state: "CollectionState") -> bool:
+                    # Check if we can reach the specific location where the bundle was placed
+                    # This respects any access rules on that location from other worlds
+                    return state.can_reach_location(bundle_location_name, bundle_location_player)
+                return rule
+            
+            bundle_location.access_rule = make_bundle_rule(bundle_location_obj.name, bundle_location_obj.player)
+            logger.debug(f"No Logic: Set access rule for bundle location '{bundle_location.name}' (requires reaching location: {bundle_location_obj.name})")
+    
     def modify_multidata(self, multidata: dict) -> None:
         """Inject progression item hints into the multidata."""
         if not self.options.auto_hint_progression_items:
@@ -2252,8 +2788,21 @@ class NoLogicWorld(World):
                     # Add the player name if not in global mode
                     if player_name:
                         shard_text += f" -> {player_name}'s Progression"
+
+                    def tryer(fn, **kwargs):
+                        try:
+                            return fn(**kwargs)
+                        except Exception as e:
+                            logger.warning(f"No Logic: Failed to generate hint text for location ID {loc_id} with error: {e}")
+                            return None
                     
                     hint_data[self.player][loc_id] = shard_text
+                    # Change the location name to include the shard requirement for spoiler log clarity
+                    location = tryer(self.multiworld.get_location, player=self.player, address=loc_id)
+                    if location:
+                        location.name += f" ({shard_text})"
+                    else:
+                        logger.warning(f"No Logic: Could not find location for ID {loc_id} to update name with shard text")
                     progression_hints_added += 1
             
             logger.info(f"No Logic: Added {progression_hints_added} progression location hint infos")
@@ -2283,6 +2832,33 @@ class NoLogicWorld(World):
                 trap_hints_added += 1
             
             logger.info(f"No Logic: Added {trap_hints_added} trap location hints")
+        
+        # Add hints for bundle locations
+        bundle_hints_added = 0
+        if hasattr(self, '_bundle_location_ids') and self._bundle_location_ids:
+            for bundle_name, location_ids in self._bundle_location_ids.items():
+                # Find where this bundle was placed
+                bundle_placement = None
+                for location in self.multiworld.get_filled_locations():
+                    for bundle in getattr(self, '_bundles', []):
+                        if location.item is bundle and bundle.name == bundle_name:
+                            bundle_placement = location.name
+                            break
+                    if bundle_placement:
+                        break
+                
+                # Add hints for each bundle check location
+                for loc_id in location_ids:
+                    if bundle_placement and self.options.anonymous_bundle_hints:
+                        hint_text = f"Bundle from {bundle_placement}"
+                    elif bundle_placement:
+                        hint_text = f"Bundle from {self.multiworld.player_name[location.player]} at {bundle_placement}"
+                    else:
+                        hint_text = "Bundle item"
+                    hint_data[self.player][loc_id] = hint_text
+                    bundle_hints_added += 1
+            
+            logger.info(f"No Logic: Added {bundle_hints_added} bundle check location hints")
     
     def _build_shard_item_order(self) -> dict:
         """Build the shard item order mapping for spoiler log."""
@@ -2370,6 +2946,50 @@ class NoLogicWorld(World):
         # Build shard item order mapping (reused by modify_multidata for spoiler log)
         shard_item_order = self._build_shard_item_order()
         
+        # Track bundle placements and information
+        bundle_placement_info = {}
+        
+        if hasattr(self, '_bundles') and self._bundles:
+            logger.info(f"No Logic: Processing {len(self._bundles)} bundles for slot_data")
+            logger.info(f"No Logic: _bundle_location_ids keys: {list(self._bundle_location_ids.keys()) if hasattr(self, '_bundle_location_ids') else 'NOT SET'}")
+            logger.info(f"No Logic: _bundle_info keys: {list(self._bundle_info.keys()) if hasattr(self, '_bundle_info') else 'NOT SET'}")
+            
+            # Find where each bundle was placed in the multiworld
+            for bundle in self._bundles:
+                logger.debug(f"No Logic: Looking for bundle '{bundle.name}' (code: {bundle.code}) in filled locations")
+                found = False
+                for location in self.multiworld.get_filled_locations():
+                    if location.item and location.item.name == bundle.name:
+                        # Found where this bundle was placed (match by name since object identity might not work)
+                        bundle_location_ids = self._bundle_location_ids.get(bundle.name, [])
+                        contained_items = self._bundle_info.get(bundle.name, [])
+                        
+                        bundle_info_entry = {
+                            "bundle_id": bundle.code,
+                            "bundle_location": location.name,
+                            "bundle_location_id": location.address,
+                            "bundle_location_player": location.player,  # Include player ID for unique identification
+                            "bundle_check_locations": bundle_location_ids,  # Client uses these for auto-checking
+                            "contained_items": contained_items
+                        }
+                        
+                        bundle_placement_info[bundle.name] = bundle_info_entry
+                        
+                        logger.info(f"No Logic: Bundle '{bundle.name}' placed at P{location.player} location {location.address}")
+                        logger.info(f"  - bundle_id: {bundle.code}")
+                        logger.info(f"  - bundle_location_id: {location.address}")
+                        logger.info(f"  - bundle_check_locations: {bundle_location_ids}")
+                        logger.info(f"  - contained_items count: {len(contained_items)}")
+                        logger.debug(f"  - contained_items: {contained_items}")
+                        found = True
+                        break
+                
+                if not found:
+                    logger.warning(f"No Logic: Bundle '{bundle.name}' was not found in any filled locations!")
+            
+            logger.info(f"No Logic: Final bundle placement mapping has {len(bundle_placement_info)} bundles")
+            logger.debug(f"No Logic: Full bundle_placement_info: {bundle_placement_info}")
+        
         # Phase 9: Add trap information to slot_data
         slot_data = {
             "progression_items": self.progression_items,
@@ -2390,6 +3010,7 @@ class NoLogicWorld(World):
             "trap_weight": self.options.progression_trap_weight.value,  # Percentage (0-100%)
             "trap_dict": getattr(self, 'trap_dict', {}),  # {player_id: [locations]} or {player_id: [(source, trap_region_loc)]}
             "trap_item_ids_by_name": getattr(self, 'trap_item_ids_by_name', {}),  # {trap_name: item_id}
+            "linked_items_bundle_mapping": bundle_placement_info,  # {bundle_name: {bundle_id, bundle_location, contained_items, item_locations}} for auto-checking
         }
         
         return slot_data
@@ -2511,7 +3132,7 @@ class NoLogicWorld(World):
     def _get_filler_item(self) -> Item:
         """Helper to create a filler item, respecting the funny_fillers option."""
         if self.options.funny_fillers:
-            filler_name = self.multiworld.random.choice(funny_fillers)
+            filler_name = self.multiworld.random.choice(list(funny_fillers))
         else:
             filler_name = "Filler"
         return Item(filler_name, ItemClassification.filler, self.item_name_to_id[filler_name], self.player)
@@ -2563,8 +3184,5 @@ class NoLogicWorld(World):
 
     def get_filler_item_name(self) -> str:
         """Return filler item name."""
-        if self.options.funny_fillers:
-            # Pick a random filler name from the funny fillers list
-            return self.multiworld.random.choice(funny_fillers)
         return "Filler"
 

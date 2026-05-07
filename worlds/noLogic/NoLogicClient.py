@@ -224,6 +224,13 @@ class NoLogicContext(CommonContext):
         self.hint_points: int = 0  # Current hint points available
         self.hint_cost: int = 0  # Hint cost percentage (received from server)
         
+        # Bundle tracking (Linked Items)
+        self.bundle_placement_info: Dict[str, Dict] = {}  # {bundle_name: {bundle_id, bundle_location_id, item_locations}}
+        self.bundle_id: Optional[int] = None  # The shared ID for all bundle items
+        self.bundle_item_locations: Dict[str, tuple] = {}  # {item_name: (player_id, location_id)}
+        self.bundle_location_to_items: Dict[int, Dict] = {}  # {bundle_location_id: item_locations} for fast lookup
+
+
         # Trap tracking (Phase 9 from world)
         self.trap_mode: int = 0  # 0=Disabled, 1=Global, 2=Per-World, 3=Finders-Keepers
         self.trap_weight: int = 0  # Percentage (0-100%)
@@ -348,6 +355,39 @@ class NoLogicContext(CommonContext):
                 logger.info(f"NoLogic: progression_item_names mapping: {self.progression_item_names}")
             else:
                 logger.warning("NoLogic: Claim dict is empty")
+            
+            # Load bundle placement information for auto-checking bundled items
+            bundle_placement_info_raw = slot_data.get("linked_items_bundle_mapping", {})
+            self.bundle_placement_info = dict(bundle_placement_info_raw)
+            
+            if self.bundle_placement_info:
+                logger.info(f"NoLogic: Loaded bundle placement info with {len(self.bundle_placement_info)} bundles")
+                # Extract the shared bundle ID from the first bundle
+                for bundle_name, bundle_details in self.bundle_placement_info.items():
+                    bundle_id = bundle_details.get('bundle_id')
+                    if bundle_id and not self.bundle_id:
+                        self.bundle_id = bundle_id
+                        logger.info(f"NoLogic: Bundle ID set to {self.bundle_id}")
+                        break
+                
+                # Map out bundle locations and their contained items for auto-checking
+                for bundle_name, bundle_details in self.bundle_placement_info.items():
+                    # Extract bundle information
+                    bundle_location_id = bundle_details.get('bundle_location_id')
+                    bundle_location_player = bundle_details.get('bundle_location_player')
+                    bundle_check_locations = bundle_details.get('bundle_check_locations', [])
+                    contained_items = bundle_details.get('contained_items', [])
+                    
+                    if bundle_location_id is not None and bundle_location_player is not None and bundle_check_locations:
+                        # Store the check locations for this bundle using (player_id, location_id) tuple key
+                        # This ensures unique identification even if different players have the same location ID
+                        bundle_location_key = (bundle_location_player, bundle_location_id)
+                        self.bundle_location_to_items[bundle_location_key] = {
+                            'check_locations': bundle_check_locations,
+                            'contained_items': contained_items
+                        }
+                        
+                        logger.debug(f"NoLogic: Bundle '{bundle_name}' at P{bundle_location_player} location {bundle_location_id} has {len(bundle_check_locations)} check locations for auto-granting items")
             
             # Load trap configuration (Phase 9)
             self.trap_mode = slot_data.get("trap_mode", 0)
@@ -758,6 +798,32 @@ class NoLogicContext(CommonContext):
                             logger.info(f"NoLogic: Global Percentage of Items mode - player {player_id}: unlocking {len(locations_to_check)}/{len(player_locations)} locations ({total_shards}/{total_possible_shards} shards)")
         
         for network_item in self.items_received[self.last_item_sync_index:]:
+            # Check if this is a bundle item - identify by item ID and location
+            logger.debug(f"NoLogic: Processing item - item_id: {network_item.item}, bundle_id: {self.bundle_id}, player: {network_item.player}, location: {network_item.location}")
+            
+            if self.bundle_id and network_item.item == self.bundle_id:
+                # This is a bundle item - identify which bundle by its location (player_id, location_id)
+                bundle_location_key = (network_item.player, network_item.location)
+                
+                logger.info(f"NoLogic: Detected bundle item! Looking for key {bundle_location_key}")
+                logger.info(f"NoLogic: Available bundle keys: {list(self.bundle_location_to_items.keys())}")
+                
+                if bundle_location_key in self.bundle_location_to_items:
+                    logger.info(f"NoLogic: Received bundle from P{network_item.player} location {network_item.location}")
+                    bundle_info = self.bundle_location_to_items[bundle_location_key]
+                    
+                    # Auto-check all locations of items contained in this bundle
+                    check_locations = bundle_info.get('check_locations', [])
+                    for location_id in check_locations:
+                        if location_id not in self.auto_checked_locations:
+                            all_locations_to_check.append(location_id)
+                            logger.debug(f"NoLogic: Queued auto-check for bundle item location {location_id}")
+                    
+                    if check_locations:
+                        logger.info(f"NoLogic: Bundle grants {len(check_locations)} items")
+                else:
+                    logger.warning(f"NoLogic: Bundle detected but key {bundle_location_key} not found in bundle_location_to_items!")
+            
             # Check if this is a progression item we're tracking
             if network_item.item in self.claim_dict.keys() or (self.using_per_player_claim_dict and network_item.item in self.item_id_to_player):
                 # Skip per-player global modes - already handled above

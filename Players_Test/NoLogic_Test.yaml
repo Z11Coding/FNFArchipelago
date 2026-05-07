@@ -4,3 +4,6 @@ add_progression_item: true
 progression_item_type: 0
 progression_item_locality: 1
 no_progression_maze: false
+linked_items_chance: 50
+linked_items_minimum: 2
+linked_items_maximum: 5

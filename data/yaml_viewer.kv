@@ -1,0 +1,165 @@
+#: import MDBoxLayout kivymd.uix.boxlayout.MDBoxLayout
+#: import MDLabel kivymd.uix.label.MDLabel
+#: import MDButton kivymd.uix.button.MDButton
+#: import MDButtonText kivymd.uix.button.MDButtonText
+#: import MDTextField kivymd.uix.textfield.MDTextField
+#: import MDScrollView kivymd.uix.scrollview.MDScrollView
+#: import MDCard kivymd.uix.card.MDCard
+#: import MDDivider kivymd.uix.divider.MDDivider
+
+<YAMLViewerUI@MDBoxLayout>:
+    orientation: "vertical"
+    padding: "10dp"
+    spacing: "8dp"
+    md_bg_color: app.theme_cls.backgroundColor
+
+    # Title
+    MDLabel:
+        text: "[b]Archipelago YAML Viewer[/b]"
+        markup: True
+        font_size: "24sp"
+        size_hint_y: None
+        height: self.texture_size[1]
+        theme_text_color: "Custom"
+        text_color: app.theme_cls.primaryColor
+
+    # Connection section
+    MDCard:
+        orientation: "horizontal"
+        padding: "10dp"
+        spacing: "10dp"
+        size_hint_y: None
+        height: "70dp"
+        md_bg_color: app.theme_cls.surfaceContainerColor
+
+        MDTextField:
+            id: server_input
+            hint_text: "Server (localhost:38281)"
+            size_hint_x: 0.25
+            mode: "rectangle"
+
+        MDTextField:
+            id: slot_input
+            hint_text: "Slot name"
+            size_hint_x: 0.25
+            mode: "rectangle"
+
+        MDTextField:
+            id: password_input
+            hint_text: "Password (optional)"
+            password: True
+            size_hint_x: 0.15
+            mode: "rectangle"
+
+        MDButton:
+            style: "elevated"
+            size_hint_x: 0.15
+            id: connect_btn
+            md_bg_color: app.theme_cls.primaryColor
+
+            MDButtonText:
+                text: "Connect"
+
+    # Quick swap section
+    MDCard:
+        orientation: "horizontal"
+        padding: "10dp"
+        spacing: "10dp"
+        size_hint_y: None
+        height: "70dp"
+        md_bg_color: app.theme_cls.surfaceContainerColor
+
+        MDLabel:
+            text: "Quick Swap:"
+            size_hint_x: 0.1
+            theme_text_color: "Custom"
+            text_color: app.theme_cls.primaryColor
+
+        MDTextField:
+            id: quick_swap_input
+            hint_text: "New slot"
+            size_hint_x: 0.25
+            mode: "rectangle"
+
+        MDLabel:
+            text: "Pass:"
+            size_hint_x: 0.07
+            theme_text_color: "Custom"
+            text_color: app.theme_cls.primaryColor
+
+        MDTextField:
+            id: swap_password_input
+            hint_text: "(optional)"
+            password: True
+            size_hint_x: 0.15
+            mode: "rectangle"
+
+        MDButton:
+            style: "elevated"
+            size_hint_x: 0.15
+            id: swap_btn
+            md_bg_color: app.theme_cls.primaryColor
+
+            MDButtonText:
+                text: "Swap"
+
+    # Status line
+    MDLabel:
+        id: status_label
+        text: "[color=ff7700]Disconnected[/color]"
+        markup: True
+        size_hint_y: None
+        height: self.texture_size[1]
+        font_size: "14sp"
+        theme_text_color: "Custom"
+        text_color: app.theme_cls.onBackgroundColor
+
+    MDDivider:
+        size_hint_y: None
+        height: "1dp"
+
+    # YAML display section
+    MDScrollView:
+        size_hint: 1, 0.7
+
+        MDTextField:
+            id: yaml_display
+            text: "Connect to a server to view YAML"
+            multiline: True
+            readonly: True
+            mode: "rectangle"
+            size_hint_y: None
+            height: self.minimum_height
+            theme_text_color: "Custom"
+            text_color: app.theme_cls.onSurfaceColor
+
+    # Action buttons
+    MDBoxLayout:
+        orientation: "horizontal"
+        size_hint_y: None
+        height: "50dp"
+        spacing: "10dp"
+
+        MDButton:
+            style: "elevated"
+            id: download_btn
+            md_bg_color: app.theme_cls.primaryColor
+
+            MDButtonText:
+                text: "Download YAML"
+
+        MDButton:
+            style: "elevated"
+            id: metadata_btn
+            md_bg_color: app.theme_cls.primaryColor
+
+            MDButtonText:
+                text: "Show Metadata"
+
+        MDButton:
+            style: "elevated"
+            id: disconnect_btn
+            md_bg_color: app.theme_cls.primaryColor
+
+            MDButtonText:
+                text: "Disconnect"

@@ -5,7 +5,7 @@
 
 from dataclasses import dataclass
 import logging
-from Options import Toggle, Choice, Range, PerGameCommonOptions, OptionGroup, OptionSet
+from Options import Toggle, Choice, Range, PerGameCommonOptions, OptionGroup, OptionSet, ItemSet
 
 
 
@@ -62,9 +62,9 @@ class RemoveEntranceLogic(Toggle):
 class RespectEarlyLocations(Toggle):
     """
     Whether to respect early location placement when removing logic.
-    When enabled (True), logic removal happens at stage_pre_fill, which runs after
+    When enabled (True), logic removal happens before filling, which runs after
     early location placement has already occurred.
-    When disabled (False), logic removal happens at stage_connect_entrances, which
+    When disabled (False), logic removal happens at entrance connections, which
     runs earlier and ignores early location considerations.
     """
     display_name = "Respect Early Locations"
@@ -109,6 +109,13 @@ class IncludeUnusualProgressionItems(Toggle):
     - progression items that don't fit into the above categories for whatever reason. (Anything with "progression" in the classification that isn't already included by the other options.)
     """
     display_name = "Include Unusual Progression Items"
+    default = False
+
+class IncludeUsefulBloat(Toggle):
+    """
+    When enabled, progression item collections will also include items classified as Useful.
+    """
+    display_name = "Include Useful Bloat Items"
     default = False
 
 class ProgressionItemMode(Choice):
@@ -263,9 +270,9 @@ class ProgressionTrapLocality(Choice):
 
 class GlobalShardsBehavior(Choice):
     """
-    How claim_dict is organized when using global progression items with percentage-based shards:
-    - Shared Pool: All locations stored under the shard item ID (classic behavior)
-    - Per-Player: Locations organized by player ID instead of item ID
+    How items are claimed when using global progression items with percentage-based shards:
+    - Shared Pool: All items are stored by shard, meaning all items are behind others. (classic behavior)
+    - Per-Player: Items for each player are claimed independantly based on that player's specific item count.
     (This option only affects global progression items with percentage modes.)
     """
     display_name = "Global Shards Behavior"
@@ -274,19 +281,67 @@ class GlobalShardsBehavior(Choice):
     default = 0
 
 
-class MetaForceProgressionItems(OptionSet):
+class LinkedItemsChance(Range):
+    """
+    Chance (0-100%) to bundle items together into item bundles.
+    When triggered, multiple items from other worlds will be randomly selected and bundled 
+    into a single item bundle that can be placed in a single location.
+    (High percentage not recommended.)
+    """
+    display_name = "Linked Items Chance"
+    range_start = 0
+    range_end = 100
+    allow_above_range = False
+    default = 0
+
+
+class LinkedItemsMinimum(FlexibleRange):
+    """
+    Minimum number of items to include in each linked item bundle (when created).
+    Must be at least 2 to create a bundle.
+    Going higher than 50 is allowed but may result in errors.
+    """
+    display_name = "Linked Items Minimum"
+    range_start = 2
+    range_end = 50
+    allow_above_range = True
+    default = 2
+
+
+class LinkedItemsMaximum(FlexibleRange):
+    """
+    Maximum number of items to include in each linked item bundle (when created).
+    Must be greater than or equal to the minimum.
+    Going higher than 100 is allowed but may result in errors.
+    """
+    display_name = "Linked Items Maximum"
+    range_start = 2
+    range_end = 100
+    allow_above_range = True
+    default = 5
+
+class AnonymousBundleHints(Toggle):
+    """
+    When enabled, item bundles will be hinted without revealing the specific player that has it.
+    """
+    display_name = "Anonymous Bundle Hints"
+    default = False
+
+
+class MetaForceProgressionItems(ItemSet):
     """
     [No Logic Integration]
     Item names in this game that should be force-treated as Progression in a No Logic
     multiworld, regardless of their actual item classification.
-    Useful for including Shards or other items not normally classified as Progression.
+    Useful for including other items not normally classified as Progression.
     List item names exactly as they appear in-game.
     """
     display_name = "Force Items as Progression (No Logic)"
     default = frozenset()
+    verify_item_names = True  
 
 
-class MetaExcludeProgressionItems(OptionSet):
+class MetaExcludeProgressionItems(ItemSet):
     """
     [No Logic Integration]
     Item names in this game that should be excluded from Progression Shard/Item collection in a No
@@ -295,7 +350,7 @@ class MetaExcludeProgressionItems(OptionSet):
     """
     display_name = "Exclude Items from Progression (No Logic)"
     default = frozenset()
-
+    verify_item_names = True  
 
 @dataclass
 class NoLogicOptions(PerGameCommonOptions):
@@ -307,6 +362,7 @@ class NoLogicOptions(PerGameCommonOptions):
     no_progression_maze: NoProgressionMaze
     include_lesser_progression: IncludeLesserProgression
     include_useful_progression_items: IncludeUsefulProgressionItems
+    include_useful_bloat: IncludeUsefulBloat
     include_unusual_progression_items: IncludeUnusualProgressionItems
     progression_item_mode: ProgressionItemMode
     progression_shard_count: ProgressionShardCount
@@ -317,8 +373,10 @@ class NoLogicOptions(PerGameCommonOptions):
     progression_trap_weight: ProgressionTrapWeight
     progression_trap_mode: ProgressionTrapMode
     progression_trap_locality: ProgressionTrapLocality
-    nl_force_progression_items: MetaForceProgressionItems
-    nl_exclude_progression_items: MetaExcludeProgressionItems
+    linked_items_chance: LinkedItemsChance
+    linked_items_minimum: LinkedItemsMinimum
+    linked_items_maximum: LinkedItemsMaximum
+    anonymous_bundle_hints: AnonymousBundleHints
 
 
 no_logic_option_groups = [
@@ -332,6 +390,7 @@ no_logic_option_groups = [
         IncludeLesserProgression,
         IncludeUsefulProgressionItems,
         IncludeUnusualProgressionItems,
+        IncludeUsefulBloat,
         ProgressionItemMode,
         ProgressionShardCount,
         ProgressionShardPercentage,
@@ -344,10 +403,12 @@ no_logic_option_groups = [
         ProgressionTrapMode,
         ProgressionTrapLocality,
     ]),
-    OptionGroup("No Logic Meta Options", [
-        MetaForceProgressionItems,
-        MetaExcludeProgressionItems,
-    ], start_collapsed=True),
+    OptionGroup("Linked Items", [
+        LinkedItemsChance,
+        LinkedItemsMinimum,
+        LinkedItemsMaximum,
+        AnonymousBundleHints,
+    ]),
 ]
 
 
