@@ -29,6 +29,7 @@ class ProgressionItemType(Choice):
     display_name = "Progression Item Distribution"
     option_per_world = 0
     option_global = 1
+    option_chaos = -1
     default = 1
 
 
@@ -225,6 +226,14 @@ class FunnyFillers(Toggle):
     display_name = "Funny Fillers"
     default = False
 
+class ReplaceFillersChance(Range):
+    """
+    Chance (0-100%) that each filler item will be replaced with a No Logic filler.
+    """
+    display_name = "Replace Fillers Chance"
+    range_start = 0
+    range_end = 100
+    default = 50
 
 class ProgressionTrapWeight(Range):
     """
@@ -251,6 +260,7 @@ class ProgressionTrapMode(Choice):
     option_global = 1
     option_world_specific = 2
     option_finders_keepers = 3
+    option_chaos = -1
     default = 0
 
 
@@ -266,6 +276,16 @@ class ProgressionTrapLocality(Choice):
     option_local = 1
     option_non_local = 2
     default = 0
+
+
+class IgnoreTrapSettings(Toggle):
+    """
+    When enabled, ignores the trap settings of other games.
+    This means, even if a game has certain traps, or all traps disabled,
+    a progression trap can still activate them.
+    """
+    display_name = "Ignore Trap Settings"
+    default = False
 
 
 class GlobalShardsBehavior(Choice):
@@ -320,6 +340,21 @@ class LinkedItemsMaximum(FlexibleRange):
     allow_above_range = True
     default = 5
 
+class LinkedItemsShardInteraction(Choice):
+    """
+    Controls when linked item bundles are created and whether they can contain shard items.
+    
+    - Normal: Bundles are created after shards and operate independently.
+    - Before Shards: Bundles are created before shards are finalized, allowing shards to pull items from bundles.
+    - After Shards: Bundles are created after shards are placed and can specifically contain shard items.
+    """
+    display_name = "Linked Items Shard Interaction"
+    option_normal = 0
+    option_before_shards = 1
+    option_after_shards = 2
+    default = 0
+
+
 class AnonymousBundleHints(Toggle):
     """
     When enabled, item bundles will be hinted without revealing the specific player that has it.
@@ -370,12 +405,15 @@ class NoLogicOptions(PerGameCommonOptions):
     global_shards_behavior: GlobalShardsBehavior
     auto_hint_progression_items: AutoHintProgressionItems
     funny_fillers: FunnyFillers
+    nl_filler_chance: ReplaceFillersChance
     progression_trap_weight: ProgressionTrapWeight
     progression_trap_mode: ProgressionTrapMode
     progression_trap_locality: ProgressionTrapLocality
+    ignore_trap_settings: IgnoreTrapSettings
     linked_items_chance: LinkedItemsChance
     linked_items_minimum: LinkedItemsMinimum
     linked_items_maximum: LinkedItemsMaximum
+    linked_items_shard_interaction: LinkedItemsShardInteraction
     anonymous_bundle_hints: AnonymousBundleHints
 
 
@@ -397,16 +435,19 @@ no_logic_option_groups = [
         GlobalShardsBehavior,
         AutoHintProgressionItems,
         FunnyFillers,
+        ReplaceFillersChance,
     ]),
     OptionGroup("Progression Traps", [
         ProgressionTrapWeight,
         ProgressionTrapMode,
         ProgressionTrapLocality,
+        IgnoreTrapSettings,
     ]),
     OptionGroup("Linked Items", [
         LinkedItemsChance,
         LinkedItemsMinimum,
         LinkedItemsMaximum,
+        LinkedItemsShardInteraction,
         AnonymousBundleHints,
     ]),
 ]

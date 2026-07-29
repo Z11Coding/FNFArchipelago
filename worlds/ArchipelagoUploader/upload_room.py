@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    """Main CLI entry point"""
     parser = argparse.ArgumentParser(
         description='Upload multiworld zip to Archipelago',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -56,13 +55,9 @@ def main():
     )
     
     args = parser.parse_args()
-    
-    # Setup verbose logging if requested
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-        logger.debug("Verbose logging enabled")
-    
-    # Import uploader modules
+        logger.debug("[ArchipelagoUploader] Verbose logging enabled")
     try:
         from worlds.ArchipelagoUploader.UploadUtils import (
             upload_multiworld_to_site,
@@ -79,14 +74,10 @@ def main():
         logger.error(f"[ArchipelagoUploader] Failed to import uploader modules: {e}")
         logger.error("Make sure you're running this from the Archipelago directory")
         return 1
-    
-    # Validate zip file
     zip_path = args.zip_file
     if not Path(zip_path).exists():
         logger.error(f"[ArchipelagoUploader] File not found: {zip_path}")
         return 1
-    
-    # Get session key
     session_key = args.session_key
     if not session_key:
         session_key = get_session_key()
@@ -101,16 +92,11 @@ def main():
             logger.error("  4. Use: --session-key <your-uuid>")
             logger.error("  Or add to ~/.archipelago/archipelago-uploader.yaml")
             return 1
-    
-    # Validate session key format (basic UUID-like check)
     if not (len(session_key) > 10 and '-' in session_key or len(session_key) > 20):
         logger.warning(f"[ArchipelagoUploader] Session key looks suspicious (length: {len(session_key)})")
-    
-    # Get domain
     domain = args.domain or get_upload_domain()
     
     try:
-        # Upload the file
         result = upload_multiworld_to_site(
             zip_path=zip_path,
             session_key=session_key,
@@ -120,10 +106,7 @@ def main():
         logger.info(f"[ArchipelagoUploader] Upload successful!")
         logger.info(f"[ArchipelagoUploader] Seed ID: {result['seed_id']}")
         logger.info(f"[ArchipelagoUploader] Status URL: {result['status_url']}")
-        
         room_id = result.get('room_id')
-        
-        # Wait for generation if requested
         if args.wait and not room_id:
             logger.info("[ArchipelagoUploader] Waiting for generation to complete...")
             room_id = wait_for_generation(
@@ -133,29 +116,25 @@ def main():
             )
             
             if not room_id:
-        logger.warning(f"[ArchipelagoUploader] Generation did not complete in time")
+                logger.warning(f"[ArchipelagoUploader] Generation did not complete in time")
                 logger.info(f"[ArchipelagoUploader] Check status at: {result['status_url']}")
                 return 1
-        
-        # Open room in browser if requested
         if args.open and room_id:
             room_url = construct_room_url(domain, room_id)
             logger.info(f"[ArchipelagoUploader] Room URL: {room_url}")
             if open_room_in_browser(room_url):
                 logger.info("[ArchipelagoUploader] Browser opened successfully")
             else:
-                logger.warning(f"Could not open browser. Room URL: {room_url}")
+                logger.warning(f"[ArchipelagoUploader] Could not open browser. Room URL: {room_url}")
         elif room_id:
             room_url = construct_room_url(domain, room_id)
-            logger.info(f"Room URL: {room_url}")
-        
-        return 0
+            logger.info(f"[ArchipelagoUploader] Room URL: {room_url}")
         
     except UploadError as e:
-        logger.error(f"Upload failed: {e}")
+        logger.error(f"[ArchipelagoUploader] Upload failed: {e}")
         return 1
     except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=args.verbose)
+        logger.error(f"[ArchipelagoUploader] Unexpected error: {e}", exc_info=args.verbose)
         return 1
 
 

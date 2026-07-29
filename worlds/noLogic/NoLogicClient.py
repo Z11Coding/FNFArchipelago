@@ -590,6 +590,10 @@ class NoLogicContext(CommonContext):
             import asyncio
             asyncio.create_task(self._send_connection_info())
             
+            # Request initial hints from server for bundle location scouting
+            if self.team is not None:
+                asyncio.create_task(self._request_and_process_hints())
+            
             # Start periodic progression item checking
             if hasattr(self, '_check_task') and self._check_task is not None:
                 # Cancel old task if it exists
@@ -606,6 +610,12 @@ class NoLogicContext(CommonContext):
             if "hint_points" in args:
                 self.hint_points = args["hint_points"]
                 logger.debug(f"NoLogic: Updated hint points to {self.hint_points}")
+        
+        elif cmd == "Retrieved":
+            # When hints are retrieved from server, process them for bundle location scouting (async, non-blocking)
+            retrieved_data = args.get("keys", {})
+            import asyncio
+            asyncio.create_task(self._process_hints_response(retrieved_data))
     
     
     def _handle_chat_message(self, args: dict) -> None:
@@ -752,10 +762,16 @@ class NoLogicContext(CommonContext):
     
     def _handle_received_items(self, args: dict) -> None:
         """Check for progression item receipts and auto-check locations."""
-        self._check_progression_items()
+        # Spawn async processing to avoid blocking
+        import asyncio
+        asyncio.create_task(self._process_progression_items_async())
     
     def _check_progression_items(self) -> None:
-        """Process all items received to detect progression item changes."""
+        """Spawn async processing of progression items without blocking."""
+        import asyncio
+        asyncio.create_task(self._process_progression_items_async())
+    
+    async def _process_progression_items_async(self) -> None:
         # Update shard count if in shard mode
         if self.progression_mode > 0:
             self.update_shard_count()
@@ -798,6 +814,11 @@ class NoLogicContext(CommonContext):
                             logger.info(f"NoLogic: Global Percentage of Items mode - player {player_id}: unlocking {len(locations_to_check)}/{len(player_locations)} locations ({total_shards}/{total_possible_shards} shards)")
         
         for network_item in self.items_received[self.last_item_sync_index:]:
+            # Yield to event loop every 10 items to prevent blocking
+            if len(all_locations_to_check) % 100 == 0 and len(all_locations_to_check) > 0:
+                import asyncio
+                await asyncio.sleep(0)  # Yield control to event loop
+            
             # Check if this is a bundle item - identify by item ID and location
             logger.debug(f"NoLogic: Processing item - item_id: {network_item.item}, bundle_id: {self.bundle_id}, player: {network_item.player}, location: {network_item.location}")
             
@@ -917,8 +938,15 @@ class NoLogicContext(CommonContext):
         
         # Check for trap items received and auto-check trap locations
         if self.trap_mode > 0 and self.trap_weight > 0 and self.trap_item_ids:
+            trap_item_counter = 0
             for network_item in self.items_received[self.last_item_sync_index:]:
+                # Yield to event loop every 10 trap items to prevent blocking
+                if trap_item_counter % 10 == 0 and trap_item_counter > 0:
+                    import asyncio
+                    await asyncio.sleep(0)  # Yield control to event loop
+                
                 if network_item.item in self.trap_item_ids:
+                    trap_item_counter += 1
                     # This is a trap item
                     if network_item.item not in self.trap_item_count_received:
                         self.trap_item_count_received[network_item.item] = 0
@@ -938,14 +966,28 @@ class NoLogicContext(CommonContext):
                     trap_location_to_check = None
                     
                     if self.trap_mode == 1:  # Global mode
-                        # Global: check one location from EVERY player's trap locations, cycling through their list
-                        for player_id, locations in self.trap_dict.items():
-                            if locations:
-                                # Use trap_count to cycle through this player's locations
-                                location_index = (trap_count - 1) % len(locations)
-                                trap_location_to_check = locations[location_index]
-                                logger.info(f"NoLogic: Global trap - checking player {player_id}'s location {trap_location_to_check} (index {location_index})")
-                                all_locations_to_check.append(trap_location_to_check)
+                        # Debug: Log trap_dict structure to understand format
+                        if trap_count == 1:  # Log once on first trap
+                            logger.info(f"NoLogic: Global trap_dict structure: {self.trap_dict}")
+                        
+                        # Global: In Global mode, ALL players are affected - check one location from each player's trap locations
+                        if isinstance(self.trap_dict, dict):
+                            for player_id, locations in self.trap_dict.items():
+                                if locations:
+                                    # Determine if locations are location IDs or tuples
+                                    if isinstance(locations[0], tuple):
+                                        # This would be Finders-Keepers format (shouldn't be here, but handle it)
+                                        trap_location_to_check = locations[(trap_count - 1) % len(locations)][1]
+                                    else:
+                                        # Standard format: list of location IDs
+                                        location_index = (trap_count - 1) % len(locations)
+                                        trap_location_to_check = locations[location_index]
+                                    
+                                    logger.info(f"NoLogic: Global trap - checking player {player_id}'s location {trap_location_to_check}")
+                                    all_locations_to_check.append(trap_location_to_check)
+                        else:
+                            # If trap_dict is not a dict but a list (flat structure), handle it
+                            logger.warning(f"NoLogic: Global trap_dict is not a dict, it's {type(self.trap_dict)}: {self.trap_dict}")
                     
                     elif self.trap_mode == 2:  # Per-World mode
                         # Per-world: check the location for the player who received the trap, cycling through their locations
@@ -1007,28 +1049,126 @@ class NoLogicContext(CommonContext):
         # Update sync index
         self.last_item_sync_index = len(self.items_received)
     
+    async def _request_and_process_hints(self) -> None:
+        """Request hints from server and process them for bundle location scouting."""
+        if not self.server or not self.slot:
+            return
+        
+        try:
+            # Request hints for this player using Get command
+            msg = {
+                "cmd": "Get",
+                "keys": [f"_read_hints_{self.team}_{self.slot}"]
+            }
+            await self.send_msgs([msg])
+            logger.info(f"NoLogic: Requested hints for team {self.team} slot {self.slot}")
+        except Exception as e:
+            logger.error(f"NoLogic: Error requesting hints: {e}")
+    
+    async def _process_hints_response(self, retrieved_data: dict) -> None:
+        """Process hints from Retrieved message and scout bundle locations if needed (non-blocking)."""
+        if not retrieved_data or not self.bundle_placement_info:
+            return
+        
+        try:
+            # Extract hints from the Retrieved data
+            hints_key = f"_read_hints_{self.team}_{self.slot}"
+            hints_list = retrieved_data.get(hints_key, [])
+            
+            if not hints_list:
+                logger.debug("NoLogic: No hints received")
+                return
+            
+            logger.info(f"NoLogic: Processing {len(hints_list)} hints")
+            
+            # Collect all bundle check location IDs for quick lookup
+            bundle_check_location_ids = set()
+            bundle_location_mapping = {}  # location_id -> (bundle_name, bundle_location_id, bundle_location_player)
+            
+            for bundle_name, bundle_info in self.bundle_placement_info.items():
+                check_locations = bundle_info.get('bundle_check_locations', [])
+                bundle_location_id = bundle_info.get('bundle_location_id')
+                bundle_location_player = bundle_info.get('bundle_location_player')
+                
+                for loc_id in check_locations:
+                    bundle_check_location_ids.add(loc_id)
+                    bundle_location_mapping[loc_id] = (bundle_name, bundle_location_id, bundle_location_player)
+            
+            # Check each hint to see if it's for a bundle item location
+            locations_to_scout = set()
+            for hint in hints_list:
+                # Hint is a dict/object with fields: receiving_player, finding_player, location, item, found, etc.
+                hint_location = hint.get('location')
+                hint_found = hint.get('found', False)
+                
+                if hint_location in bundle_check_location_ids and not hint_found:
+                    # This hint is for a bundle item location that hasn't been found
+                    bundle_name, bundle_location_id, bundle_location_player = bundle_location_mapping[hint_location]
+                    
+                    if bundle_location_id is not None and bundle_location_player is not None:
+                        locations_to_scout.add((bundle_location_player, bundle_location_id))
+                        logger.info(f"NoLogic: Found hint for bundle check location {hint_location}, will scout bundle location P{bundle_location_player}:{bundle_location_id}")
+            
+            # Send CreateHints for all found bundle locations, grouped by owning player
+            if locations_to_scout:
+                import asyncio
+                # Group locations by their owning player
+                locations_by_player = {}
+                for bundle_location_player, bundle_location_id in locations_to_scout:
+                    if bundle_location_player not in locations_by_player:
+                        locations_by_player[bundle_location_player] = []
+                    locations_by_player[bundle_location_player].append(bundle_location_id)
+                
+                # Send separate CreateHints message for each player's locations
+                for player_id, location_ids in locations_by_player.items():
+                    msg = {
+                        "cmd": "CreateHints",
+                        "player": player_id,  # The player who owns these bundle locations
+                        "locations": location_ids,  # Locations in that player's world
+                    }
+                    asyncio.create_task(self.send_msgs([msg]))
+                    logger.info(f"NoLogic: Sent CreateHints for {len(location_ids)} bundle locations in player {player_id}'s world")
+        
+        except Exception as e:
+            logger.error(f"NoLogic: Error processing hints response: {e}")
+    
     async def _auto_check_locations(self, location_ids: List[int]) -> None:
-        """Auto-check the specified locations."""
+        """Auto-check the specified locations in batches to avoid blocking."""
         if not location_ids:
             return
         
         unchecked_locations = [loc_id for loc_id in location_ids if loc_id not in self.auto_checked_locations]
         
-        if unchecked_locations:
-            logger.info(f"NoLogic: Sending {len(unchecked_locations)} location checks")
+        if not unchecked_locations:
+            return
+        
+        logger.info(f"NoLogic: Processing {len(unchecked_locations)} location checks (batching to avoid network overload)")
+        
+        # Batch locations in chunks to avoid overwhelming the server and network
+        batch_size = 50  # Send up to 50 locations per message
+        import asyncio
+        
+        for i in range(0, len(unchecked_locations), batch_size):
+            batch = unchecked_locations[i:i + batch_size]
+            
+            logger.info(f"NoLogic: Sending batch {i // batch_size + 1} with {len(batch)} location checks")
             msg = {
                 "cmd": "LocationChecks",
-                "locations": unchecked_locations
+                "locations": batch
             }
             await self.send_msgs([msg])
-            self.auto_checked_locations.update(unchecked_locations)
+            self.auto_checked_locations.update(batch)
             
             # Track which player each location belongs to (for per-player mode)
             if self.using_per_player_claim_dict:
-                for loc_id in unchecked_locations:
+                for loc_id in batch:
                     player_id = self.player_location_to_player_id.get(loc_id)
                     if player_id is not None and player_id in self.auto_checked_locations_by_player:
                         self.auto_checked_locations_by_player[player_id].add(loc_id)
+            
+            # Add small delay between batches to allow server to process
+            if i + batch_size < len(unchecked_locations):
+                await asyncio.sleep(0.1)  # 100ms between batches
     
     async def server_auth(self, password_requested: bool = False) -> None:
         """Authenticate with the server and auto-detect No Logic world."""
@@ -1041,7 +1181,7 @@ class NoLogicContext(CommonContext):
         await self.send_connect(name=self.auth, password=self.password)
     
     async def _periodic_progression_check(self, interval: float = 5.0) -> None:
-        """Periodically send sync requests to the server to check for item updates."""
+        """Periodically send sync requests to the server to check for item and hint updates."""
         import asyncio
         
         while self.server_address:  # Continue while connected
@@ -1049,6 +1189,14 @@ class NoLogicContext(CommonContext):
                 await asyncio.sleep(interval)
                 # Send a Sync message to request item updates from server
                 await self.send_msgs([{"cmd": "Sync"}])
+                
+                # Also request hints periodically to keep bundle location information up to date
+                if self.team is not None and self.bundle_placement_info:
+                    hint_msg = {
+                        "cmd": "Get",
+                        "keys": [f"_read_hints_{self.team}_{self.slot}"]
+                    }
+                    await self.send_msgs([hint_msg])
             except Exception as e:
                 logger.error(f"NoLogic: Error in periodic sync check: {e}")
                 break

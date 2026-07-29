@@ -2146,7 +2146,7 @@ class FunkinWorld(World):
 
         alsoFiller = self.fnfUtil.trap_filler_items.get(name)
         if alsoFiller:
-            return FunkinFixedItem(name, ItemClassification.filler, alsoFiller, self.player)
+            return FunkinFixedItem(name, ItemClassification.useful, alsoFiller, self.player)
 
         item = self.fnfUtil.normal_items.get(name)
         if item:
@@ -2216,7 +2216,7 @@ class FunkinWorld(World):
         return [self.create_item(name) for _ in range(0, qty)]
 
     def get_filler_item_name(self) -> str:
-        return self.random.choices(self.filler_item_names, self.filler_item_weights)[0]
+        return "Lonely Friday Night"
 
     def create_filler_item(self) -> Item:
         return FunkinFixedItem(self.get_filler_item_name(), ItemClassification.filler, None, self.player)
@@ -2936,7 +2936,9 @@ class FunkinWorld(World):
         
         if not hasattr(self, 'sanity_items_list') or not self.sanity_items_list:
             return
-        
+        if not self.thisYaml.settings.sanity_items_required:
+            return
+
         # Single pass: build the cache for this player's songs
         for sanity_item in self.sanity_items_list:
             # Only process sanity items for this player
@@ -3593,7 +3595,7 @@ class FunkinWorld(World):
             if len(filler_list) > 0 and filler_trap_count > 0:
                 for item in filler_list:
                     for trapitem in range(self.filter_items_weights[item]):
-                        self.multiworld.itempool.append(self.create_item(item))  # Fixed: use 'item' not 'filler_list[trapitem]'
+                        self.multiworld.itempool.append(self.create_item(item))
                         item_count += 1
 
             # Fill remaining slots with song duplicates and weighted random selection
@@ -4458,3 +4460,46 @@ class FunkinWorld(World):
         # Implementation would depend on how week data is accessed
         # For now, return False to allow addition (can be refined later)
         return False
+
+
+def _patch_fnf_template():
+    """Patch template generation to replace FNF template with a warning message"""
+    try:
+        from Options import generate_yaml_templates
+        
+        original_generate = generate_yaml_templates
+        
+        def patched_generate(target_folder, generate_hidden=True):
+            import os
+            from Options import get_file_safe_name
+            
+            print("[FNF Template Patch] Generating templates...")
+            # Call the original template generation
+            original_generate(target_folder, generate_hidden)
+            
+            # Now find and replace the FNF template with a warning
+            fnf_template_name = get_file_safe_name("Friday Night Funkin") + ".yaml"
+            fnf_template_path = os.path.join(target_folder, fnf_template_name)
+            
+            if os.path.exists(fnf_template_path):
+                print(f"[FNF Template Patch] Found template at {fnf_template_path}")
+                warning_message = """# THIS YAML IS NOT TO BE USED.
+# FRIDAY NIGHT FUNKIN'S IMPLEMENTATION USES A SPECIAL SYSTEM WHICH REQUIRES GENERATING YOUR YAML THROUGH MIXTAPE ENGINE.
+# PLEASE GENERATE YOUR YAML FILE THROUGH THE GAME TO MAKE A PROPER, AND SUPPORTED YAML.
+# TO GENERATE A YAML IN MIXTAPE ENGINE, GO TO THE AP ICON, AND WHEN IN THE AP LOGIN PAGE, CLICK THE SETTINGS BUTTON.
+"""
+                with open(fnf_template_path, "w", encoding="utf-8-sig") as f:
+                    f.write(warning_message)
+                print("[FNF Template Patch] Successfully replaced FNF template with warning message")
+            else:
+                print(f"[FNF Template Patch] Template not found at {fnf_template_path}")
+        
+        import Options
+        Options.generate_yaml_templates = patched_generate
+        print("[FNF Template Patch] Patch applied successfully")
+        
+    except Exception as e:
+        print(f"[FNF Template Patch] Error applying patch: {e}")
+
+
+_patch_fnf_template()

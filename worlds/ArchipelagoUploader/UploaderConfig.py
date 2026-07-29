@@ -32,8 +32,7 @@ def _ensure_uploader_config_exists() -> bool:
             content = f.read()
         if 'archipelago_uploader:' in content:
             return True
-        uploader_section = """# Archipelago Uploader configuration
-archipelago_uploader:
+        uploader_section = """archipelago_uploader:
   enabled: true
   upload_mode: prompt
   upload_session_key: ""

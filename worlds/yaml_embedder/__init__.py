@@ -1,3 +1,39 @@
+"""
+YAML Embedder - Injects slot YAML data into all worlds' fill_slot_data
+Patches Multiworld and World to automatically inject YAML data on all slot data calls.
+This patch cannot be overridden and works on all worlds, regardless of inheritance.
+
+Usage:
+------
+1. YAML Metadata: The ap_slot_meta_yaml_info in slot_data contains compressed YAML metadata:
+   - Base64-encoded gzipped JSON containing three fields:
+     * "yaml": The YAML representation with randomization marked but not applied
+     * "options": The actual selected values for each option
+     * "formats": Optional format metadata for the YAML
+
+2. Decompression: Use _decompress_yaml_metadata() to decompress the data
+   from worlds.yaml_embedder import _decompress_yaml_metadata
+   metadata = _decompress_yaml_metadata(slot_data['ap_slot_meta_yaml_info'])
+   yaml_str = metadata['yaml']
+   options = metadata['options']
+   formats = metadata['formats']
+
+3. Recreation: Use yaml_recreator.recreate_yaml_with_options() to combine
+   and recreate the original YAML with comments showing what was randomly picked.
+
+Example:
+    from worlds.yaml_embedder import _decompress_yaml_metadata
+    from worlds.yaml_embedder.yaml_recreator import recreate_yaml_with_options
+    
+    metadata = _decompress_yaml_metadata(slot_data['ap_slot_meta_yaml_info'])
+    yaml_str = metadata['yaml']
+    options = metadata['options']
+    game_name = slot_data.get('game', 'Unknown')
+    
+    # Recreate original YAML with comments
+    original_yaml = recreate_yaml_with_options(yaml_str, options, game_name)
+"""
+
 from typing import Dict, Any
 import logging
 import os
@@ -7,13 +43,32 @@ import json
 from worlds.AutoWorld import World
 from BaseClasses import MultiWorld
 
+# Import format metadata generation
 try:
     from worlds.yaml_embedder.yaml_recreator import generate_format_metadata
     _has_yaml_recreator = True
 except ImportError:
     _has_yaml_recreator = False
+    logger = None  # Will be initialized below
+
 
 logger = logging.getLogger("YAML Embedder")
+logger.setLevel(logging.INFO)
+
+# Ensure we have a handler for INFO+ messages
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("[%(name)s] %(levelname)s: %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+logger.info("[YAML Embedder] Initializing YAML Embedder module")
+
+
+# ============ Module-level storage for player_files ============
+# This dict is populated based on args.player_files_path and retrieved by Main.main()
+_player_files_cache: Dict[int, str] = {}
 
 
 def set_player_files(player_files: Dict[int, str]) -> None:
@@ -21,7 +76,7 @@ def set_player_files(player_files: Dict[int, str]) -> None:
     global _player_files_cache
     _player_files_cache.clear()
     _player_files_cache.update(player_files)
-    logger.info(f"[YAML Embedder] Got Player Files! - cached {len(player_files)} player file(s)")
+    logger.info(f"[YAML Embedder] SET_PLAYER_FILES called - cached {len(player_files)} player file(s)")
     for player_id, yaml_str in player_files.items():
         yaml_size = len(yaml_str) if yaml_str else 0
         logger.info(f"[YAML Embedder]   P{player_id}: {yaml_size} chars")
@@ -30,7 +85,7 @@ def set_player_files(player_files: Dict[int, str]) -> None:
 def get_player_files() -> Dict[int, str]:
     """Called to retrieve player_files mapping."""
     global _player_files_cache
-    logger.info(f"[YAML Embedder] Retrieved Player Files - {len(_player_files_cache)} cached player file(s)")
+    logger.info(f"[YAML Embedder] GET_PLAYER_FILES called - retrieving {len(_player_files_cache)} cached player file(s)")
     return _player_files_cache.copy()
 
 
@@ -65,7 +120,7 @@ def _compress_yaml_metadata(yaml_string: str, options_dict: dict, formats_dict: 
         original_size = len(yaml_string) + len(json.dumps(options_dict)) + (len(json.dumps(formats_dict)) if formats_dict else 0)
         compressed_size = len(encoded)
         ratio = (1 - compressed_size / original_size) * 100 if original_size > 0 else 0
-        logger.info(f"[YAML Embedder] Compressed: {original_size} → {compressed_size} bytes ({ratio:.1f}%)")
+        logger.info(f"[YAML Embedder] Compressed metadata: {original_size} → {compressed_size} bytes ({ratio:.1f}% reduction)")
         
         return encoded
     except Exception as e:
@@ -133,20 +188,20 @@ def _build_player_files_from_path(player_files_path: str, meta_file_path: str, w
             if file.is_file() and not fname.startswith(".") and not fname.lower().endswith(".ini") and \
                     os.path.join(player_files_path, fname) not in {meta_file_path, weights_file_path}:
                 path = os.path.join(player_files_path, fname)
-                logger.info(f"[YAML Embedder] Read {fname}")
+                logger.info(f"[YAML Embedder] Reading player YAML file: {fname}")
                 try:
                     weights_for_file = []
                     for doc_idx, yaml in enumerate(read_weights_yamls(path)):
                         if yaml is None:
-                            logger.warning(f"[YAML Embedder] Empty YAML in {fname}")
+                            logger.warning(f"[YAML Embedder] Ignoring empty yaml document #{doc_idx + 1} in {fname}")
                         else:
                             weights_for_file.append(yaml)
                     weights_cache[fname] = tuple(weights_for_file)
-                    logger.info(f"[YAML Embedder] Read {len(weights_for_file)} docs from {fname}")
+                    logger.info(f"[YAML Embedder] Successfully read {len(weights_for_file)} YAML document(s) from {fname}")
                 except Exception as e:
                     logger.error(f"[YAML Embedder] Exception reading weights in file {fname}: {e}")
         
-        logger.info(f"[YAML Embedder] Found {len(weights_cache)} YAML files")
+        logger.info(f"[YAML Embedder] Scanned directory complete: found {len(weights_cache)} YAML file(s)")
         
         # Sort and build player_files mapping
         weights_cache = {key: value for key, value in sorted(weights_cache.items(), key=lambda k: k[0].casefold())}
@@ -155,7 +210,7 @@ def _build_player_files_from_path(player_files_path: str, meta_file_path: str, w
             if filename not in {os.path.basename(meta_file_path), os.path.basename(weights_file_path)}:
                 for yaml in yaml_data:
                     description = get_choice('description', yaml, 'No description specified')
-                    logger.info(f"[YAML Embedder] P{player_id}: {filename}")
+                    logger.info(f"[YAML Embedder] P{player_id}: {filename} >> {description}")
                     
                     # Represent randomization without applying it
                     yaml_with_randomization = _represent_yaml_with_randomization(yaml)
@@ -165,13 +220,13 @@ def _build_player_files_from_path(player_files_path: str, meta_file_path: str, w
                     yaml_str = yaml_module.dump(yaml_with_randomization, default_flow_style=False)
                     yaml_size = len(yaml_str)
                     player_files[player_id] = yaml_str
-                    logger.info(f"[YAML Embedder] P{player_id}: {yaml_size} bytes")
+                    logger.info(f"[YAML Embedder] Stored P{player_id}: {yaml_size} char YAML string")
                     player_id += 1
         
-        logger.info(f"[YAML Embedder] Built {len(player_files)} player file(s)")
+        logger.info(f"[YAML Embedder] Built player_files dict with {len(player_files)} player(s)")
         return player_files
     except Exception as e:
-        logger.error(f"[YAML Embedder] Failed to build: {e}")
+        logger.error(f"[YAML Embedder] Failed to build player_files: {e}", exc_info=True)
         return {}
 
 
@@ -242,15 +297,17 @@ def _generate_annotated_yaml(original_yaml: str, slot_options: dict, options_obj
                 # Dict-like object
                 for key, value in options_obj.items():
                     option_objects[key] = value
-            pass
+            logger.info(f"DEBUG: Built option_objects dict with {len(option_objects)} options")
         except Exception as e:
-            pass
+            logger.warning(f"DEBUG: Failed to build option_objects: {e}")
         
         # Find changed options by comparing with slot_options
         changed_options = {}
         
         # Debug: Log what keys are in slot_options
-        pass
+        logger.info(f"DEBUG: slot_options keys: {list(slot_options.keys())[:10]}...")  # First 10 keys
+        logger.info(f"DEBUG: Total slot_options keys: {len(slot_options)}")
+        logger.info(f"DEBUG: option_objects keys: {list(option_objects.keys())[:10]}...")
         
         for option_name, final_value in slot_options.items():
             # Skip the mapping dicts themselves (they won't be in game_options_dict anyway)
@@ -403,6 +460,169 @@ def _generate_annotated_yaml(original_yaml: str, slot_options: dict, options_obj
         return original_yaml
 
 
+def _save_randomized_yamls(multiworld: MultiWorld, args) -> None:
+    """Save randomized YAML files for all players to the multiworld zip or separate folder.
+    
+    Attempts to add files to the multiworld zip. If that fails, creates a
+    {multiworld_name}_yamls folder alongside the output zip.
+    
+    Args:
+        multiworld: The completed multiworld after generation
+        args: Command line arguments containing output path
+    """
+    import zipfile
+    
+    try:
+        # Determine output folder and find multiworld zip
+        output_folder = getattr(args, 'outputdir', None) or 'output'
+        if not os.path.isabs(output_folder):
+            output_folder = os.path.join(os.getcwd(), output_folder)
+        
+        os.makedirs(output_folder, exist_ok=True)
+        
+        # Try to find the most recent multiworld zip in output folder
+        multiworld_zip_path = None
+        try:
+            # Look for .zip files in output folder, sorted by modification time (newest first)
+            zip_files = [
+                os.path.join(output_folder, f) for f in os.listdir(output_folder)
+                if f.endswith('.zip')
+            ]
+            if zip_files:
+                multiworld_zip_path = max(zip_files, key=os.path.getmtime)
+                logger.info(f"[YAML Embedder] Found multiworld zip: {os.path.basename(multiworld_zip_path)}")
+        except Exception as e:
+            logger.warning(f"[YAML Embedder] Could not find multiworld zip: {e}")
+        
+        saved_count = 0
+        yaml_files = {}
+        
+        # Collect all YAML data for all players
+        for player_id in range(1, multiworld.players + 1):
+            try:
+                world = multiworld.worlds[player_id]
+                slot_data = world.fill_slot_data()
+                
+                if not isinstance(slot_data, dict):
+                    logger.warning(f"[YAML Embedder] P{player_id}: slot_data is not a dict")
+                    continue
+                
+                # Extract compressed YAML metadata
+                compressed_meta = slot_data.get('ap_slot_meta_yaml_info')
+                if not compressed_meta:
+                    logger.warning(f"[YAML Embedder] P{player_id}: No ap_slot_meta_yaml_info available")
+                    continue
+                
+                # Decompress the metadata
+                try:
+                    metadata = _decompress_yaml_metadata(compressed_meta)
+                    original_yaml = metadata.get('yaml')
+                    slot_options = metadata.get('options', {})
+                except Exception as e:
+                    logger.error(f"[YAML Embedder] P{player_id}: Failed to decompress metadata: {e}")
+                    continue
+                
+                player_name = slot_data.get('name', f'Player{player_id}')
+                game_name = slot_data.get('game', 'Unknown')
+                
+                # Debug: log what we're working with
+                logger.info(f"[YAML Embedder] P{player_id} ({player_name}): Processing {game_name}")
+                logger.info(f"[YAML Embedder] P{player_id}: slot_options has {len(slot_options)} keys")
+                
+                if original_yaml:
+                    import yaml as yaml_module
+                    try:
+                        yaml_data = yaml_module.safe_load(original_yaml)
+                        if isinstance(yaml_data, dict):
+                            logger.info(f"[YAML Embedder] P{player_id}: Original YAML has {len(yaml_data)} keys")
+                            
+                            # Check specific key if it exists
+                            if 'zoras_fountain' in yaml_data:
+                                zf_value = yaml_data['zoras_fountain']
+                                logger.info(f"[YAML Embedder] P{player_id}: zoras_fountain value in YAML: {repr(zf_value)} (type: {type(zf_value).__name__})")
+                            
+                            # Show keys that have 'random' values
+                            random_keys = {}
+                            for k, v in yaml_data.items():
+                                if isinstance(v, str) and 'random' in v.lower():
+                                    random_keys[k] = v
+                            
+                            if random_keys:
+                                logger.info(f"[YAML Embedder] P{player_id}: Found random values in YAML: {random_keys}")
+                            else:
+                                logger.info(f"[YAML Embedder] P{player_id}: No string keys containing 'random' found")
+                        else:
+                            logger.warning(f"[YAML Embedder] P{player_id}: YAML parsed but not a dict: {type(yaml_data)}")
+                    except Exception as e:
+                        logger.warning(f"[YAML Embedder] P{player_id}: Failed to parse YAML: {e}")
+                
+                if not original_yaml:
+                    logger.warning(f"[YAML Embedder] P{player_id} ({player_name}): No ap_slot_yaml available")
+                    continue
+                
+                # Generate annotated YAML, passing game_name and options object for nested structure handling
+                options_obj = world.options
+                annotated_yaml = _generate_annotated_yaml(original_yaml, slot_options, options_obj, game_name)
+                
+                # Create filename: {PlayerName}_{Game}.yaml
+                safe_player_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in player_name)
+                safe_game_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in game_name)
+                filename = f"{safe_player_name}_{safe_game_name}.yaml"
+                
+                yaml_files[filename] = annotated_yaml
+                logger.info(f"[YAML Embedder] Prepared YAML: {filename}")
+                
+            except Exception as e:
+                logger.error(f"[YAML Embedder] Error processing YAML for P{player_id}: {e}", exc_info=True)
+        
+        # Try to add YAMLs to multiworld zip
+        zip_added = False
+        if multiworld_zip_path and os.path.exists(multiworld_zip_path):
+            try:
+                with zipfile.ZipFile(multiworld_zip_path, 'a') as zf:
+                    # Create slot_yamls folder inside zip
+                    for filename, yaml_content in yaml_files.items():
+                        arcname = f"slot_yamls/{filename}"
+                        zf.writestr(arcname, yaml_content)
+                        logger.info(f"[YAML Embedder] Added to zip: {arcname}")
+                        saved_count += 1
+                
+                logger.info(f"[YAML Embedder] Successfully added {saved_count} YAML file(s) to multiworld zip")
+                zip_added = True
+                
+            except Exception as e:
+                logger.warning(f"[YAML Embedder] Failed to add YAMLs to zip: {e}")
+                logger.info("[YAML Embedder] Will fall back to separate folder")
+        
+        # Fall back to separate folder if zip approach didn't work
+        if not zip_added and yaml_files:
+            try:
+                # Determine folder name based on zip name or generic
+                if multiworld_zip_path:
+                    zip_basename = os.path.basename(multiworld_zip_path)
+                    zip_name_no_ext = os.path.splitext(zip_basename)[0]
+                    yamls_folder = os.path.join(output_folder, f"{zip_name_no_ext}_yamls")
+                else:
+                    yamls_folder = os.path.join(output_folder, "slot_yamls")
+                
+                os.makedirs(yamls_folder, exist_ok=True)
+                logger.info(f"[YAML Embedder] Saving YAMLs to folder: {yamls_folder}")
+                
+                for filename, yaml_content in yaml_files.items():
+                    filepath = os.path.join(yamls_folder, filename)
+                    with open(filepath, 'w') as f:
+                        f.write(yaml_content)
+                    logger.info(f"[YAML Embedder] Saved: {filename}")
+                    saved_count += 1
+                
+                logger.info(f"[YAML Embedder] Saved {saved_count} randomized YAML file(s) to {yamls_folder}")
+            
+            except Exception as e:
+                logger.error(f"[YAML Embedder] Error saving YAMLs to folder: {e}", exc_info=True)
+    
+    except Exception as e:
+        logger.error(f"[YAML Embedder] Error saving randomized YAMLs: {e}", exc_info=True)
+
 
 # ============ Patch MultiWorld ============
 _original_multiworld_init = MultiWorld.__init__
@@ -470,7 +690,7 @@ def _patch_main_function():
             try:
                 response = input("\n[YAML Embedder] Save randomized YAML files to output folder? (yes/no): ").strip().lower()
                 if response in ('yes', 'y'):
-                    pass
+                    _save_randomized_yamls(multiworld, args)
             except Exception as e:
                 logger.error(f"[YAML Embedder] Error during YAML save prompt: {e}")
 

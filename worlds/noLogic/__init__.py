@@ -6,9 +6,10 @@
 from collections.abc import Callable, Mapping, Sequence
 import os
 import sys
+from datetime import datetime
 from typing import Dict, Set, List, ClassVar, Type, Optional, Tuple, Any, Union, TypeVar, Generic, get_type_hints
 import inspect
-from BaseClasses import Region, Item, Location, ItemClassification, MultiWorld
+from BaseClasses import LocationProgressType, Region, Item, Location, ItemClassification, MultiWorld
 import Utils
 from worlds.AutoWorld import World, WebWorld
 from worlds.LauncherComponents import Component, components, Type as ComponentType
@@ -21,7 +22,6 @@ from pathlib import Path
 import string
 from collections import Counter
 
-MultiServer.load_server_cert = None  # Ensure closure is cleared to avoid issues with dynamic logic changes
 
 logger = logging.getLogger("NoLogic")
 
@@ -319,8 +319,6 @@ class GenericYAMLPlayer:
     def read_player_name(yaml_path: Optional[str]) -> Tuple[List[str], bool]:
         """
         Read all potential player names from a YAML file, ignoring No Logic players.
-        Extracts names from both main 'name' field and all 'triggers' entries.
-        Since triggers are random/conditional, collects ALL potential names.
         
         Args:
             yaml_path: Path to the YAML file
@@ -433,63 +431,222 @@ class GenericYAMLPlayer:
         success = len(all_names) > 0
         return all_names, success
 
-funny_fillers:set[str] = set([
-    "Filler",
-    "Placeholder",
-    "Progression Item",
-    "Universal Progression?",
-    "Generic Item",
-    "Misc Item",
-    "Useless Item",
-    "Junk Item",
-    "Random Item",
-    "Extra Item",
-    "Spare Item",
-    "Dummy Item",
-    "Test Item",
-    "Sample Item",
-    "Unused Item",
-    "Default Item",
-    "Your Hopes and Dreams",
-    "The Meaning of Life",
-    "Something",
-    "Nothing",
-    "Literally Nothing",
-    "Void",
-    "Air",
-    "An empty pocket",
-    "A single grain of sand",
-    "A drop of water",
-    "A whisper",
-    "A shadow",
-    "A fleeting thought",
-    "That item you thought you had",
-    "Archipelago",
-    "Archipelago Item",
-    "Way too much caffeine",
-    "A bug fix that doesn't actually fix anything",
-    "Trap, I think",
-    "An item that may or may not exist",
-    "An egg in this trying time",
-    "Carlos",
-    "Z11Gaming",
-    "Something you thought was there, but then it completely vanished without a trace",
-    "Wompus",
-    "jfdkjefwkefdwewfewffe",
-    "ewksdkkedswe",
-    "TThe weather is nice today, isn't it?",
-    "Unfortunate Circumstances",
-    "Potato the Cat",
-    "Meow"
-])
+def get_holiday_fillers() -> set[str]:
+    """
+    Generate a set of filler names that changes based on the current month.
+    Includes holiday-specific items for various celebrations throughout the year.
+    """
+    base_fillers = {
+        "Filler",
+        "Placeholder",
+        "Progression Item",
+        "Universal Progression?",
+        "Generic Item",
+        "Misc Item",
+        "Useless Item",
+        "Junk Item",
+        "Random Item",
+        "Extra Item",
+        "Spare Item",
+        "Dummy Item",
+        "Test Item",
+        "Sample Item",
+        "Unused Item",
+        "Default Item",
+        "Your Hopes and Dreams",
+        "The Meaning of Life",
+        "Something",
+        "Nothing",
+        "Literally Nothing",
+        "Void",
+        "Air",
+        "An empty pocket",
+        "A single grain of sand",
+        "A drop of water",
+        "A whisper",
+        "A shadow",
+        "A fleeting thought",
+        "That item you thought you had",
+        "Archipelago",
+        "Archipelago Item",
+        "Way too much caffeine",
+        "A bug fix that doesn't actually fix anything",
+        "Trap, I think",
+        "An item that may or may not exist",
+        "An egg in this trying time",
+        "Carlos",
+        "Z11Gaming",
+        "Something you thought was there, but then it completely vanished without a trace",
+        "Wompus",
+        "jfdkjefwkefdwewfewffe",
+        "ewksdkkedswe",
+        "TThe weather is nice today, isn't it?",
+        "Unfortunate Circumstances",
+        "Potato the Cat",
+        "Meow"
+    }
+    
+    current_month = datetime.now().month
+    
+    # January - New Year's Resolution
+    if current_month == 1:
+        base_fillers.update({
+            "New Year, New Me",
+            "Resolution to not need this item",
+            "Fresh Start",
+            "January Junk",
+            "Happy New Year Gift",
+        })
+    
+    # February - Valentine's Day
+    elif current_month == 2:
+        base_fillers.update({
+            "Love Potion",
+            "Heart-shaped Item",
+            "Cupid's Mistake",
+            "Be Mine",
+            "Romance Item",
+            "Chocolate (Not Really)",
+        })
+    
+    # March - St. Patrick's Day
+    elif current_month == 3:
+        base_fillers.update({
+            "Pot of Gold",
+            "Lucky Charm",
+            "Four-Leaf Clover",
+            "Rainbow Item",
+            "Green Stuff",
+            "Unlucky Item",
+            "A pinch"
+        })
+    
+    # April - Easter/April Fools
+    elif current_month == 4:
+        base_fillers.update({
+            "Easter Egg",
+            "Bunny Surprise",
+            "Plastic Egg",
+            "Got You!",
+        })
+        if datetime.now().day == 1:
+            base_fillers.update({"April Fools' Joke", "Foolish Item"})
+            base_fillers.update("abcdefghijklmnopqrstuvwxyz")
+    
+    # May
+    elif current_month == 5 and datetime.now().day >= 8 and datetime.now().day <= 14:  # Approximate Mother's Day range
+        base_fillers.update({
+            "Best Mom Gift",
+            "Flowers",
+            "Mother's Pride",
+            "Family Item",
+        })
+    
+    # June - Pride Month / Father's Day
+    elif current_month == 6:
+        base_fillers.update({
+            "Pride Flag",
+            "Love is Love",
+            "Rainbow Colors",
+            "Be Proud",
+            "LGBTQ+",
+            "Inclusive Item",
+            "Rainbow Essence",
+        })
+        if datetime.now().day >= 15 and datetime.now().day <= 21:  # Approximate Father's Day range
+            base_fillers.update({
+                "Best Dad Gift",
+                "Father's Day Special",
+                "Dad Joke",
+                "Grill Mastery",
+            })
+    
+    # July - Independence Day
+    elif current_month == 7:
+        base_fillers.update({
+            "Fireworks",
+            "Star-Spangled Banner",
+            "Freedom",
+            "Independence",
+            "Patriotic Item",
+            "Boom Boom Sparkles",
+        })
+    
+    # August - Dog Days of Summer
+    elif current_month == 8:
+        base_fillers.update({
+            "Summer Vibes",
+            "Ice Cream",
+            "Beach Ball",
+            "Hot Days",
+            "Suntan Lotion",
+        })
+    
+    # September - Back to School
+    elif current_month == 9:
+        base_fillers.update({
+            "Pencil",
+            "School Supplies",
+            "Knowledge",
+            "Apple for Teacher",
+            "Homework",
+            "Brain Food",
+        })
+    
+    # October - Halloween
+    elif current_month == 10:
+        base_fillers.update({
+            "Ghost",
+            "Jack-o'-lantern",
+            "Candy Corn",
+            "Spooky Skeleton",
+            "Witch's Brew",
+            "Haunted Item",
+            "Halloween Trick",
+            "Boo!",
+        })
+    
+    # November - Thanksgiving
+    elif current_month == 11:
+        base_fillers.update({
+            "Turkey Day",
+            "Gobble Gobble",
+            "Cranberry Sauce",
+            "Pie",
+            "Grateful Days",
+            "Harvest Blessing",
+        })
+    
+    # December - Christmas/Holidays
+    elif current_month == 12:
+        base_fillers.update({
+            "Christmas Tree",
+            "Santa's Gift",
+            "Jingle Bells",
+            "Mistletoe",
+            "Holiday Cheer",
+            "Wrapped Present",
+            "Naughty or Nice",
+            "Snowflake",
+            "Reindeer",
+            "Eggnog",
+            "Yuletide Log",
+            "Gingerbread",
+            "Stocking Stuffer",
+        })
+    
+    return base_fillers
+
+
+def get_funny_fillers() -> set[str]:
+    return get_holiday_fillers()
+
+funny_fillers: set[str] = get_funny_fillers()
+
 def build_item_name_to_id_with_yaml() -> Dict[str, int]:
     """
     Build item_name_to_id mapping by scanning player files for names.
     Resolves player names using Archipelago's name formatting syntax ({number}, {player}, etc).
-    Also registers shard versions of progression items for use in shard mode.
-    Dynamically assigns shard IDs to ensure no collisions.
-    Multi-document YAML files (separated by ---) are treated as separate players,
-    each getting their own player_idx and thus their own item IDs.
     
     Raises:
         NoLogicException: If YAML reading fails, after displaying an error message
@@ -498,28 +655,29 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
     try:
         print("[DEBUG] Starting build_item_name_to_id_with_yaml()")
         base_id_offset = NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS
+        current_fillers = funny_fillers
         item_mapping = {
             "Filler": base_id_offset,
             "Universal Progression": base_id_offset + 1,
             "Universal Progression Shard": base_id_offset + 2,
-            **{filler: base_id_offset + 3 + i for i, filler in enumerate(funny_fillers)},
-            "Global Progression Trap": base_id_offset + 3 + len(funny_fillers),
-            "Progression Trap": base_id_offset + 4 + len(funny_fillers),
+            **{filler: base_id_offset + 3 + i for i, filler in enumerate(current_fillers)},
+            "Global Progression Trap": base_id_offset + 3 + len(current_fillers),
+            "Progression Trap": base_id_offset + 4 + len(current_fillers),
         }
         
-        print(f"[DEBUG] Initial item_mapping: {item_mapping}")
+        # print(f"[DEBUG] Initial item_mapping: {item_mapping}")
         
         # Try to read from players folder
         # Get all player YAML files
         user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
-        print(f"[DEBUG] user_path from settings: {user_path}")
+        # print(f"[DEBUG] user_path from settings: {user_path}")
         
         folder_path = sys.argv[sys.argv.index("--player_files_path") + 1] if "--player_files_path" in sys.argv else user_path
-        print(f"[DEBUG] Using folder_path: {folder_path}")
+        # print(f"[DEBUG] Using folder_path: {folder_path}")
 
         players_dir = Path(folder_path)
-        print(f"[DEBUG] players_dir converted to Path: {players_dir}")
-        print(f"[DEBUG] Is directory? {os.path.isdir(players_dir)}")
+        # print(f"[DEBUG] players_dir converted to Path: {players_dir}")
+        # print(f"[DEBUG] Is directory? {os.path.isdir(players_dir)}")
         
         if os.path.isdir(players_dir):
             # Get all that are files, and not directories, regardless of extension (Since AP doesn't care.)
@@ -530,12 +688,10 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
             name_counter = Counter()
             player_idx = 0
             
-            # Define helper function to check for multi-document YAML files
             def check_lines(content: str) -> bool:
                 if not isinstance(content, str):
                     return False
                 lines = content.splitlines()
-                # Skip first line if it's just "---" (YAML document start marker)
                 start_idx = 1 if lines and lines[0].strip() == '---' else 0
                 # Check remaining lines for "---" that is ONLY "---" on its line (not in comments or other content)
                 for line in lines[start_idx:]:
@@ -544,17 +700,18 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                 return False
             
             for yaml_file in sorted(yaml_files):
-                print(f"\n[DEBUG] Processing file: {yaml_file}")
+                # print(f"\n[DEBUG] Processing file: {yaml_file}")
                 if player_idx >= RESERVED_PROGRESSION_ITEMS:
                     print(f"[DEBUG] Reached max player_idx ({RESERVED_PROGRESSION_ITEMS}), breaking")
+                    raise NoLogicException(f"Too many player YAML files found. Maximum supported is {RESERVED_PROGRESSION_ITEMS}. Found: {len(yaml_files)}. Please reduce the number of player YAML files to continue.")
                     break
                 
                 with open(yaml_file, 'r', encoding='utf-8-sig') as f:
                     yaml_content = f.read()
-                print(f"[DEBUG] Read {len(yaml_content)} bytes from file")
+                # print(f"[DEBUG] Read {len(yaml_content)} bytes from file")
                 
                 if check_lines(yaml_content):
-                    print(f"[DEBUG] Multi-document YAML detected")
+                    # print(f"[DEBUG] Multi-document YAML detected")
                     # Split by lines and reconstruct documents, treating only standalone "---" as separators
                     documents = []
                     current_doc = []
@@ -571,34 +728,31 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                     if current_doc:
                         documents.append('\n'.join(current_doc))
                     
-                    for doc_idx, doc_content in enumerate(documents):
-                        print(f"[DEBUG]   Processing document {doc_idx}, player_idx={player_idx}")
-                    if player_idx >= RESERVED_PROGRESSION_ITEMS:
-                        break
+                    # for doc_idx, doc_content in enumerate(documents):
+                    #     print(f"[DEBUG]   Processing document {doc_idx}, player_idx={player_idx}")
+                    # if player_idx >= RESERVED_PROGRESSION_ITEMS:
+                    #     break
                     
                     doc_content = doc_content.strip()
                     if not doc_content:
                         print(f"[DEBUG]   Document {doc_idx} is empty, skipping")
                         continue
                     
-                    # Parse this document
-                    print(f"[DEBUG]   Parsing document {doc_idx}...")
+                    # print(f"[DEBUG]   Parsing YAML {doc_idx}...")
                     parsed_data = parse_yaml(doc_content)
-                    print(f"[DEBUG]   Parsed data: {parsed_data}")
+                    # print(f"[DEBUG]   Parsed data: {parsed_data}")
                     
                     try:
                         player_names, success = GenericYAMLPlayer._extract_name_from_parsed(parsed_data)
                     except NoLogicPlayerEncountered:
-                        print(f"[DEBUG]   Document {doc_idx} is a No Logic player, skipping")
+                        # print(f"[DEBUG]   Document {doc_idx} is a No Logic player, skipping")
                         continue
                     
-                    print(f"[DEBUG]   Extracted names: {player_names}, success: {success}")
+                    # print(f"[DEBUG]   Extracted names: {player_names}, success: {success}")
                     
                     player_id = player_idx + 1  # Player IDs start at 1
                     
                     if success and player_names:
-                        # Compute counter value once for all names from this document
-                        # All variant names from the same document should use the same counter
                         counter_key = f"_player_{player_idx}"
                         name_counter[counter_key] += 1
                         common_counter_value = name_counter[counter_key]
@@ -607,56 +761,51 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                         for idx, player_name in enumerate(player_names):
                             # Apply Archipelago's name formatting logic with shared counter value
                             resolved_name = _resolve_player_name_with_counter(player_name, player_id, common_counter_value)
-                            print(f"[DEBUG]   Resolved name: '{resolved_name}'")
+                            # print(f"[DEBUG]   Resolved name: '{resolved_name}'")
                             progression_name = f"{resolved_name}'s Progression"
                             item_id = NOLOGIC_BASE_ID + player_idx
                             item_mapping[progression_name] = item_id
-                            print(f"[DEBUG]   Added progression item: '{progression_name}' -> {item_id}")
+                            # print(f"[DEBUG]   Added progression item: '{progression_name}' -> {item_id}")
                             
                             # Also register the shard version with next available ID
                             shard_name = f"{progression_name} Shard"
                             next_available_id = max(item_mapping.values()) + 1
                             item_mapping[shard_name] = next_available_id
-                            print(f"[DEBUG]   Added shard item: '{shard_name}' -> {next_available_id}")
+                            # print(f"[DEBUG]   Added shard item: '{shard_name}' -> {next_available_id}")
                             
                             # Also register the per-player trap item
                             per_world_trap_name = f"{resolved_name}'s Progression Trap"
                             next_available_id = max(item_mapping.values()) + 1
                             item_mapping[per_world_trap_name] = next_available_id
-                            print(f"[DEBUG]   Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
+                            # print(f"[DEBUG]   Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
                     else:
                         # Fallback to reserved name
                         reserved_name = f"__RESERVED_PROG_{player_idx}__"
                         item_id = NOLOGIC_BASE_ID + player_idx
                         item_mapping[reserved_name] = item_id
-                        print(f"[DEBUG]   Added reserved item: '{reserved_name}' -> {item_id}")
+                        # print(f"[DEBUG]   Added reserved item: '{reserved_name}' -> {item_id}")
                         
                         # Also register the shard version with next available ID
                         shard_name = f"{reserved_name}SHARD__"
                         next_available_id = max(item_mapping.values()) + 1
                         item_mapping[shard_name] = next_available_id
-                        print(f"[DEBUG]   Added reserved shard item: '{shard_name}' -> {next_available_id}")
+                        # print(f"[DEBUG]   Added reserved shard item: '{shard_name}' -> {next_available_id}")
                         raise NoLogicException(f"Failed to extract player name from document {doc_idx} in {yaml_file}. This may indicate an issue with the YAML formatting.")
                     
                     player_idx += 1
-                else:
-                    # Single document - process normally
-                    print(f"[DEBUG] Single-document YAML detected")
-                    
+                else:                    
                     try:
                         parsed_data = parse_yaml(yaml_content)
                         player_names, success = GenericYAMLPlayer._extract_name_from_parsed(parsed_data)
                     except NoLogicPlayerEncountered:
-                        print(f"[DEBUG] File {yaml_file} is a No Logic player, skipping")
+                        # print(f"[DEBUG] File {yaml_file} is a No Logic player, skipping")
                         continue
                     
-                    print(f"[DEBUG] Extracted names: {player_names}, success: {success}")
+                    # print(f"[DEBUG] Extracted names: {player_names}, success: {success}")
                     
-                    player_id = player_idx + 1  # Player IDs start at 1
+                    player_id = player_idx + 1
                     
                     if success and player_names:
-                        # Compute counter value once for all names from this file
-                        # All variant names from the same file should use the same counter
                         counter_key = f"_player_{player_idx}"
                         name_counter[counter_key] += 1
                         common_counter_value = name_counter[counter_key]
@@ -665,58 +814,49 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                         for idx, player_name in enumerate(player_names):
                             # Apply Archipelago's name formatting logic with shared counter value
                             resolved_name = _resolve_player_name_with_counter(player_name, player_id, common_counter_value)
-                            print(f"[DEBUG] Resolved name: '{resolved_name}'")
+                            # print(f"[DEBUG] Resolved name: '{resolved_name}'")
                             progression_name = f"{resolved_name}'s Progression"
                             item_id = NOLOGIC_BASE_ID + player_idx
                             item_mapping[progression_name] = item_id
-                            print(f"[DEBUG] Added progression item: '{progression_name}' -> {item_id}")
+                            # print(f"[DEBUG] Added progression item: '{progression_name}' -> {item_id}")
                             
                             # Also register the shard version with next available ID
                             shard_name = f"{progression_name} Shard"
                             next_available_id = max(item_mapping.values()) + 1
                             item_mapping[shard_name] = next_available_id
-                            print(f"[DEBUG] Added shard item: '{shard_name}' -> {next_available_id}")
+                            # print(f"[DEBUG] Added shard item: '{shard_name}' -> {next_available_id}")
                             
                             # Also register the per-player trap item
                             per_world_trap_name = f"{resolved_name}'s Progression Trap"
                             next_available_id = max(item_mapping.values()) + 1
                             item_mapping[per_world_trap_name] = next_available_id
-                            print(f"[DEBUG] Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
+                            # print(f"[DEBUG] Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
                     else:
-                        # Fallback to reserved name
+                        # Fallback to reserved name - TO BE REMOVED.
                         reserved_name = f"__RESERVED_PROG_{player_idx}__"
                         item_id = NOLOGIC_BASE_ID + player_idx
                         item_mapping[reserved_name] = item_id
-                        print(f"[DEBUG] Added reserved item: '{reserved_name}' -> {item_id}")
+                        # print(f"[DEBUG] Added reserved item: '{reserved_name}' -> {item_id}")
                         
-                        # Also register the shard version with next available ID
                         shard_name = f"{reserved_name}SHARD__"
                         next_available_id = max(item_mapping.values()) + 1
                         item_mapping[shard_name] = next_available_id
-                        print(f"[DEBUG] Added reserved shard item: '{shard_name}' -> {next_available_id}")
+                        # print(f"[DEBUG] Added reserved shard item: '{shard_name}' -> {next_available_id}")
                         raise NoLogicException(f"Failed to extract player name from {yaml_file}. Using reserved name {reserved_name}. This may indicate an issue with the YAML formatting.")
                     
                     player_idx += 1
         else:
-            # Fallback to all reserved names if players folder doesn't exist
-            print(f"[DEBUG] Folder does not exist or is not a directory, using reserved names fallback")
-            for i in range(RESERVED_PROGRESSION_ITEMS):
-                reserved_name = f"__RESERVED_PROG_{i}__"
-                item_mapping[reserved_name] = NOLOGIC_BASE_ID + i
-                # Also register the shard version with next available ID
-                shard_name = f"{reserved_name}SHARD__"
-                next_available_id = max(item_mapping.values()) + 1
-                item_mapping[shard_name] = next_available_id
+            print(f"[DEBUG] Folder does not exist or is not a directory. Killing Generation.")
+            raise NoLogicException(f"Players folder not found at {players_dir}. This may indicate an issue with the folder path or that no player YAML files are present.")
     
-        print(f"\n[DEBUG] Final item_mapping:")
-        for key, value in sorted(item_mapping.items()):
-            print(f"[DEBUG]   '{key}' -> {value}")
+        # print(f"\n[DEBUG] Final item_mapping:")
+        # for key, value in sorted(item_mapping.items()):
+        #     print(f"[DEBUG]   '{key}' -> {value}")
         
-        # Register single Linked Item Bundle ID (all instances share this ID)
-        # Bundle instances will have unique display names but same code
+
         bundle_id = max(item_mapping.values()) + 1
         item_mapping["Linked Item Bundle"] = bundle_id
-        print(f"[DEBUG] Registered Linked Item Bundle with ID {bundle_id}")
+        # print(f"[DEBUG] Registered Linked Item Bundle with ID {bundle_id}")
         
         return item_mapping
     
@@ -726,6 +866,9 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
         print("ERROR: Cannot load No Logic World due to a YAML Reading Error")
         print("="*80)
         print(f"\nException Details: {type(e).__name__}: {e}")
+        print("Traceback Details:")
+        import traceback
+        traceback.print_exc()
         print("\nPlease check your YAML files for formatting errors.")
         print("Press Enter to continue or Ctrl+C to abort...")
         print ("Generation won't be able to continue, but if there are YAML errors, they will appear after this.")
@@ -821,13 +964,12 @@ class NoLogicItem(Item):
 class NoLogicItemBundle(Item):
     """A bundle of multiple items that can be placed in a single location. Used to contain multiple items in locations."""
     # Array of all progression-related classifications that match Progression Shards capture logic
-    # These are the individual configurations checked by the Progression Shards system
     PROGRESSION_TYPES = [
         ItemClassification.progression,
         ItemClassification.progression_skip_balancing,
         ItemClassification.progression_deprioritized,
         ItemClassification.progression_deprioritized_skip_balancing,
-        (ItemClassification.progression | ItemClassification.useful),  # Combination for especially useful items.
+        (ItemClassification.progression | ItemClassification.useful),  # Combination for especially useful items, used by few things, seemingly.
     ]
     
     contained_items: List[Item]  # List of items contained in this bundle
@@ -922,7 +1064,6 @@ class NoLogicWorld(World):
     options_dataclass: ClassVar[Type[PerGameCommonOptions]] = NoLogicOptions
     topology_present = False
     
-    # Client-related settings
     required_client_version = (0, 5, 0)
     # Initialize item_name_to_id with proper player names from YAML files
     item_name_to_id = build_item_name_to_id_with_yaml()
@@ -931,7 +1072,11 @@ class NoLogicWorld(World):
     location_name_to_id = {
         **{f"__RESERVED_LOC_{i}__": NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS + 1 + i 
            for i in range(RESERVED_LOCATIONS)},
+        "No Logic Check": NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS
     }
+
+    hint_blacklist = frozenset(location_name_to_id.keys())  # Prevent reserved locations from being hinted
+    changing_hint_blacklist = set()
 
     origin_region_name = "No Logic Region"
 
@@ -939,7 +1084,7 @@ class NoLogicWorld(World):
         super().__init__(multiworld, player)
         self.progression_items: Dict[int, str] = {}  # {world_player_id: item_name}
         self.progression_locations: Dict[int, str] = {}  # {world_player_id: location_name}
-        self.progression_region: Region = None  # Will be created in create_regions
+        self.progression_region: Region = None
         self.progression_item_hints: list = []  # Hints for progression items (created in stage_fill)
         self.progression_item_id_to_player: Dict[int, int] = {}  # Maps item_id to player_id
         self.progression_items_placed_worlds: Set[int] = set()  # Tracks which worlds have received a progression item
@@ -948,14 +1093,14 @@ class NoLogicWorld(World):
         # Trap system state (Phase 2)
         self.trap_items: Dict[str, int] = {}  # {trap_name: frequency_count}
         self.trap_dict: Dict[int, List] = {}  # {player_id: [locations or tuples]} - varies by mode
-        self.trap_region: Region = None  # Will be created for trap locations
+        self.trap_region: Region = None
         self.trap_item_ids_by_name: Dict[str, int] = {}  # {trap_name: unique_item_id}
-        self.trap_weight: float = 0  # Will be set in create_items
-        self.trap_mode: int = 0  # Will be set in create_items
-        self.trap_pool: List[str] = []  # Will be set in create_items
+        self.trap_weight: float = 0
+        self.trap_mode: int = 0
+        self.trap_pool: List[str] = []
         self.trap_pool_index: int = 0  # Tracks position in trap pool
-        self.other_worlds: List[int] = []  # Will be set in create_items
-        self.get_unused_location_id: callable = None  # Will be set in create_items
+        self.other_worlds: List[int] = []
+        self.get_unused_location_id: callable = None
         self.trap_location_found_at: Dict[int, str] = {}  # {trap_location_id: found_at_location_name} for Finders Keepers mode
         self.trap_location_target_player: Dict[int, int] = {}  # {trap_location_id: target_player_id} for Per-World mode
     
@@ -963,9 +1108,10 @@ class NoLogicWorld(World):
     def _read_incompatibilities() -> Set[str]:
         """
         Read the incompatibilities.md file and return a set of incompatible game names.
+        TODO: Fix to work inside of an APWorld.
         
         Returns:
-            Set of game names that are incompatible with No Logic
+            Set of game names that are incompatible with No Logic, or may have issues.
         """
         try:
             incomp_file = Path(__file__).parent / "docs" / "incompatibilities.md"
@@ -1130,10 +1276,31 @@ class NoLogicWorld(World):
                         ]
                         no_logic_world._enforce_item_locality(other_worlds)
                 # Create linked items after logic removal and locality enforcement
+                # Skip for mode 1 (before shards) as it was already created in create_items()
                 for player in multiworld.player_ids:
                     if isinstance(multiworld.worlds[player], NoLogicWorld):
                         no_logic_world = multiworld.worlds[player]
-                        no_logic_world._create_linked_items()
+                        # Only create bundles if NOT mode 1 (which was already done)
+                        mode = no_logic_world.options.linked_items_shard_interaction.value
+                        if mode != 1:
+                            allow_shards = (mode == 2)
+                            no_logic_world._create_linked_items(allow_shards=allow_shards)
+                        no_logic_world.replace_fillers()
+                
+                # Set up bundle location access rules BEFORE fill (now that bundles exist)
+                # This must run before fill so fill algorithm knows about the constraints
+                for player in multiworld.player_ids:
+                    if isinstance(multiworld.worlds[player], NoLogicWorld):
+                        no_logic_world = multiworld.worlds[player]
+                        if no_logic_world.options.no_progression_maze == 2 and hasattr(no_logic_world, '_bundles') and no_logic_world._bundles:
+                            no_logic_world._setup_bundle_location_access_rules(multiworld)
+                
+                # Create mode 3 shards BEFORE fill (after all items/worlds initialized)
+                for player in multiworld.player_ids:
+                    if isinstance(multiworld.worlds[player], NoLogicWorld):
+                        no_logic_world = multiworld.worlds[player]
+                        if no_logic_world.progression_mode == 3:
+                            no_logic_world._create_mode3_shards_before_fill(multiworld)
             
             NoLogicWorld.stage_pre_fill = combined_pre_fill
             logger.info("No Logic: Logic removal and locality enforcement at stage_pre_fill (respecting early locations).")
@@ -1150,10 +1317,31 @@ class NoLogicWorld(World):
                             ]
                             no_logic_world._enforce_item_locality(other_worlds)
                 # Create linked items after locality enforcement
+                # Skip for mode 1 (before shards) as it was already created in create_items()
                 for player in multiworld.player_ids:
                     if isinstance(multiworld.worlds[player], NoLogicWorld):
                         no_logic_world = multiworld.worlds[player]
-                        no_logic_world._create_linked_items()
+                        mode = no_logic_world.options.linked_items_shard_interaction.value
+                        if mode != 1:
+                            allow_shards = (mode == 2)
+                            no_logic_world._create_linked_items(allow_shards=allow_shards)
+                        no_logic_world.replace_fillers()
+                
+                # Set up bundle location access rules BEFORE fill (now that bundles exist)
+                # This must run before fill so fill algorithm knows about the constraints
+                for player in multiworld.player_ids:
+                    if isinstance(multiworld.worlds[player], NoLogicWorld):
+                        no_logic_world = multiworld.worlds[player]
+                        if no_logic_world.options.no_progression_maze == 2 and hasattr(no_logic_world, '_bundles') and no_logic_world._bundles:
+                            no_logic_world._setup_bundle_location_access_rules(multiworld)
+                
+                # Create mode 3 shards BEFORE fill (after all items/worlds initialized)
+                for player in multiworld.player_ids:
+                    if isinstance(multiworld.worlds[player], NoLogicWorld):
+                        no_logic_world = multiworld.worlds[player]
+                        if no_logic_world.progression_mode == 3:
+                            no_logic_world._create_mode3_shards_before_fill(multiworld)
+            
             NoLogicWorld.stage_pre_fill = locality
             logger.info("No Logic: Logic removal at stage_connect_entances (not respecting early locations).")
         
@@ -1191,7 +1379,7 @@ class NoLogicWorld(World):
                 self.progression_items[other_player] = global_item_name
             # Only create one location for the global item
             self.progression_locations[other_worlds[0]] = "Unlock Universal Progression"
-            logger.info(f"No Logic: Using global progression item: {global_item_name}")
+            # logger.info(f"No Logic: Using global progression item: {global_item_name}")
 
     def _enforce_item_locality(self, other_worlds: List[int]) -> None:
         """
@@ -1372,6 +1560,8 @@ class NoLogicWorld(World):
         location = Location(self.player, "No Logic Check", NOLOGIC_BASE_ID + RESERVED_PROGRESSION_ITEMS, region)
         loc_name = location.name
         self.options.exclude_locations.value.add(loc_name)
+        location.item_rule = lambda item: item.classification in [ItemClassification.filler]  # Prevent progression items from being placed here
+        location.progress_type = LocationProgressType.EXCLUDED
 
         region.locations.append(location)
 
@@ -1428,11 +1618,9 @@ class NoLogicWorld(World):
             if self.options.progression_item_mode.value in [1, 2]:
                 self._validate_and_cap_shards_for_modes_1_2(multiworld)
         
-        # Phase 7: Handle traps for modes 1 and 2 (now that itempool is complete)
+        # Phase 7: Handle traps for modes 1 and 2 (register trap IDs for create_item to use)
         if self.options.progression_trap_weight.value > 0 and self.options.progression_trap_mode.value in [1, 2]:
             self._build_and_apply_traps(multiworld)
-            self._create_modes_1_2_trap_locations(multiworld)
-                    
 
     def create_items(self) -> None:
         """Create progression items for No Logic."""
@@ -1457,6 +1645,7 @@ class NoLogicWorld(World):
         
         # Create progression items from NoLogic
         self.progression_item_ids_by_name: Dict[str, int] = {}  # {item_name: item_id}
+        self.progression_shard_codes: set = set()  # Track all progression shard item codes for bundle filtering
         
         # Check if shard mode is enabled
         progression_mode = self.options.progression_item_mode.value
@@ -1494,7 +1683,7 @@ class NoLogicWorld(World):
                         
                         shard_id = self.item_name_to_id[shard_item_name]
                         
-                        # Create shard items now for modes 1 and 2 (mode 3 creates them in _create_progression_locations)
+                        # Create shard items now for modes 1 and 2 (mode 3 creates them in stage_pre_fill)
                         if progression_mode in [1, 2]:
                             # Create shard copies with the mapped ID
                             # In global mode, use progression_deprioritized; in per-world mode, use progression
@@ -1505,9 +1694,14 @@ class NoLogicWorld(World):
                                 self.multiworld.itempool.append(shard_item)
                                 created_items.append(shard_item_name)
                             
+                            # Track shard code for bundle filtering
+                            self.progression_shard_codes.add(shard_id)
+                            
                             logger.info(f"No Logic: Created {shard_count} shard items '{shard_item_name}' (ID: {shard_id}, Mode: {'All' if progression_mode == 1 else 'Percentage'})")
                         elif progression_mode == 3:
-                            # Mode 3: Just update the mapping, shards created in _create_progression_locations
+                            # Mode 3: Just update the mapping, shards created in stage_pre_fill
+                            # Track shard code for bundle filtering (shards created later)
+                            self.progression_shard_codes.add(shard_id)
                             logger.info(f"No Logic: Prepared '{shard_item_name}' (ID: {shard_id}) for mode 3 - Shards-Percentage of Items (shards created in _create_progression_locations)")
                         
                         self.progression_item_ids_by_name[shard_item_name] = shard_id
@@ -1592,14 +1786,42 @@ class NoLogicWorld(World):
             item = self.create_item("Filler")
             self.multiworld.itempool.append(item)
 
+        # Phase 5: Create linked items bundles for mode 1 (before shards)
+        # For mode 1, bundles should be created before shards are added to the pool
+        if progression_mode == 1 and self.options.linked_items_chance > 0:
+            self._create_linked_items(allow_shards=False)
+
         logger.info(f"No Logic: Created {len(created_items)} progression items and {max(0, needed_fillers)} filler/trap items (trap_weight: {self.trap_weight}%, trap_mode: {self.trap_mode})")
 
-    def _create_linked_items(self) -> None:
+    def replace_fillers(self) -> None:
+        """Replace filler items with linked item bundles if applicable."""
+        # Skip effects during fake generation (Universal Tracker mode)
+        if getattr(self.multiworld, 'generation_is_fake', False):
+            logger.debug("No Logic: Skipping filler replacement during fake generation (tracker mode)")
+            return
+        
+        # Replace filler items with No Logic Filler based on chance.
+        if self.options.nl_filler_chance.value > 0:
+            for item in self.multiworld.itempool[:]:
+                if item.classification == ItemClassification.filler:
+                    # Check if this filler should be turned into a No Logic Filler.
+                    if self.multiworld.random.randint(0, 100) < self.options.nl_filler_chance.value:
+                        # Replace with No Logic Filler
+                        nologic_filler = self.create_item("Filler")
+                        self.multiworld.itempool.remove(item)
+                        self.multiworld.itempool.append(nologic_filler)
+                        logger.debug(f"No Logic: Replaced filler '{item.name}' with No Logic Filler '{nologic_filler.name}'")
+
+    def _create_linked_items(self, allow_shards: bool = True) -> None:
         """
         Create linked item bundles that combine random items from the pool.
         Bundles replace ANY filler items (from all worlds) and take on the best classification of their contained items.
         
         Direct itempool manipulation pattern similar to Progression Shards for safety and clarity.
+        
+        Args:
+            allow_shards: If True, shard items can be included in bundles. If False, shards are excluded.
+                         Specifically filters out progression shard items created by this No Logic world.
         """
         linked_items_chance = self.options.linked_items_chance.value
         linked_items_min = self.options.linked_items_minimum.value
@@ -1652,9 +1874,13 @@ class NoLogicWorld(World):
             bundle_size = self.multiworld.random.randint(linked_items_min, linked_items_max)
             
             # Get current available items from other worlds (not already bundled)
+            # Include progression shards from this world if allow_shards is True
             available_for_bundling = [
                 item for item in self.multiworld.itempool
-                if item.player != self.player and item not in bundled_items_set
+                if (item.player != self.player or 
+                    (allow_shards and hasattr(self, 'progression_shard_codes') and 
+                     item.player == self.player and item.code in self.progression_shard_codes))
+                and item not in bundled_items_set
             ]
             
             if len(available_for_bundling) < bundle_size:
@@ -1671,7 +1897,7 @@ class NoLogicWorld(World):
                 player=self.player,
                 contained_items=selected_items
             )
-            
+
             # Track bundle info
             bundle_item_names = [item.name for item in selected_items]
             bundle_info[bundle_display_name] = bundle_item_names
@@ -1793,6 +2019,8 @@ class NoLogicWorld(World):
                 for item in items_with_locations:
                     logger.error(f"  - REMOVING: {item.name} (code {item.code}, player {item.player}): location={item.location.name if item.location else None}")
                     self.multiworld.itempool.remove(item)
+                    # Just in case...
+                    self.multiworld.itempool.append(self.create_filler())
                 
                 logger.error(f"No Logic: Removed {len(items_with_locations)} items with locations from itempool")
                 
@@ -1844,7 +2072,7 @@ class NoLogicWorld(World):
         no_logic_world: NoLogicWorld = multiworld.worlds[no_logic_player]
         
         # If Logical mode is enabled, skip logic removal (logic will be applied in post_fill)
-        if no_logic_world.options.no_progression_maze == 2:  # option_logical_mode
+        if no_logic_world.options.no_progression_maze == 2:  # Logical Mode
             logger.info("No Logic: Logical mode enabled - keeping original logic intact")
             return
         
@@ -1903,6 +2131,118 @@ class NoLogicWorld(World):
             ])
         )
 
+    def _create_mode3_shards_before_fill(self, multiworld: MultiWorld) -> None:
+        """Create Mode 3 (Percentage of Items) shard items before fill algorithm runs."""
+        # Skip if already created (can be created in stage_create_items if no_progression_maze > 0)
+        if getattr(self, '_mode3_shards_created', False):
+            logger.info("No Logic: Mode 3 shards already created, skipping")
+            return
+        
+        if not self.progression_items:
+            return
+        
+        logger.info("No Logic: Creating mode 3 (Percentage of Items) shards in stage_pre_fill...")
+        
+        # Build a temporary claim_dict to calculate shard counts
+        # This mirrors the logic from _create_progression_locations
+        temp_claim_dict: Dict[int, int] = {}  # {item_id or player_id: location_count}
+        
+        # Determine if using per-player keys (for GlobalShardsBehavior)
+        use_player_as_key = (
+            self.options.progression_item_type.value == 1 and  # Global progression
+            self.options.progression_item_mode.value in [2, 3] and  # Percentage-based modes
+            self.options.global_shards_behavior.value == 1  # Per-player behavior
+        )
+        
+        # For each progression item, estimate location count
+        for other_player, prog_item_name in self.progression_items.items():
+            prog_item_id = self.progression_item_ids_by_name.get(prog_item_name)
+            if not prog_item_id:
+                continue
+            
+            # Estimate progression items for this player
+            target_world = multiworld.worlds[other_player]
+            progression_items_count = 0
+            
+            for item in multiworld.itempool:
+                if item.player != other_player:
+                    continue
+                if item.name in target_world.options.nl_exclude_progression_items:
+                    continue
+                if self.item_can_be_progression(item) or item.name in target_world.options.nl_force_progression_items:
+                    progression_items_count += 1
+            
+            # Add manually provided items
+            for item, count in self.progression_items_provided_by_worlds.get(other_player, []):
+                progression_items_count += count
+            
+            # Add bundles if applicable
+            if hasattr(self, '_bundles') and self._bundles and self.options.progression_item_type.value != 1:
+                for bundle in self._bundles:
+                    if bundle.assigned_to_player == other_player:
+                        progression_items_count += 1
+            
+            dict_key = other_player if use_player_as_key else prog_item_id
+            temp_claim_dict[dict_key] = progression_items_count
+        
+        # Calculate and create shards based on temp_claim_dict
+        shard_percentage = getattr(self, 'progression_shard_percentage', 100)
+        logger.info(f"No Logic: Calculating mode 3 shards (percentage: {shard_percentage}%)")
+        
+        self.progression_item_shard_count_map.clear()
+        for key, location_count in temp_claim_dict.items():
+            if location_count == 0:
+                continue
+            shard_count = max(1, (location_count * shard_percentage) // 100)
+            self.progression_item_shard_count_map[key] = shard_count
+            logger.info(f"No Logic: Key {key} has {location_count} items, shard count = {shard_count}")
+        
+        total_shards = sum(self.progression_item_shard_count_map.values())
+        available_locations = sum(1 for loc in multiworld.get_locations() if loc.player != self.player)
+        
+        # Adjust if needed
+        if total_shards > available_locations:
+            logger.warning(f"No Logic: {total_shards} shards exceed {available_locations} locations. Adjusting...")
+            adjustment_ratio = available_locations / total_shards
+            self.progression_item_shard_count_map.clear()
+            for key, location_count in temp_claim_dict.items():
+                if location_count == 0:
+                    continue
+                original_count = max(1, (location_count * shard_percentage) // 100)
+                adjusted_count = max(1, int(original_count * adjustment_ratio))
+                self.progression_item_shard_count_map[key] = adjusted_count
+            total_shards = sum(self.progression_item_shard_count_map.values())
+        
+        # Create shard items
+        logger.info(f"No Logic: Creating {total_shards} mode 3 shard items")
+        for key, shard_count in self.progression_item_shard_count_map.items():
+            # Determine shard item name
+            if use_player_as_key:
+                other_player = key
+                shard_item_name = self.progression_items.get(other_player)
+            else:
+                item_id = key
+                shard_item_name = None
+                for other_player, prog_item_name in self.progression_items.items():
+                    if self.progression_item_ids_by_name.get(prog_item_name) == item_id:
+                        shard_item_name = prog_item_name
+                        break
+            
+            if not shard_item_name:
+                logger.warning(f"No Logic: Could not find shard item name for key {key}")
+                continue
+            
+            item_id = self.progression_item_ids_by_name.get(shard_item_name, key)
+            item_classification = ItemClassification.progression_deprioritized_skip_balancing if self.options.progression_item_type.value == 1 else ItemClassification.progression
+            
+            for i in range(shard_count):
+                shard_item = NoLogicItem(shard_item_name, item_classification, item_id, self.player)
+                multiworld.itempool.append(shard_item)
+        
+        # Mark that mode 3 shards have been created
+        self._mode3_shards_created = True
+        logger.info(f"No Logic: Mode 3 shards created successfully in stage_pre_fill")
+
     @classmethod
     def stage_post_fill(cls, multiworld: MultiWorld) -> None:
         """After fill, handle progression locations and logical mode setup."""
@@ -1914,18 +2254,18 @@ class NoLogicWorld(World):
                 # DIAGNOSTIC: Check if any items with locations are still in itempool (shouldn't happen)
                 items_with_locations = [item for item in multiworld.itempool if item.location is not None]
                 if items_with_locations:
-                    logger.error(f"No Logic: DIAGNOSTIC POST_FILL - Found {len(items_with_locations)} items in itempool with location set AFTER FILL!")
+                    # logger.error(f"No Logic: DIAGNOSTIC POST_FILL - Found {len(items_with_locations)} items in itempool with location set AFTER FILL!")
                     for item in items_with_locations[:5]:
-                        logger.error(f"  - {item.name} at location {item.location.name}")
+                        # logger.error(f"  - {item.name} at location {item.location.name}")
+                        pass
                 
-                # Bundle items were already locked to bundle locations during pre-fill, so no post-fill locking needed
                 
-                if no_logic_world.options.add_progression_item and not no_logic_world.options.no_progression_maze > 0:
+                if no_logic_world.options.add_progression_item and no_logic_world.options.no_progression_maze <= 0:
                     no_logic_world._create_progression_locations(multiworld)
                 
-                # Set up access rules for bundle locations in logical mode
-                if no_logic_world.options.no_progression_maze == 2 and hasattr(no_logic_world, '_bundle_location_ids'):
-                    no_logic_world._setup_bundle_location_access_rules(multiworld)
+                # Phase 7: Handle traps for modes 1 and 2 (now that pending_trap_locations is populated and fill is complete)
+                if no_logic_world.options.progression_trap_weight.value > 0 and no_logic_world.options.progression_trap_mode.value in [1, 2]:
+                    no_logic_world._create_modes_1_2_trap_locations(multiworld)
                 
                 # Phase 7: Handle traps for mode 3 only (Finders-Keepers needs to know where traps ended up after fill)
                 if no_logic_world.options.progression_trap_weight.value > 0 and no_logic_world.options.progression_trap_mode.value == 3:
@@ -1970,6 +2310,7 @@ class NoLogicWorld(World):
                     break
                 if item.name in shard_item_names and item.player == self.player:
                     multiworld.itempool.remove(item)
+                    self.multiworld.itempool.append(self.create_filler())
                     removed_count += 1
             
             logger.info(f"No Logic: Removed {removed_count} excess shard items from itempool")
@@ -2129,6 +2470,7 @@ class NoLogicWorld(World):
             for item in items_to_remove_from_pool:
                 if item in multiworld.itempool:
                     multiworld.itempool.remove(item)
+                    multiworld.itempool.append(self.create_filler())
             
             logger.info(f"No Logic: Created {len(location_ids)} locations for {prog_item_name} (Player {other_player})")
             
@@ -2169,87 +2511,12 @@ class NoLogicWorld(World):
             self.options.global_shards_behavior.value == 1  # Per-player behavior
         )
         
-        # Calculate shard counts for mode 3 (Percentage of Items)
-        if hasattr(self, 'progression_mode') and self.progression_mode == 3:  # 3 = Shards - Percentage of Items
-            shard_percentage = getattr(self, 'progression_shard_percentage', 100)
-            logger.info(f"No Logic: Calculating shard counts for Percentage of Items mode (percentage: {shard_percentage}%)")
-            
-            for item_id, location_ids in claim_dict.items():
-                num_items = len(location_ids)
-                # Calculate shard count: (num_items * percentage) / 100
-                shard_count = max(1, (num_items * shard_percentage) // 100)
-                self.progression_item_shard_count_map[item_id] = shard_count
-                logger.info(f"No Logic: Item ID {item_id} has {num_items} items, shard count = {shard_count} ({shard_percentage}% of {num_items})")
-            
-            total_shards_to_create = sum(self.progression_item_shard_count_map.values())
-            logger.info(f"No Logic: Will create {total_shards_to_create} total shard items across {len(self.progression_item_shard_count_map)} progression items")
-            
-            # Count available locations in other worlds for shard placement
-            available_locations = 0
-            for location in self.multiworld.get_locations():
-                if location.player != self.player:
-                    available_locations += 1
-            
-            logger.info(f"No Logic: Available locations in other worlds: {available_locations}")
-            
-            # Check if we have more shards than locations, and adjust if needed
-            if total_shards_to_create > available_locations:
-                logger.warning(f"No Logic: Shard count ({total_shards_to_create}) exceeds available locations ({available_locations}). Adjusting shard counts proportionally.")
-                
-                # Calculate adjustment ratio
-                adjustment_ratio = available_locations / total_shards_to_create
-                
-                # Redistribute shards proportionally while ensuring at least 1 per item
-                self.progression_item_shard_count_map.clear()
-                for item_id, location_ids in claim_dict.items():
-                    num_items = len(location_ids)
-                    original_shard_count = max(1, (num_items * shard_percentage) // 100)
-                    adjusted_shard_count = max(1, int(original_shard_count * adjustment_ratio))
-                    self.progression_item_shard_count_map[item_id] = adjusted_shard_count
-                    logger.info(f"No Logic: Item ID {item_id} adjusted from {original_shard_count} shards to {adjusted_shard_count} shards")
-                
-                total_shards_to_create = sum(self.progression_item_shard_count_map.values())
-                logger.info(f"No Logic: Adjusted total shard count: {total_shards_to_create} (ratio: {adjustment_ratio:.2%})")
-            
-            # Create shard items for mode 3 (after knowing per-item shard counts)
-            logger.info("No Logic: Creating shard items for Percentage of Items mode")
-            for key, shard_count in self.progression_item_shard_count_map.items():
-                # In per-player mode, key is player_id; otherwise it's item_id
-                if self.using_per_player_claim_dict:
-                    # key is player_id
-                    player_id = key
-                    shard_item_name = self.progression_items.get(player_id)
-                    if not shard_item_name:
-                        logger.warning(f"No Logic: Could not find shard item name for player_id {player_id}")
-                        continue
-                else:
-                    # key is item_id
-                    item_id = key
-                    # Find the progression item name for this item_id
-                    shard_item_name = None
-                    for other_player, prog_item_name in self.progression_items.items():
-                        if self.progression_item_ids_by_name.get(prog_item_name) == item_id:
-                            shard_item_name = prog_item_name
-                            break
-                    
-                    if not shard_item_name:
-                        logger.warning(f"No Logic: Could not find shard item name for item_id {item_id}")
-                        continue
-                
-                # Create shard items
-                for i in range(shard_count):
-                    # Get the item ID - for per-player mode, we get it from progression_item_ids_by_name
-                    # For regular mode, we use the key directly
-                    item_id = self.progression_item_ids_by_name.get(shard_item_name, key)
-                    
-                    # In global mode, use progression_deprioritized; in per-world mode, use progression
-                    item_classification = ItemClassification.progression_deprioritized_skip_balancing if self.options.progression_item_type.value == 1 else ItemClassification.progression
-                    
-                    shard_item = NoLogicItem(shard_item_name, item_classification, item_id, self.player)
-                    self.multiworld.itempool.append(shard_item)
-                
-                logger.info(f"No Logic: Created {shard_count} shard items '{shard_item_name}' for mode 3")
-
+        # Check if it is No Progression Maze, and if not, replace the hint blacklist with the locations in the region.
+        if self.options.no_progression_maze.value == 0:
+            self.hint_blacklist = frozenset(self.item_id_to_name[loc.address] for loc in self.progression_region.locations)
+            logger.info(f"No Logic: Updated hint blacklist with {len(self.hint_blacklist)} progression locations")
+        else:
+            self.hint_blacklist = frozenset()
         
         # Shuffle claim_dict for percentage modes (2 and 3) NOW (before threaded output)
         if hasattr(self, 'progression_mode') and self.progression_mode in [2, 3]:  # 2 = Shards - Percentage, 3 = Shards - Percentage of Items
@@ -2344,6 +2611,15 @@ class NoLogicWorld(World):
         # Initialize pending trap locations list (will be populated by create_item)
         self.pending_trap_locations = []
     
+    def _try_create_trap_item(self, world, item_name: str):
+        """Safely create a trap item, logging errors and returning None on failure."""
+        try:
+            item = world.create_item(item_name)
+            return item if item.classification == ItemClassification.trap else None
+        except Exception as e:
+            logger.warning(f"No Logic: Failed to test if '{item_name}' is a trap: {type(e).__name__}: {e}")
+            return None
+    
     def _create_finders_keepers_trap_locations(self, multiworld: MultiWorld) -> None:
         """
         Phase 7: Create trap locations for Finders-Keepers mode.
@@ -2410,6 +2686,13 @@ class NoLogicWorld(World):
                 
                 # Get traps from this player's world and place a copy of a random one
                 player_traps = [item for item in multiworld.itempool if item.player == finder_player and item.classification == ItemClassification.trap]
+                if self.options.ignore_trap_settings.value:
+                    player_items = self.multiworld.worlds[finder_player].item_name_to_id
+                    logger.info(f"Checking {finder_player}'s world for traps...")
+                    player_traps.extend(filter(None, [
+                        self._try_create_trap_item(self.multiworld.worlds[finder_player], item_name)
+                        for item_name in player_items.keys()
+                    ]))
                 
                 if player_traps:
                     # Pick a random trap from this player's world and create a copy
@@ -2434,9 +2717,9 @@ class NoLogicWorld(World):
     def _create_modes_1_2_trap_locations(self, multiworld: MultiWorld) -> None:
         """
         Create trap locations for Global (mode 1) and Per-World (mode 2) modes.
-        This runs in stage_create_items after traps have been converted from fillers.
+        This runs in create_items immediately after fillers have been created, so pending_trap_locations is populated.
         """
-        logger.info("No Logic: Creating trap locations for modes 1 and 2 (stage_create_items)...")
+        logger.info("No Logic: Creating trap locations for modes 1 and 2 (after filler creation)...")
         
         if not hasattr(self, 'pending_trap_locations') or not self.pending_trap_locations:
             logger.info("No Logic: No pending trap locations to create")
@@ -2458,6 +2741,13 @@ class NoLogicWorld(World):
             # Find trap items with this name from the target player
             player_traps = [item for item in multiworld.itempool 
                            if item.name == trap_name and item.player == target_player and item.classification == ItemClassification.trap]
+            if self.options.ignore_trap_settings.value:
+                player_items = self.multiworld.worlds[target_player].item_name_to_id
+                logger.info(f"Checking {target_player}'s world for traps...")
+                player_traps.extend(filter(None, [
+                    self._try_create_trap_item(self.multiworld.worlds[target_player], item_name)
+                    for item_name in player_items.keys()
+                ]))
             
             if not player_traps:
                 logger.warning(f"No Logic: No traps found for player {target_player} with name '{trap_name}', skipping")
@@ -2587,56 +2877,52 @@ class NoLogicWorld(World):
         logger.info("No Logic: Logical mode access rules configured")
     
     def _setup_bundle_location_access_rules(self, multiworld: MultiWorld) -> None:
-        """Set up access rules for bundle locations based on where the bundle is placed."""
-        logger.info("No Logic: Setting up bundle location access rules for logical mode...")
+        """Set up access rules for bundle locations based on having the bundle item collected."""
+        logger.info("No Logic: Setting up bundle location access rules...")
         
         if not hasattr(self, '_bundles') or not self._bundles:
             logger.info("No Logic: No bundles to set access rules for")
             return
         
-        # Find where each bundle is placed
-        bundle_locations = {}  # {bundle_name: (location, location.address)}
-        for location in multiworld.get_filled_locations():
-            for bundle in self._bundles:
-                if location.item is bundle:
-                    bundle_locations[bundle.name] = (location, location.address)
-                    logger.debug(f"No Logic: Bundle '{bundle.name}' is at location '{location.name}' (region: {location.parent_region.name})")
-                    break
-        
-        if not bundle_locations:
-            logger.warning("No Logic: No bundle placements found")
-            return
-        
-        # Get all bundle locations in the bundle region
         if not hasattr(self, 'bundle_region') or not self.bundle_region:
             logger.warning("No Logic: Bundle region not found")
             return
         
         from BaseClasses import CollectionState
         
-        # For each bundle location, set access rule to check if bundle can be reached
+        # For each bundle location, set access rule to check if bundle item has been collected
         for bundle_location in self.bundle_region.locations:
             # Find which bundle this location belongs to by matching against bundle items
-            location_bundle_name = None
+            owning_bundle = None
+            bundle_item = None
+            
             for bundle in self._bundles:
                 # Check if this location contains one of the bundle's items
                 if bundle_location.item and bundle_location.item in bundle.contained_items:
-                    location_bundle_name = bundle.name
+                    owning_bundle = bundle
+                    bundle_item = bundle
                     break
             
-            if location_bundle_name and location_bundle_name in bundle_locations:
-                bundle_location_obj, bundle_location_address = bundle_locations[location_bundle_name]
+            # Only set access rule if we found the bundle
+            if owning_bundle:
+
+                def make_bundle_rule(bundle_name, bundle_player, bundle:NoLogicItemBundle):
+                    def rule(state: "CollectionState") -> bool:
+                        # Check if the player has collected the bundle item itself
+                        if bundle.classification in NoLogicItemBundle.PROGRESSION_TYPES:
+                            return state.has(bundle_name, bundle_player)
+                        else:
+                            return True
+                    return rule
                 
-            # Create access rule: can access this item location if we can reach the location where the bundle is placed
-            def make_bundle_rule(bundle_location_name, bundle_location_player):
-                def rule(state: "CollectionState") -> bool:
-                    # Check if we can reach the specific location where the bundle was placed
-                    # This respects any access rules on that location from other worlds
-                    return state.can_reach_location(bundle_location_name, bundle_location_player)
-                return rule
-            
-            bundle_location.access_rule = make_bundle_rule(bundle_location_obj.name, bundle_location_obj.player)
-            logger.debug(f"No Logic: Set access rule for bundle location '{bundle_location.name}' (requires reaching location: {bundle_location_obj.name})")
+                bundle_location.access_rule = make_bundle_rule(owning_bundle.name, self.player, bundle_item)
+                logger.info(f"No Logic: Set access rule for bundle location '{bundle_location.name}' (requires having bundle: {owning_bundle.name} from player {self.player})")
+            else:
+                logger.info(f"No Logic: Bundle location '{bundle_location.name}' belongs to unknown bundle (will be skipped)")
+
+
+
+
     
     def modify_multidata(self, multidata: dict) -> None:
         """Inject progression item hints into the multidata."""
@@ -2798,7 +3084,14 @@ class NoLogicWorld(World):
                     
                     hint_data[self.player][loc_id] = shard_text
                     # Change the location name to include the shard requirement for spoiler log clarity
-                    location = tryer(self.multiworld.get_location, player=self.player, address=loc_id)
+                    # Find the location object by address from the progression region
+                    location = None
+                    if hasattr(self, 'progression_region') and self.progression_region:
+                        for loc in self.progression_region.locations:
+                            if loc.address == loc_id:
+                                location = loc
+                                break
+                    
                     if location:
                         location.name += f" ({shard_text})"
                     else:

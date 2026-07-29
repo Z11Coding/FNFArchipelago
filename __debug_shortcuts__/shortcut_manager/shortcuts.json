@@ -1,0 +1,91 @@
+{
+  "shortcuts": [
+    {
+      "name": "Icon Test",
+      "type": "script",
+      "target": "C:/Users/shari/Downloads/fuzz.py",
+      "description": "e",
+      "icon": "C:/Users/shari/Downloads/sky, stars, rainbow, wormhole, clock,  s-3273911734.png",
+      "args": "",
+      "working_dir": null,
+      "component_type": "MISC",
+      "metadata": {},
+      "temp_icon_path": null
+    },
+    {
+      "name": "eeeeee",
+      "type": "script",
+      "target": "C:/Users/shari/Downloads/get-pip.py",
+      "description": "e",
+      "icon": "icon",
+      "args": "",
+      "working_dir": null,
+      "component_type": "MISC",
+      "metadata": {},
+      "temp_icon_path": null
+    },
+    {
+      "name": "eeeee",
+      "type": "steam",
+      "target": "SCP \u00e2\u20ac\u201c Containment Breach (2178380)",
+      "description": "eee",
+      "icon": "icon",
+      "args": "",
+      "working_dir": null,
+      "component_type": "MISC",
+      "metadata": {},
+      "temp_icon_path": null
+    },
+    {
+      "name": "eee",
+      "type": "steam",
+      "target": "Beat Banger (1813430)",
+      "description": "",
+      "icon": "icon",
+      "args": "",
+      "working_dir": null,
+      "component_type": "MISC",
+      "metadata": {},
+      "temp_icon_path": null
+    }
+  ],
+  "linked_shortcuts": [
+    {
+      "name": "test",
+      "type": "executable",
+      "target": "C:/Users/shari/Downloads/BabaLevelEditor.exe",
+      "target_component": "Options Creator",
+      "link_type": "primary",
+      "description": "eee",
+      "icon": "icon",
+      "args": "",
+      "working_dir": null,
+      "metadata": {}
+    },
+    {
+      "name": "test2",
+      "type": "executable",
+      "target": "C:/Users/shari/Downloads/BabaLevelEditor.exe",
+      "target_component": "Options Creator",
+      "link_type": "secondary",
+      "description": "",
+      "icon": "icon",
+      "args": "",
+      "working_dir": null,
+      "metadata": {}
+    },
+    {
+      "name": "A Hat In Time",
+      "type": "steam",
+      "target": "A Hat in Time (253230)",
+      "target_component": "A Hat in Time Client",
+      "link_type": "secondary",
+      "description": "",
+      "icon": "icon",
+      "args": "",
+      "working_dir": null,
+      "metadata": {}
+    }
+  ],
+  "metadata": {}
+}

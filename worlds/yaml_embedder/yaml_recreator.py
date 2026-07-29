@@ -1,20 +1,10 @@
 """
 YAML Recreator - Detects randomization in YAML and generates format metadata.
 
-The YAML representation PRESERVES the actual randomization structure:
-- Lists stay as lists (random choice among items)
-- Dicts with numeric values stay as dicts (weighted random choice)
-- Scalars stay as scalars (no randomization)
-
-String patterns like "random", "random-low", etc. are only for Range options.
-
 Format types detected:
 - "basic": Single game with scalar options
 - "weighted": Weighted game selection (dict with numeric weights)
 - "multi-game": Multiple games or game selections
-
-Note: plando_items and plando_connections can appear in any format type,
-they don't define the format themselves.
 
 The metadata identifies which fields use randomization and how.
 """
@@ -117,9 +107,6 @@ def detect_yaml_format_in_doc(yaml_dict: Dict[str, Any]) -> str:
     """Detect format type for a single YAML document.
     
     Returns: "basic", "weighted", or "multi-game"
-    
-    Note: plando_items and plando_connections can be present in any format type,
-    they don't define the format themselves.
     """
     if not isinstance(yaml_dict, dict):
         return "basic"
@@ -209,9 +196,6 @@ def recreate_yaml_with_options(yaml_dict: Dict[str, Any], selected_values: Dict[
 
 def _annotate_selections(data: Any, selected_values: Dict[str, Any], path: str = "") -> Any:
     """Recursively process YAML and add comments about selections.
-    
-    Note: YAML comments in PyYAML require using custom representers, which is complex.
-    For now, we'll return the data structure with metadata embedded.
     """
     if isinstance(data, dict):
         result = {}

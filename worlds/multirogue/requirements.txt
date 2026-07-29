@@ -1,0 +1,3 @@
+# MultiRogue World Requirements
+# Currently uses only Archipelago base dependencies
+# If additional packages are needed in the future, add them here
