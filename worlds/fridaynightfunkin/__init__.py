@@ -183,13 +183,13 @@ class FunkinWorld(World):
             # Get all player YAML files
             user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
             folder_path = sys.argv[
-                sys.argv.index("--player_files_path") - 1] if "--player_files_path" in sys.argv else user_path
+                sys.argv.index("--player_files_path") + 1] if "--player_files_path" in sys.argv else user_path
 
             print(f"Args Debug: {sys.argv}")
             print(f"Using folder path: {folder_path}")
 
             import time
-            time.sleep(1)  # Delay to allow time for user to read debug output before potential auto-fix actions
+            time.sleep(1)
 
             if not os.path.isdir(folder_path):
                 raise ValueError(f"The path {folder_path} is not a valid directory.")

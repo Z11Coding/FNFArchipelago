@@ -3,15 +3,22 @@
 # This software is released under the MIT License.
 # https://opensource.org/licenses/MIT
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 import os
 import sys
 from datetime import datetime
-from typing import Dict, Set, List, ClassVar, Type, Optional, Tuple, Any, Union, TypeVar, Generic, get_type_hints
+from typing import Dict, Set, List, ClassVar, Type, Optional, Tuple, Any, Union
 import inspect
 from BaseClasses import LocationProgressType, Region, Item, Location, ItemClassification, MultiWorld
 import Utils
 from worlds.AutoWorld import World, WebWorld
+try:
+    from worlds.APAPI.soft_patch import FuncStack
+except:
+    print("Unable to access FuncStack. This may be needed later. Install APAPI to use it.")
+    print("This message is from NoLogic.")
+    import time
+    time.sleep(8.30)
 from worlds.LauncherComponents import Component, components, Type as ComponentType
 from worlds.generic.Rules import forbid_item
 from .Options import *
@@ -40,276 +47,6 @@ components.append(Component("No Logic Client", func=launch_client, component_typ
 NOLOGIC_BASE_ID = 100_000
 RESERVED_PROGRESSION_ITEMS = 100_000  # Enough for most multiworlds... hopefully.
 RESERVED_LOCATIONS = 100_000  # One per Progression item + extras
-
-
-T = TypeVar('T')
-
-# Type alias for valid return_as types (any Sequence or Mapping type)
-ReturnAsType = Union[Type[list], Type[dict]]
-
-
-def _is_mapping_type(tp: type) -> bool:
-    """Check if a type is dict-like (Mapping)."""
-    try:
-        return issubclass(tp, Mapping)
-    except TypeError:
-        return False
-
-
-def _is_sequence_type(tp: type) -> bool:
-    """Check if a type is list-like (Sequence)."""
-    try:
-        return issubclass(tp, Sequence)
-    except TypeError:
-        return False
-
-# Making this as a tool for later. Don't mind me.
-class FuncStack(list, Generic[T]):
-    """
-    A generic stack to call multiple functions in sequence with type-constrained returns.
-    
-    Supports:
-    - Configurable return collection (list, dict, or other Sequence/Mapping types) via return_as parameter
-    - Automatic return type extraction from function annotations
-    - Per-function type constraints (explicit or auto-detected)
-    - Type validation with error raising on mismatch
-    
-    Examples:
-        >>> stack = FuncStack(return_as=list)
-        >>> stack.push(lambda: 42)
-        >>> stack.push(lambda: "hello")
-        >>> stack()  # Returns [42, "hello"]
-        
-        >>> def get_int() -> int: return 10
-        >>> def get_str() -> str: return "test"
-        >>> stack = FuncStack(return_as=dict, global_return_type=int)
-        >>> stack.push(get_int)  # Auto-detected return type: int
-        >>> stack.push(get_str, return_type=str)  # Override with explicit type
-        >>> stack()  # Returns {"get_int": 10, "get_str": "test"}
-        
-        >>> stack = FuncStack(return_as=dict)
-        >>> stack.push(get_int)  # Auto-detected: return type int from annotation
-        >>> stack()
-    """
-    
-    def __init__(
-        self,
-        return_as: ReturnAsType = list,
-        global_return_type: Optional[type] = None
-    ):
-        """
-        Initialize FuncStack with return collection configuration.
-        
-        Args:
-            return_as: Collection type to use for returns - list (default), dict, or other Sequence/Mapping
-            global_return_type: Optional type constraint applied to all functions unless overridden per-function
-            
-        Raises:
-            TypeError: If return_as is not a Sequence or Mapping type
-        """
-        super().__init__()
-        
-        # Validate return_as type
-        if not (_is_sequence_type(return_as) or _is_mapping_type(return_as)):
-            raise TypeError(
-                f"return_as must be a Sequence or Mapping type (list, dict, etc.), "
-                f"got {return_as}"
-            )
-        
-        self.return_as = return_as
-        self.global_return_type = global_return_type
-        self.func_type_constraints: Dict[Callable, Optional[type]] = {}
-    
-    def _extract_return_type(self, func: Callable) -> Optional[type]:
-        """
-        Extract return type annotation from a function.
-        
-        Args:
-            func: The function to inspect
-            
-        Returns:
-            The return type annotation if present and not NoneType, otherwise None
-        """
-        try:
-            hints = get_type_hints(func)
-            return_type = hints.get('return')
-            
-            # Return None if no annotation or annotation is NoneType
-            if return_type is not None and return_type is not type(None):
-                return return_type
-            
-        except Exception:
-            # get_type_hints can fail for various reasons (forward refs, etc.)
-            pass
-        
-        return None
-    
-    def push(self, func: Callable, return_type: Optional[type] = None) -> None:
-        """
-        Add a function to the stack with optional return type constraint.
-        
-        Automatically extracts return type from function annotations if not provided.
-        
-        Args:
-            func: The function to add
-            return_type: Optional type constraint for this function (overrides auto-detected type and global constraint)
-        """
-        self.append(func)
-        
-        # Use explicit return_type if provided, otherwise try to auto-detect
-        if return_type is not None:
-            self.func_type_constraints[func] = return_type
-        else:
-            auto_detected = self._extract_return_type(func)
-            self.func_type_constraints[func] = auto_detected
-    
-    def pop(self) -> Optional[Callable]:
-        """Remove and return the top function from the stack."""
-        if self:
-            func = super().pop()
-            self.func_type_constraints.pop(func, None)
-            return func
-        return None
-    
-    def __call__(self, *args, **kwargs) -> Union[List[Any], Dict[str, Any]]:
-        """
-        Execute all functions in order and return results based on return_as type.
-        
-        Type constraints are validated if specified (auto-detected, per-function, or global).
-        Raises TypeError if a function's return value doesn't match its constraint.
-        
-        Args:
-            *args: Positional arguments passed to each function
-            **kwargs: Keyword arguments passed to each function
-            
-        Returns:
-            Sequence of return values if return_as is a Sequence type (list, tuple, etc.)
-            Mapping of {function_name: return_value} if return_as is a Mapping type (dict, etc.)
-            
-        Raises:
-            TypeError: If a function's return value doesn't match its type constraint
-        """
-        # Initialize result collection based on return_as type
-        is_mapping = _is_mapping_type(self.return_as)
-        results = {} if is_mapping else []
-        
-        for i, func in enumerate(self):
-            result = func(*args, **kwargs)
-            
-            # Determine applicable type constraint (explicit > auto-detected > global)
-            expected_type = self.func_type_constraints.get(func) or self.global_return_type
-            
-            # Validate type constraint if specified
-            if expected_type and not isinstance(result, expected_type):
-                func_name = getattr(func, '__name__', f'func_{i}')
-                raise TypeError(
-                    f"Function {func_name} returned {type(result).__name__}, "
-                    f"expected {expected_type.__name__}"
-                )
-            
-            # Collect result in specified format
-            if is_mapping:
-                func_name = getattr(func, '__name__', f'func_{i}')
-                results[func_name] = result
-            else:
-                results.append(result)
-        
-        return results
-    def as_generator(self, *args, **kwargs):
-        """
-        Execute all functions in order and yield results one by one.
-        
-        Type constraints are validated if specified (auto-detected, per-function, or global).
-        Raises TypeError if a function's return value doesn't match its constraint.
-        
-        Args:
-            *args: Positional arguments passed to each function
-            **kwargs: Keyword arguments passed to each function
-            
-        Yields:
-            Each function's return value in order
-            
-        Raises:
-            TypeError: If a function's return value doesn't match its type constraint
-        """
-        for i, func in enumerate(self.copy()): # Use a copy of the list to allow modifications during iteration
-            result = func(*args, **kwargs)
-            
-            # Determine applicable type constraint (explicit > auto-detected > global)
-            expected_type = self.func_type_constraints.get(func) or self.global_return_type
-            
-            # Validate type constraint if specified
-            if expected_type and not isinstance(result, expected_type):
-                func_name = getattr(func, '__name__', f'func_{i}')
-                raise TypeError(
-                    f"Function {func_name} returned {type(result).__name__}, "
-                    f"expected {expected_type.__name__}"
-                )
-            
-            yield result
-    
-    def combine_to_single_function(self) -> Callable:
-        """
-        Combine all functions in the stack into a single callable that executes them in sequence.
-        
-        Creates a standalone function with no dependency on the FuncStack instance.
-        The returned function is independent and can be used after the FuncStack is destroyed.
-        
-        Returns:
-            A callable that executes all functions in order and returns results based on return_as configuration
-        """
-        # Capture all state needed for the standalone function
-        functions_copy = list(self).copy()  # Copy of all functions
-        constraints_copy = dict(self.func_type_constraints).copy()  # Copy of type constraints
-        return_as_type = self.return_as.copy()  # Return collection type (list, dict, etc.)
-        global_type = self.global_return_type  # Global type constraint
-        
-        def combined(*args, **kwargs) -> Union[List[Any], Dict[str, Any]]:
-            """
-            Standalone function that executes all captured functions in order.
-            
-            Type constraints are validated if specified.
-            Raises TypeError if a function's return value doesn't match its constraint.
-            
-            Args:
-                *args: Positional arguments passed to each function
-                **kwargs: Keyword arguments passed to each function
-                
-            Returns:
-                Sequence of return values if return_as is a Sequence type
-                Mapping of {function_name: return_value} if return_as is a Mapping type
-                
-            Raises:
-                TypeError: If a function's return value doesn't match its type constraint
-            """
-            is_mapping = _is_mapping_type(return_as_type)
-            results = {} if is_mapping else []
-            
-            for i, func in enumerate(functions_copy):
-                result = func(*args, **kwargs)
-                
-                # Determine applicable type constraint (explicit > auto-detected > global)
-                expected_type = constraints_copy.get(func) or global_type
-                
-                # Validate type constraint if specified
-                if expected_type and not isinstance(result, expected_type):
-                    func_name = getattr(func, '__name__', f'func_{i}')
-                    raise TypeError(
-                        f"Function {func_name} returned {type(result).__name__}, "
-                        f"expected {expected_type.__name__}"
-                    )
-                
-                # Collect result in specified format
-                if is_mapping:
-                    func_name = getattr(func, '__name__', f'func_{i}')
-                    results[func_name] = result
-                else:
-                    results.append(result)
-            
-            return results
-        
-        return combined
-
 
 # Generic YAML Parser for reading player names
 class GenericYAMLPlayer:
@@ -728,71 +465,71 @@ def build_item_name_to_id_with_yaml() -> Dict[str, int]:
                     if current_doc:
                         documents.append('\n'.join(current_doc))
                     
-                    # for doc_idx, doc_content in enumerate(documents):
-                    #     print(f"[DEBUG]   Processing document {doc_idx}, player_idx={player_idx}")
-                    # if player_idx >= RESERVED_PROGRESSION_ITEMS:
-                    #     break
-                    
-                    doc_content = doc_content.strip()
-                    if not doc_content:
-                        print(f"[DEBUG]   Document {doc_idx} is empty, skipping")
-                        continue
-                    
-                    # print(f"[DEBUG]   Parsing YAML {doc_idx}...")
-                    parsed_data = parse_yaml(doc_content)
-                    # print(f"[DEBUG]   Parsed data: {parsed_data}")
-                    
-                    try:
-                        player_names, success = GenericYAMLPlayer._extract_name_from_parsed(parsed_data)
-                    except NoLogicPlayerEncountered:
-                        # print(f"[DEBUG]   Document {doc_idx} is a No Logic player, skipping")
-                        continue
-                    
-                    # print(f"[DEBUG]   Extracted names: {player_names}, success: {success}")
-                    
-                    player_id = player_idx + 1  # Player IDs start at 1
-                    
-                    if success and player_names:
-                        counter_key = f"_player_{player_idx}"
-                        name_counter[counter_key] += 1
-                        common_counter_value = name_counter[counter_key]
-                        
-                        # Create progression items for all potential player names
-                        for idx, player_name in enumerate(player_names):
-                            # Apply Archipelago's name formatting logic with shared counter value
-                            resolved_name = _resolve_player_name_with_counter(player_name, player_id, common_counter_value)
-                            # print(f"[DEBUG]   Resolved name: '{resolved_name}'")
-                            progression_name = f"{resolved_name}'s Progression"
+                    for doc_idx, doc_content in enumerate(documents):
+                        # print(f"[DEBUG]   Processing document {doc_idx}, player_idx={player_idx}")
+                        if player_idx >= RESERVED_PROGRESSION_ITEMS:
+                            break
+
+                        doc_content = doc_content.strip()
+                        if not doc_content:
+                            print(f"[DEBUG]   Document {doc_idx} is empty, skipping")
+                            continue
+
+                        # print(f"[DEBUG]   Parsing YAML {doc_idx}...")
+                        parsed_data = parse_yaml(doc_content)
+                        # print(f"[DEBUG]   Parsed data: {parsed_data}")
+
+                        try:
+                            player_names, success = GenericYAMLPlayer._extract_name_from_parsed(parsed_data)
+                        except NoLogicPlayerEncountered:
+                            # print(f"[DEBUG]   Document {doc_idx} is a No Logic player, skipping")
+                            continue
+
+                        # print(f"[DEBUG]   Extracted names: {player_names}, success: {success}")
+
+                        player_id = player_idx + 1  # Player IDs start at 1
+
+                        if success and player_names:
+                            counter_key = f"_player_{player_idx}"
+                            name_counter[counter_key] += 1
+                            common_counter_value = name_counter[counter_key]
+
+                            # Create progression items for all potential player names
+                            for idx, player_name in enumerate(player_names):
+                                # Apply Archipelago's name formatting logic with shared counter value
+                                resolved_name = _resolve_player_name_with_counter(player_name, player_id, common_counter_value)
+                                # print(f"[DEBUG]   Resolved name: '{resolved_name}'")
+                                progression_name = f"{resolved_name}'s Progression"
+                                item_id = NOLOGIC_BASE_ID + player_idx
+                                item_mapping[progression_name] = item_id
+                                # print(f"[DEBUG]   Added progression item: '{progression_name}' -> {item_id}")
+
+                                # Also register the shard version with next available ID
+                                shard_name = f"{progression_name} Shard"
+                                next_available_id = max(item_mapping.values()) + 1
+                                item_mapping[shard_name] = next_available_id
+                                # print(f"[DEBUG]   Added shard item: '{shard_name}' -> {next_available_id}")
+
+                                # Also register the per-player trap item
+                                per_world_trap_name = f"{resolved_name}'s Progression Trap"
+                                next_available_id = max(item_mapping.values()) + 1
+                                item_mapping[per_world_trap_name] = next_available_id
+                                # print(f"[DEBUG]   Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
+                        else:
+                            # Fallback to reserved name
+                            reserved_name = f"__RESERVED_PROG_{player_idx}__"
                             item_id = NOLOGIC_BASE_ID + player_idx
-                            item_mapping[progression_name] = item_id
-                            # print(f"[DEBUG]   Added progression item: '{progression_name}' -> {item_id}")
-                            
+                            item_mapping[reserved_name] = item_id
+                            # print(f"[DEBUG]   Added reserved item: '{reserved_name}' -> {item_id}")
+
                             # Also register the shard version with next available ID
-                            shard_name = f"{progression_name} Shard"
+                            shard_name = f"{reserved_name}SHARD__"
                             next_available_id = max(item_mapping.values()) + 1
                             item_mapping[shard_name] = next_available_id
-                            # print(f"[DEBUG]   Added shard item: '{shard_name}' -> {next_available_id}")
-                            
-                            # Also register the per-player trap item
-                            per_world_trap_name = f"{resolved_name}'s Progression Trap"
-                            next_available_id = max(item_mapping.values()) + 1
-                            item_mapping[per_world_trap_name] = next_available_id
-                            # print(f"[DEBUG]   Added per-world trap item: '{per_world_trap_name}' -> {next_available_id}")
-                    else:
-                        # Fallback to reserved name
-                        reserved_name = f"__RESERVED_PROG_{player_idx}__"
-                        item_id = NOLOGIC_BASE_ID + player_idx
-                        item_mapping[reserved_name] = item_id
-                        # print(f"[DEBUG]   Added reserved item: '{reserved_name}' -> {item_id}")
-                        
-                        # Also register the shard version with next available ID
-                        shard_name = f"{reserved_name}SHARD__"
-                        next_available_id = max(item_mapping.values()) + 1
-                        item_mapping[shard_name] = next_available_id
-                        # print(f"[DEBUG]   Added reserved shard item: '{shard_name}' -> {next_available_id}")
-                        raise NoLogicException(f"Failed to extract player name from document {doc_idx} in {yaml_file}. This may indicate an issue with the YAML formatting.")
-                    
-                    player_idx += 1
+                            # print(f"[DEBUG]   Added reserved shard item: '{shard_name}' -> {next_available_id}")
+                            raise NoLogicException(f"Failed to extract player name from document {doc_idx} in {yaml_file}. This may indicate an issue with the YAML formatting.")
+
+                        player_idx += 1
                 else:                    
                     try:
                         parsed_data = parse_yaml(yaml_content)

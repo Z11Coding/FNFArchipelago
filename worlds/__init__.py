@@ -111,6 +111,7 @@ for world_source in world_sources:
             for file in filenames:
                 if file.endswith("archipelago.json"):
                     with open(os.path.join(dirpath, file), mode="r", encoding="utf-8") as manifest_file:
+                        logging.info(f"Loading manifest from {os.path.join(dirpath, file)}")
                         manifest = json.load(manifest_file)
                     break
             if manifest:
