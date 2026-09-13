@@ -26,7 +26,7 @@ def _is_sequence_type(tp: type) -> bool:
 class FuncStack(list, Generic[T]):
     """A function stack that can collect results and enforce return types."""
 
-    def __init__(self, return_as: ReturnAsType = list, global_return_type: Optional[type] = None):
+    def __init__(self, return_as: ReturnAsType = list, global_return_type: Optional[type] = None) -> None:
         super().__init__()
         if not (_is_sequence_type(return_as) or _is_mapping_type(return_as)):
             raise TypeError(
@@ -61,7 +61,7 @@ class FuncStack(list, Generic[T]):
             return func
         return None
 
-    def __call__(self, *args, **kwargs) -> Union[List[Any], Dict[str, Any]]:
+    def __call__(self, *args: Any, **kwargs: Any) -> Union[List[Any], Dict[str, Any]]:
         is_mapping = _is_mapping_type(self.return_as)
         results = {} if is_mapping else []
 
@@ -83,7 +83,7 @@ class FuncStack(list, Generic[T]):
 
         return results
 
-    def as_generator(self, *args, **kwargs):
+    def as_generator(self, *args: Any, **kwargs: Any) -> Any:
         for i, func in enumerate(self.copy()):
             result = func(*args, **kwargs)
             expected_type = self.func_type_constraints.get(func) or self.global_return_type
@@ -101,7 +101,7 @@ class FuncStack(list, Generic[T]):
         return_as_type = self.return_as
         global_type = self.global_return_type
 
-        def combined(*args, **kwargs) -> Union[List[Any], Dict[str, Any]]:
+        def combined(*args: Any, **kwargs: Any) -> Union[List[Any], Dict[str, Any]]:
             is_mapping = _is_mapping_type(return_as_type)
             results = {} if is_mapping else []
 
@@ -165,7 +165,7 @@ class SoftHookPoint:
         target: Callable[..., Any],
         before_return_type: Optional[type] = None,
         after_return_type: Optional[type] = None,
-    ):
+    ) -> None:
         self.name = name
         self.target = target
         self.before = FuncStack(return_as=list, global_return_type=before_return_type)
@@ -181,7 +181,7 @@ class SoftHookPoint:
 
 
 class SoftHookRegistry:
-    def __init__(self):
+    def __init__(self) -> None:
         self._points: dict[str, SoftHookPoint] = {}
 
     def ensure_point(
@@ -220,13 +220,13 @@ class SoftHookRegistry:
             raise KeyError(f"Soft hook point {name} is not registered.")
         point.register_after(hook)
 
-    def run_before(self, name: str, *args, **kwargs) -> List[Any]:
+    def run_before(self, name: str, *args: Any, **kwargs: Any) -> List[Any]:
         point = self._points.get(name)
         if point is None:
             return []
         return point.before(*args, **kwargs)
 
-    def run_after(self, name: str, *args, **kwargs) -> List[Any]:
+    def run_after(self, name: str, *args: Any, **kwargs: Any) -> List[Any]:
         point = self._points.get(name)
         if point is None:
             return []

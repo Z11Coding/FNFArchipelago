@@ -1,0 +1,6 @@
+{
+  "game": "Mystery Game",
+  "authors": ["APAPI"],
+  "minimum_ap_version": "0.6.0",
+  "world_version": "0.1.0"
+}

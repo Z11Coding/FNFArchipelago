@@ -4,9 +4,11 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping
 import functools
 import logging
+import os
 import sys
 import threading
 import time
+import weakref
 from typing import Any, TYPE_CHECKING
 
 from worlds.AutoWorld import AutoWorldRegister
@@ -30,7 +32,9 @@ _main_scoped_wrapper_done = False
 _main_return_wrapper_done = False
 
 _current_multiworld_lock = threading.RLock()
-_current_multiworld: "MultiWorld | None" = None
+# Weak refs only: APAPI must never keep a generation alive (Generate.py
+# asserts the MultiWorld deallocates). Dead refs read back as None.
+_current_multiworld_ref: Any = None
 _current_multiworld_local = threading.local()
 
 # Internal scoped hook point for Main.main -> local write_multidata()
@@ -46,12 +50,29 @@ def register_main_write_multidata_after(hook: Callable[[], None]) -> None:
     _write_multidata_after.push(hook, return_type=type(None))
 
 
+def _as_weakref(multiworld: "MultiWorld | None") -> Any:
+    if multiworld is None:
+        return None
+    try:
+        return weakref.ref(multiworld)
+    except TypeError:
+        return multiworld
+
+
+def _dereference(ref: Any, default: "MultiWorld | None" = None) -> "MultiWorld | None":
+    if ref is None:
+        return default
+    if isinstance(ref, weakref.ReferenceType):
+        return ref() if ref() is not None else default
+    return ref
+
+
 def set_current_multiworld(multiworld: "MultiWorld | None") -> None:
     """Set the currently active MultiWorld handle for APAPI consumers."""
-    global _current_multiworld
+    global _current_multiworld_ref
     with _current_multiworld_lock:
-        _current_multiworld = multiworld
-    _current_multiworld_local.value = multiworld
+        _current_multiworld_ref = _as_weakref(multiworld)
+    _current_multiworld_local.value = _as_weakref(multiworld)
 
 
 def clear_current_multiworld() -> None:
@@ -59,12 +80,12 @@ def clear_current_multiworld() -> None:
 
 
 def get_current_multiworld(default: "MultiWorld | None" = None) -> "MultiWorld | None":
-    """Return current MultiWorld if known, preferring thread-local context."""
-    local_value = getattr(_current_multiworld_local, "value", None)
+    """Return current MultiWorld if known (and still alive), else default."""
+    local_value = _dereference(getattr(_current_multiworld_local, "value", None))
     if local_value is not None:
         return local_value
     with _current_multiworld_lock:
-        return _current_multiworld if _current_multiworld is not None else default
+        return _dereference(_current_multiworld_ref, default)
 
 
 def require_current_multiworld() -> "MultiWorld":
@@ -219,7 +240,7 @@ def _patch_world_fill_slot_data(world_type: type) -> None:
     original_fill_slot_data = world_type.fill_slot_data
 
     @functools.wraps(original_fill_slot_data)
-    def patched_fill_slot_data(self, *args: Any, **kwargs: Any):
+    def patched_fill_slot_data(self, *args: Any, **kwargs: Any) -> Any:
         result = original_fill_slot_data(self, *args, **kwargs)
         if not isinstance(result, dict):
             result = {}
@@ -261,7 +282,7 @@ def _inject_world_tracker_support() -> None:
 
 def _wrap_main_local_write_multidata(local_func: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(local_func)
-    def wrapped_local(*args: Any, **kwargs: Any):
+    def wrapped_local(*args: Any, **kwargs: Any) -> Any:
         _write_multidata_before()
         result = local_func(*args, **kwargs)
         _write_multidata_after()
@@ -296,6 +317,12 @@ def _main_return_wrapper(next_callable: Callable[..., Any], *args: Any, **kwargs
     result = next_callable(*args, **kwargs)
     if result is not None:
         set_current_multiworld(result)
+        if os.environ.get("APAPI_REFCOUNT_DEBUG", "0") != "0":
+            try:
+                from .debug import dump_referrer_report
+                dump_referrer_report(result, "Main.main multiworld")
+            except Exception as exc:
+                logger.warning("APAPI referrer report failed: %s", exc)
     return result
 
 

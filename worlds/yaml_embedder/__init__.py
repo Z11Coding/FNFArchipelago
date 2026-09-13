@@ -685,15 +685,9 @@ def _patch_main_function():
                     logger.warning("[YAML Embedder] No player_files were built (will be empty)")
             else:
                 logger.error("[YAML Embedder] multiworld doesn't have player_files attribute - patching may have failed!")
-            
-            # Ask user if they want to save randomized YAML files
-            try:
-                response = input("\n[YAML Embedder] Save randomized YAML files to output folder? (yes/no): ").strip().lower()
-                if response in ('yes', 'y'):
-                    _save_randomized_yamls(multiworld, args)
-            except Exception as e:
-                logger.error(f"[YAML Embedder] Error during YAML save prompt: {e}")
 
+            # NOTE: randomized-YAML file saving removed (was interactive and
+            # wrote outside the output dir). Embedding/viewer unaffected.
             return multiworld
         
         # Patch the Main module

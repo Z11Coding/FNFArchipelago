@@ -60,7 +60,7 @@ def resolve_dotted_target(target_path: str, load_missing: bool = True) -> tuple[
 class HardPatchRegistry:
     """Central wrapper-based patch registry for hard-patching callables."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._originals: Dict[str, Callable[..., Any]] = {}
         self._wrappers: Dict[str, List[Callable[..., Any]]] = {}
         self._before_hooks: Dict[str, List[Callable[..., Any]]] = {}

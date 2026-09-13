@@ -8,6 +8,9 @@ from BaseClasses import MultiWorld
 from Options import OptionGroup, PerGameCommonOptions
 from worlds.AutoWorld import AutoWorldRegister, WebWorld, WebWorldRegister
 
+from .debug import dprint
+from .injection import GameRef
+
 
 _registered_options: "OrderedDict[str, type]" = OrderedDict()
 _group_names: Dict[str, tuple[List[type], bool]] = {}
@@ -61,7 +64,7 @@ def _patch_webworld_register() -> None:
 
     original_new = WebWorldRegister.__new__
 
-    def patched_new(mcs, name, bases, dct):
+    def patched_new(mcs: Any, name: str, bases: Any, dct: Any) -> Any:
         cls = original_new(mcs, name, bases, dct)
         for group_name in _group_names:
             _insert_group_into(cls.option_groups, _build_group(group_name))
@@ -78,7 +81,7 @@ def _patch_multiworld_set_options() -> None:
 
     original = MultiWorld.set_options
 
-    def patched_set_options(self: MultiWorld, args) -> None:
+    def patched_set_options(self: MultiWorld, args: Any) -> None:
         from worlds import AutoWorld
 
         for player in self.player_ids:
@@ -135,11 +138,37 @@ def register_global_option(
     _patch_webworld_register()
     _sync_webworld_groups()
     _patch_multiworld_set_options()
+    dprint("options", f"registered global option '{option_key}' ({option_class.__name__})")
 
 
 def register_global_options(options: Dict[str, Type], group_name: str = "APAPI Global Options") -> None:
     for option_key, option_class in options.items():
         register_global_option(option_key, option_class, group_name=group_name)
+
+
+def register_option_for_games(
+    option_key: str,
+    option_class: Type,
+    games: list[GameRef],
+    group_name: str = "APAPI Add-On Options",
+    start_collapsed: bool = True,
+) -> None:
+    """Inject ``option_class`` only into the listed games' options_dataclass.
+
+    Each entry may be a game-name string or a world class directly.
+    Delegates to :func:`worlds.APAPI.injection.inject_option`, which owns all
+    waiting/patching exclusively (immediate, deferred, and late-register
+    paths plus cooperative ``set_options`` value attach).
+    """
+    from .injection import inject_option
+
+    inject_option(
+        option_key,
+        option_class,
+        games=games,
+        group_name=group_name,
+        start_collapsed=start_collapsed,
+    )
 
 
 def list_global_options() -> list[str]:

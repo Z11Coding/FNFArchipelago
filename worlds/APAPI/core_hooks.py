@@ -6,6 +6,7 @@ import time
 from typing import Any, Callable
 
 from .hard_patch import hard_patches, resolve_dotted_target
+from .debug import dprint
 from .soft_patch import soft_hooks
 
 
@@ -65,7 +66,7 @@ _pending_after: dict[str, list[Callable[..., Any]]] = {}
 
 
 def _make_soft_wrapper(hook_name: str) -> Callable[..., Any]:
-    def wrapper(next_callable, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(next_callable: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         soft_hooks.run_before(hook_name, *args, **kwargs)
         result = next_callable(*args, **kwargs)
         soft_hooks.run_after(hook_name, *args, **kwargs)
@@ -79,13 +80,16 @@ def initialize_core_hooks() -> None:
     global _worker_started
 
     if _initialized:
+        dprint("init", "core hooks already initialized")
         return
 
     _patch_loaded_targets()
+    dprint("init", f"core hooks initialized ({len(_patched_targets)}/{len(CORE_HOOK_SPECS)} targets patched)")
     if not _worker_started:
         worker = threading.Thread(target=_deferred_patch_worker, name="APAPI-PatchWorker", daemon=True)
         worker.start()
         _worker_started = True
+        dprint("init", "deferred patch worker started")
 
     _initialized = True
 
@@ -110,6 +114,7 @@ def _patch_loaded_targets() -> None:
                 soft_hooks.register_after(hook_name, callback)
             hard_patches.add_wrapper(target_path, _make_soft_wrapper(hook_name), load_missing=False)
             _patched_targets.add(target_path)
+            dprint("hooks", f"core hook '{hook_name}' -> {target_path} patched successfully")
         except Exception:
             # Not loaded yet (or currently inaccessible); the deferred worker will retry.
             continue
@@ -119,6 +124,7 @@ def _deferred_patch_worker() -> None:
     for _ in range(240):
         _patch_loaded_targets()
         if len(_patched_targets) == len(CORE_HOOK_SPECS):
+            dprint("hooks", "all deferred core hook targets patched")
             return
         time.sleep(0.5)
 

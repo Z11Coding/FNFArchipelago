@@ -26,7 +26,7 @@ def wrap_runtime_local_function(
         previous_trace = sys.gettrace()
         patched_once = False
 
-        def tracer(frame, event, arg):
+        def tracer(frame: Any, event: str, arg: Any) -> Any:
             nonlocal patched_once
             if patched_once or frame.f_code is not outer_function.__code__:
                 return tracer
