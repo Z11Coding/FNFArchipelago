@@ -1,16 +1,6 @@
 from __future__ import annotations
 
-"""Easy, typed YAML reading for APAPI consumers.
-
-Wraps :func:`Utils.parse_yaml` with small helpers so worlds (e.g. Mystery
-Game puzzle packs, per-slot preset folders) don't each re-implement:
-
-- player-file discovery (``--player_files_path`` argv override, else the
-  ``generator.player_files_path`` setting, like No Logic does),
-- multi-document splitting on standalone ``---`` lines,
-- player-name extraction (``name`` field plus ``triggers`` overrides),
-- ``{number}`` / ``{player}`` name formatting.
-"""
+"""YAML helpers for player files, name formatting, and multi-doc parsing."""
 
 import string
 import sys
@@ -22,21 +12,22 @@ import Utils
 
 
 class SafeFormatter(string.Formatter):
-    """Archipelago's SafeFormatter: unknown fields stay literal."""
+    """Formatter where unknown fields stay literal."""
 
     def get_value(self, key: Any, args: Any, kwargs: Any) -> Any:
+        """Input: key, args, kwargs. Returns: formatted value or literal."""
         if isinstance(key, int):
             return args[key] if key < len(args) else "{" + str(key) + "}"
         return kwargs.get(key, "{" + key + "}")
 
 
 def read_yaml_text(text: str) -> Any:
-    """Parse one YAML document's text; returns dicts/lists/scalars."""
+    """Input: YAML text. Returns: parsed value."""
     return Utils.parse_yaml(text)
 
 
 def read_yaml_documents(text: str) -> list[Any]:
-    """Split ``text`` on standalone ``---`` lines and parse each document."""
+    """Input: YAML text. Returns: list of parsed docs."""
     lines: list[str] = text.splitlines()
     start: int = 1 if lines and lines[0].strip() == "---" else 0
     documents: list[str] = []
@@ -58,19 +49,19 @@ def read_yaml_documents(text: str) -> list[Any]:
 
 
 def read_yaml_file(path: str | Path) -> Any:
-    """Read and parse a single-document YAML file."""
+    """Input: path. Returns: parsed YAML."""
     file_path = Path(path)
     return Utils.parse_yaml(file_path.read_text(encoding="utf-8-sig"))
 
 
 def read_yaml_documents_file(path: str | Path) -> list[Any]:
-    """Read a (possibly multi-document) YAML file into a list of docs."""
+    """Input: path. Returns: list of parsed docs."""
     file_path = Path(path)
     return read_yaml_documents(file_path.read_text(encoding="utf-8-sig"))
 
 
 def resolve_player_files_dir(explicit: str | Path | None = None) -> Path | None:
-    """Locate the Players dir: explicit path, ``--player_files_path`` argv, else settings."""
+    """Input: explicit dir or None. Returns: players dir or None."""
     if explicit is not None:
         candidate = Path(explicit)
         return candidate if candidate.is_dir() else None
@@ -87,7 +78,7 @@ def resolve_player_files_dir(explicit: str | Path | None = None) -> Path | None:
 
 
 def iter_player_yaml_files(players_dir: str | Path) -> list[Path]:
-    """Sorted player YAML files (any extension; skips dirs and desktop.ini)."""
+    """Input: players dir. Returns: sorted YAML files."""
     directory = Path(players_dir)
     if not directory.is_dir():
         return []
@@ -98,10 +89,7 @@ def iter_player_yaml_files(players_dir: str | Path) -> list[Path]:
 
 
 def extract_player_names(parsed: Any) -> tuple[list[str], bool]:
-    """Collect candidate player names from parsed YAML (main + trigger names).
-
-    Returns ``(names, success)``. Raises nothing; callers filter by game.
-    """
+    """Input: parsed YAML. Returns: (names, success)."""
     if isinstance(parsed, list):
         parsed = parsed[0] if parsed else {}
     if not isinstance(parsed, dict):
@@ -128,7 +116,7 @@ def extract_player_names(parsed: Any) -> tuple[list[str], bool]:
 
 
 def format_player_name(name: str, player: int, number: int) -> str:
-    """Apply Archipelago ``{number}``/``{player}`` substitution (1-based)."""
+    """Input: name, player, number. Returns: formatted name."""
     resolved: str = "%%".join(
         part.replace("%number%", "{number}").replace("%player%", "{player}")
         for part in name.split("%%")
@@ -142,7 +130,7 @@ def format_player_name(name: str, player: int, number: int) -> str:
 
 
 def resolve_player_name(name: str, player: int, counter: Counter[str]) -> str:
-    """Format ``name`` with a shared occurrence counter (like Generate's handle_name)."""
+    """Input: name, player, counter. Returns: formatted name with counted number."""
     counter[name.lower()] += 1
     return format_player_name(name, player, counter[name.lower()])
 

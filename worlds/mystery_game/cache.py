@@ -1,29 +1,20 @@
 from __future__ import annotations
 
-"""Pure slot-lock / guess-mode / proxy helpers for Mystery Game.
-
-Stdlib-only on purpose: no Archipelago imports, so this module is unit
-testable anywhere. The client (``MysteryClient``) and world use these for:
-
-- server data-storage keys (``cached_checks`` per locked slot, persisted by
-  the server itself via ``Set``/``Get``/``SetNotify`` + ``ctx.save()``),
-- cache entry shape ``{game, pending_checks, held_items}`` mapping which
-  game each held check belongs to, so nothing is lost on close,
-- guess normalization/comparison (``!mystery_guess <slot> <game>``),
-- proxy connection instruction text.
-"""
+"""Slot-lock/guess/proxy helpers. Stdlib only."""
 
 import re
 from typing import Any
 
-#: Port the in-client proxy listens on (localhost), AHIT uses 11311.
 MYSTERY_PROXY_PORT: int = 11318
 MYSTERY_PROXY_HOST: str = "localhost"
+MYSTERY_GLOBAL_PORT: int = 11400
+MYSTERY_GLOBAL_HOST: str = "0.0.0.0"
 
-#: Server data-storage key prefixes (team/slot appended at runtime).
 CACHE_KEY_PREFIX: str = "mystery_cache"
 UNLOCKS_KEY_PREFIX: str = "mystery_unlocks"
 PUZZLE_STATE_PREFIX: str = "mystery_puzzle_state"
+NUZLOCKE_PREFIX: str = "mystery_nuzlocke"
+NUZLOCKE_EXTRA_PREFIX: str = "mystery_nuzlocke_extra"
 
 _NON_ALNUM: Any = re.compile(r"[^a-z0-9]+")
 _PIECE_RE: Any = re.compile(r"^Puzzle Piece: (.+) #(\d+)$")
@@ -31,35 +22,42 @@ _HINT_RE: Any = re.compile(r"^Puzzle Hint: (.+) #(\d+)$")
 
 
 def cache_key(team: int, slot: int) -> str:
-    """Server data key holding a locked slot's ``cached_checks`` entry."""
+    """Input: team, slot. Returns: cache Set key."""
     return f"{CACHE_KEY_PREFIX}_{team}_{slot}"
 
 
 def unlocks_key(team: int) -> str:
-    """Server data key holding ``{slot_name: 'item' | 'guess'}`` unlocks."""
+    """Input: team. Returns: unlocks dict key."""
     return f"{UNLOCKS_KEY_PREFIX}_{team}"
 
 
 def puzzle_state_key(team: int, slot: int) -> str:
-    """Server data key holding puzzle progress for one mystery slot.
-
-    Value: ``{puzzle: {'pieces': [i...], 'hints': [i...], 'solved': bool}}``.
-    """
+    """Input: team, slot. Returns: puzzle state key."""
     return f"{PUZZLE_STATE_PREFIX}_{team}_{slot}"
 
 
+def nuzlocke_key(team: int) -> str:
+    """Input: team. Returns: nuzlocke dead-slots/hits key."""
+    return f"{NUZLOCKE_PREFIX}_{team}"
+
+
+def nuzlocke_extra_key(team: int) -> str:
+    """Input: team. Returns: nuzlocke extra-lives key (per-slot extra lives earned)."""
+    return f"{NUZLOCKE_EXTRA_PREFIX}_{team}"
+
+
 def puzzle_piece_name(puzzle: str, index: int) -> str:
-    """Pool item granting piece ``index`` (1-based) of ``puzzle``."""
+    """Input: puzzle, 1-based index. Returns: piece item name."""
     return f"Puzzle Piece: {puzzle} #{index}"
 
 
 def puzzle_hint_name(puzzle: str, index: int) -> str:
-    """Pool item revealing hint ``index`` (1-based) of ``puzzle``."""
+    """Input: puzzle, 1-based index. Returns: hint item name."""
     return f"Puzzle Hint: {puzzle} #{index}"
 
 
 def parse_puzzle_piece(name: str) -> tuple[str, int] | None:
-    """Parse a piece item name into ``(puzzle, index)`` (1-based)."""
+    """Input: item name. Returns: (puzzle, index) or None."""
     match: Any = _PIECE_RE.match(name.strip())
     if not match:
         return None
@@ -67,7 +65,7 @@ def parse_puzzle_piece(name: str) -> tuple[str, int] | None:
 
 
 def parse_puzzle_hint(name: str) -> tuple[str, int] | None:
-    """Parse a hint item name into ``(puzzle, index)`` (1-based)."""
+    """Input: item name. Returns: (puzzle, index) or None."""
     match: Any = _HINT_RE.match(name.strip())
     if not match:
         return None
@@ -75,7 +73,7 @@ def parse_puzzle_hint(name: str) -> tuple[str, int] | None:
 
 
 def normalize_puzzle_state(raw: Any) -> dict[str, dict[str, Any]]:
-    """Coerce server data into ``{puzzle: {pieces, hints, solved}}``."""
+    """Input: raw server data. Returns: {puzzle: {pieces, hints, solved}}."""
     if not isinstance(raw, dict):
         return {}
     clean: dict[str, dict[str, Any]] = {}
@@ -94,7 +92,7 @@ def normalize_puzzle_state(raw: Any) -> dict[str, dict[str, Any]]:
 
 def merge_puzzle_state(local: dict[str, dict[str, Any]],
                        server: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Union-merge server puzzle progress into local progress (in place)."""
+    """Input: local, server states. Returns: merged state (union, in place)."""
     for puzzle, entry in server.items():
         mine: dict[str, Any] = local.setdefault(
             puzzle, {"pieces": [], "hints": [], "solved": False})
@@ -105,7 +103,7 @@ def merge_puzzle_state(local: dict[str, dict[str, Any]],
 
 
 def puzzle_ready(state: dict[str, dict[str, Any]], puzzle: str, need_pieces: int) -> bool:
-    """True when ``puzzle`` has all ``need_pieces`` pieces (0 = free solve)."""
+    """Input: state, puzzle, need_pieces. Returns: True if all pieces held (0=free)."""
     if need_pieces <= 0:
         return True
     have: set[int] = set(state.get(puzzle, {}).get("pieces", []))
@@ -113,22 +111,22 @@ def puzzle_ready(state: dict[str, dict[str, Any]], puzzle: str, need_pieces: int
 
 
 def normalize_game_name(name: str) -> str:
-    """Lowercase alphanumeric fold so 'A Link to the Past' == 'alinktothepast'."""
+    """Input: game name. Returns: lower alphanumeric fold."""
     return _NON_ALNUM.sub("", name.lower()).strip()
 
 
 def check_guess(guess: str, answer: str) -> bool:
-    """True when a guessed game name matches the real one."""
+    """Input: guess, answer. Returns: True if normalized names match."""
     return bool(guess and answer) and normalize_game_name(guess) == normalize_game_name(answer)
 
 
 def new_cache_entry(game: str) -> dict[str, Any]:
-    """Empty cache entry for a locked slot's game."""
+    """Input: game. Returns: empty cache entry."""
     return {"game": game, "pending_checks": [], "held_items": []}
 
 
 def normalize_cache_entry(raw: Any, game: str = "Unknown") -> dict[str, Any]:
-    """Coerce server data into a valid cache entry (tolerates missing keys)."""
+    """Input: raw, game. Returns: coerced cache entry."""
     if not isinstance(raw, dict):
         return new_cache_entry(game)
     pending: Any = raw.get("pending_checks", [])
@@ -141,7 +139,7 @@ def normalize_cache_entry(raw: Any, game: str = "Unknown") -> dict[str, Any]:
 
 
 def merge_pending_checks(entry: dict[str, Any], checks: list[int]) -> dict[str, Any]:
-    """Add location ids to ``pending_checks`` without duplicates (in place)."""
+    """Input: entry, checks. Output: adds checks without duplicates (in place)."""
     seen: set[int] = set(entry.setdefault("pending_checks", []))
     for check in checks:
         if isinstance(check, int) and check not in seen:
@@ -151,7 +149,7 @@ def merge_pending_checks(entry: dict[str, Any], checks: list[int]) -> dict[str, 
 
 
 def merge_held_items(entry: dict[str, Any], items: list[dict[str, Any]]) -> dict[str, Any]:
-    """Append received-item dicts, deduping on ``(index)`` when present."""
+    """Input: entry, items. Output: appends items deduping on index (in place)."""
     held: list[dict[str, Any]] = entry.setdefault("held_items", [])
     known: set[Any] = {item.get("index") for item in held if "index" in item}
     for item in items:
@@ -166,7 +164,7 @@ def merge_held_items(entry: dict[str, Any], items: list[dict[str, Any]]) -> dict
 
 
 def set_operation(key: str, value: Any, default: Any = None) -> dict[str, Any]:
-    """Build a ``Set`` packet replacing ``key`` (persisted server-side)."""
+    """Input: key, value. Returns: Set packet dict."""
     return {
         "cmd": "Set",
         "key": key,
@@ -182,7 +180,7 @@ def proxy_instructions(
     routes: dict[str, str],
     frozen: list[str],
 ) -> str:
-    """Human-readable steps for connecting a game client through the proxy."""
+    """Input: host, port, routes, frozen. Returns: instructions string."""
     lines: list[str] = [
         f"Connect your game client to ws://{host}:{port} (NOT the multiworld server).",
         "Use the alias as your slot name; the proxy logs in as the real slot.",
@@ -203,6 +201,10 @@ __all__ = [
     "CACHE_KEY_PREFIX",
     "MYSTERY_PROXY_HOST",
     "MYSTERY_PROXY_PORT",
+    "MYSTERY_GLOBAL_HOST",
+    "MYSTERY_GLOBAL_PORT",
+    "NUZLOCKE_PREFIX",
+    "NUZLOCKE_EXTRA_PREFIX",
     "PUZZLE_STATE_PREFIX",
     "UNLOCKS_KEY_PREFIX",
     "cache_key",
@@ -214,6 +216,8 @@ __all__ = [
     "normalize_cache_entry",
     "normalize_game_name",
     "normalize_puzzle_state",
+    "nuzlocke_extra_key",
+    "nuzlocke_key",
     "parse_puzzle_hint",
     "parse_puzzle_piece",
     "proxy_instructions",

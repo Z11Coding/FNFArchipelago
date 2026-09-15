@@ -238,12 +238,13 @@ and `{number}`/`{player}` formatting.
 
 ## Debug Printer
 
-On by default. Disable with `APAPI_DEBUG=0` or `set_debug_enabled(False)`.
+On by default. Disable with `set_debug_enabled(False)` (never controlled by
+environment variables — toggle it in code).
 Logs init events, hook success/failure, stage begin/finish, and hook
 durations to the `APAPI.Debug` logger via `dprint(tag, message)`.
 
-Leak hunts: `APAPI_REFCOUNT_DEBUG=1` logs a gc referrer census of the
-finished MultiWorld (who keeps it alive) via `dump_referrer_report`.
+Leak hunts: `set_refcount_debug_enabled(True)` logs a gc referrer census of
+the finished MultiWorld (who keeps it alive) via `dump_referrer_report`.
 
 ## Run State (spoiler/output flags)
 

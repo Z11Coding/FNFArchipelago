@@ -1,16 +1,8 @@
 from __future__ import annotations
 
-"""APAPI debug printer + hook timing.
-
-Enabled by default. Disable with ``APAPI_DEBUG=0`` or ``set_debug_enabled(False)``.
-
-Covers init events, hook success/failure, and stage begin/finish. Hook
-finishes log only past the slow threshold (like AutoWorld._timed_call);
-totals come from dump_hook_stats.
-"""
+"""Debug printing and hook timing for APAPI."""
 
 import logging
-import os
 import threading
 import time
 from collections.abc import Iterator
@@ -19,39 +11,93 @@ from typing import Any
 
 logger = logging.getLogger("APAPI.Debug")
 
-#: Hooks slower than this (seconds) get a warning, mirroring AutoWorld._timed_call.
 SLOW_HOOK_THRESHOLD: float = 1.0
 
-_enabled: bool = os.environ.get("APAPI_DEBUG", "1") != "0"
+_enabled: bool = True
+_refcount_debug: bool = False
 _stats_lock = threading.RLock()
-#: (game, method) -> {"calls": int, "total": float, "max": float}
 _hook_stats: dict[tuple[str, str], dict[str, Any]] = {}
+_host_synced: bool = False
+
+
+def _sync_from_host_config() -> None:
+    """Sync _enabled from host.yaml (apapi.debug.enabled, default True)."""
+    global _enabled, _host_synced
+    # Avoid repeated disk reads after first successful sync unless forced.
+    if _host_synced:
+        return
+    try:
+        from pathlib import Path
+        import yaml
+        from Utils import user_path
+
+        path = Path(user_path("host.yaml"))
+        if not path.exists():
+            _host_synced = True
+            return
+        with path.open("r", encoding="utf-8") as stream:
+            data = yaml.safe_load(stream)
+        if not isinstance(data, dict):
+            _host_synced = True
+            return
+        apapi_cfg = data.get("apapi", {})
+        if not isinstance(apapi_cfg, dict):
+            _host_synced = True
+            return
+        dbg_cfg = apapi_cfg.get("debug", None)
+        enabled: Any = None
+        if isinstance(dbg_cfg, dict):
+            enabled = dbg_cfg.get("enabled", None)
+        elif isinstance(dbg_cfg, bool):
+            enabled = dbg_cfg
+        if enabled is None:
+            # legacy flat keys
+            for _k in ("debug_messages", "enable_debug", "debug_enabled"):
+                if _k in apapi_cfg:
+                    enabled = apapi_cfg[_k]
+                    break
+        if enabled is not None:
+            _enabled = bool(enabled)
+        _host_synced = True
+    except Exception:
+        # Fail open (keep current _enabled, which defaults to True).
+        _host_synced = True
 
 
 def is_debug_enabled() -> bool:
-    """Return whether the APAPI debug printer is on."""
+    """Returns: True if debug printing is on (host.yaml apapi.debug.enabled, default True)."""
+    # Lazily sync once so early imports honor host.yaml without requiring explicit init.
+    if not _host_synced:
+        _sync_from_host_config()
     return _enabled
 
 
 def set_debug_enabled(enabled: bool) -> None:
-    """Enable or disable the APAPI debug printer at runtime."""
-    global _enabled
+    """Input: enabled flag. Returns: None (also marks host-synced so host file won't override)."""
+    global _enabled, _host_synced
     _enabled = bool(enabled)
+    _host_synced = True
+
+
+def is_refcount_debug_enabled() -> bool:
+    """Returns: True if refcount tracing is on."""
+    return _refcount_debug
+
+
+def set_refcount_debug_enabled(enabled: bool) -> None:
+    """Input: enabled flag. Returns: None."""
+    global _refcount_debug
+    _refcount_debug = bool(enabled)
 
 
 def dprint(tag: str, message: str) -> None:
-    """Print a debug line (``[APAPI:<tag>] <message>``) when debugging is on."""
-    if _enabled:
+    """Input: tag, message. Returns: None (logs if enabled via apapi.debug.enabled)."""
+    if is_debug_enabled():
         logger.info("[APAPI:%s] %s", tag, message)
 
 
 def record_hook_time(game: str, method: str, elapsed: float) -> None:
-    """Record one hook execution; log only over-threshold finishes.
-
-    Per-call lines are threshold-gated (high-frequency hooks like
-    create_item would otherwise flood the log); the full table comes from
-    :func:`dump_hook_stats`.
-    """
+    """Input: game, method, elapsed. Returns: None (records timing)."""
     with _stats_lock:
         entry = _hook_stats.setdefault((game, method), {"calls": 0, "total": 0.0, "max": 0.0})
         entry["calls"] += 1
@@ -66,7 +112,7 @@ def record_hook_time(game: str, method: str, elapsed: float) -> None:
 
 @contextmanager
 def hook_timer(game: str, method: str) -> Iterator[None]:
-    """Time a hook body and record it via :func:`record_hook_time`."""
+    """Input: game, method. Returns: context manager that times block."""
     start: float = time.perf_counter()
     try:
         yield
@@ -75,13 +121,13 @@ def hook_timer(game: str, method: str) -> Iterator[None]:
 
 
 def get_hook_stats() -> dict[tuple[str, str], dict[str, Any]]:
-    """Return a copy of the collected per-hook timing stats."""
+    """Returns: copy of per-hook timing stats."""
     with _stats_lock:
         return {key: dict(value) for key, value in _hook_stats.items()}
 
 
 def dump_hook_stats() -> None:
-    """Log a summary table of hook timings (always logs, even if debug is off)."""
+    """Input: None. Returns: None (logs summary)."""
     stats: dict[tuple[str, str], dict[str, Any]] = get_hook_stats()
     if not stats:
         logger.info("[APAPI:timing] No hook executions recorded.")
@@ -95,7 +141,7 @@ def dump_hook_stats() -> None:
 
 
 def _referrer_owner(container: Any) -> str:
-    """Best-effort owner label for a container holding a live object."""
+    """Input: container. Returns: owner label string."""
     import gc
     import types
     for parent in gc.get_referrers(container):
@@ -113,12 +159,7 @@ def _referrer_owner(container: Any) -> str:
 
 def dump_referrer_report(obj: Any, label: str = "object",
                          max_depth: int = 3, max_nodes: int = 40) -> None:
-    """Log what keeps ``obj`` alive (leak hunts; always logs when called).
-
-    Walks ``gc.get_referrers`` a few levels, skipping frames and this
-    report's own bookkeeping. Run with ``APAPI_REFCOUNT_DEBUG=1`` wired by
-    callers (off by default: zero overhead otherwise).
-    """
+    """Input: obj, label, max_depth, max_nodes. Returns: None (logs referrers)."""
     import gc
     import types
     gc.collect()
@@ -173,6 +214,8 @@ __all__ = [
     "get_hook_stats",
     "hook_timer",
     "is_debug_enabled",
+    "is_refcount_debug_enabled",
     "record_hook_time",
     "set_debug_enabled",
+    "set_refcount_debug_enabled",
 ]

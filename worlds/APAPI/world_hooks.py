@@ -1,20 +1,6 @@
 from __future__ import annotations
 
-"""Per-instance world method hooks for APAPI.
-
-Design constraints (custom_worlds-only):
-- We cannot safely rewrite other worlds' classes at import time because
-  load order is undefined and class patching leaks across generations.
-- Instead, add-on worlds call these helpers from their own
-  ``generate_early`` (which runs before the target stage) to wrap specific
-  world *instances* already present in ``multiworld.worlds``.
-
-Each hook supports:
-- ``before``: runs first, may return ``False`` to cancel the original call.
-- ``after``: runs after, may return a replacement result.
-- ``wrapper``: full ``(next_callable, *args, **kwargs)`` control; if it never
-  calls ``next_callable`` the original operation is cancelled.
-"""
+"""Per-instance and class-level world method hooks."""
 
 from collections.abc import Callable
 import functools
@@ -31,18 +17,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger("APAPI")
 
 CANCEL = object()
-"""Sentinel a ``before`` hook may return to cancel the original call."""
 
-#: A ``before`` hook receives ``(*args, **kwargs)``; returning ``False`` or
-#: ``CANCEL`` cancels the original call.
 HookBefore = Callable[..., Any]
-#: An ``after`` hook receives ``(result, *args, **kwargs)`` and may return a
-#: replacement result (``None`` keeps the original).
 HookAfter = Callable[..., Any]
-#: A full wrapper receives ``(next_callable, *args, **kwargs)``; skipping
-#: ``next_callable`` cancels the original operation.
 HookWrapper = Callable[..., Any]
-#: Restores a previously installed hook.
 Unhook = Callable[[], None]
 
 
@@ -54,20 +32,12 @@ def hook_world_method(
     after: HookAfter | None = None,
     wrapper: HookWrapper | None = None,
 ) -> Unhook:
-    """Wrap ``world_instance.method_name`` with hook behavior.
-
-    Returns an unhook callable restoring the original bound method.
-    ``before`` receives ``(*args, **kwargs)``; returning ``False`` or
-    ``CANCEL`` cancels the original call (result becomes ``None`` unless an
-    ``after`` hook replaces it). ``after`` receives ``(result, *args,
-    **kwargs)`` and may return a replacement result.
-    """
+    """Input: instance, method, hooks. Returns: unhook callable."""
     game: str = str(getattr(world_instance, "game", "?"))
     original: Any | None = getattr(world_instance, method_name, None)
     if not callable(original):
         dprint("hooks", f"FAILED to hook {game}.{method_name}: no such callable")
         raise AttributeError(f"{game}: has no callable {method_name!r}")
-    # Unwrap any previous APAPI hook to keep chains short and idempotent-ish.
     base: Callable[..., Any] = getattr(original, "__apapi_unwrapped__", original)
 
     @functools.wraps(base)
@@ -85,10 +55,6 @@ def hook_world_method(
             record_hook_time(game, method_name, time.perf_counter() - start)
 
     hooked.__apapi_unwrapped__ = base  # type: ignore[attr-defined]
-    # NOTE: plain instance attribute (no descriptor binding): functions set
-    # on an instance do not receive `self` automatically, and `base` above
-    # is already a bound method, so `hooked(*args)` matches the original
-    # call signature exactly.
     setattr(world_instance, method_name, hooked)
     dprint("hooks", f"hooked {game}.{method_name} successfully")
 
@@ -109,6 +75,7 @@ def _run_with_before_after(
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
 ) -> Any:
+    """Input: base, before, after, args, kwargs. Returns: result."""
     cancelled: bool = False
     if before is not None:
         decision: Any = before(*args, **kwargs)
@@ -131,7 +98,7 @@ def hook_worlds_for_game(
     after: HookAfter | None = None,
     wrapper: HookWrapper | None = None,
 ) -> list[Unhook]:
-    """Hook ``method_name`` on every world instance of ``game`` in this multiworld."""
+    """Input: multiworld, game, method, hooks. Returns: list of unhooks."""
     unhooks: list[Unhook] = []
     hooked_count: int = 0
     for player in list(getattr(multiworld, "player_ids", [])):
@@ -158,18 +125,7 @@ def patch_world_class_method(
     after: HookAfter | None = None,
     wrapper: HookWrapper | None = None,
 ) -> Unhook | None:
-    """Patch ``method_name`` on the world *class* for ``game`` (all instances).
-
-    ``game`` may be a game-name string (resolved via the registry — None if
-    not loaded) or a world class directly when the caller already has access
-    to it (patched as-is, no lookup needed).
-
-    Intended for use from :func:`worlds.APAPI.world_ready.when_game_available`
-    callbacks, i.e. after loading completes, so load order cannot prevent the
-    patch. Idempotent per ``(game, method)``: repeat calls replace the
-    previously installed APAPI wrapper instead of stacking. Returns an
-    unhook callable, or None if the target cannot be resolved.
-    """
+    """Input: game/class, method, hooks. Returns: unhook or None."""
     world_type: Any | None
     label: str
     if isinstance(game, str):
@@ -200,7 +156,6 @@ def patch_world_class_method(
     def patched(self: Any, *args: Any, **kwargs: Any) -> Any:
         with hook_timer(label, method_name):
             if wrapper is not None:
-                # Bind self explicitly: base is the unbound class function.
                 def bound_next(*n_args: Any, **n_kwargs: Any) -> Any:
                     return _run_with_before_after(
                         base, before, after,

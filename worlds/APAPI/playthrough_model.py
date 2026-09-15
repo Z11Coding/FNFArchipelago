@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Playthrough model: spheres and unreachable locations from a multiworld."""
+
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 import json
@@ -11,6 +13,8 @@ if TYPE_CHECKING:
 
 @dataclass
 class SphereLocationEntry:
+    """One location/item entry within a sphere."""
+
     sphere: int
     location_player: int
     location_name: str
@@ -23,12 +27,16 @@ class SphereLocationEntry:
 
 @dataclass
 class SphereData:
+    """One sphere with its location entries."""
+
     index: int
     locations: list[SphereLocationEntry]
 
 
 @dataclass
 class PlaythroughModel:
+    """Seed playthrough: players, spheres, unreachable."""
+
     seed_name: str
     generated_at_utc: str
     players: dict[int, dict[str, Any]]
@@ -36,12 +44,15 @@ class PlaythroughModel:
     unreachable_locations: list[SphereLocationEntry]
 
     def to_dict(self) -> dict[str, Any]:
+        """Returns: dict representation."""
         return asdict(self)
 
     def to_json(self, indent: int = 2) -> str:
+        """Input: indent. Returns: JSON string."""
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
 
     def to_text(self) -> str:
+        """Returns: human-readable text."""
         lines: list[str] = []
         lines.append(f"Seed: {self.seed_name}")
         lines.append(f"Generated: {self.generated_at_utc}")
@@ -64,6 +75,7 @@ class PlaythroughModel:
         return "\n".join(lines)
 
     def to_mermaid(self) -> str:
+        """Returns: mermaid flowchart string."""
         lines: list[str] = ["flowchart LR"]
         for sphere in self.spheres:
             lines.append(f"  subgraph S{sphere.index}[Sphere {sphere.index}]")
@@ -81,6 +93,7 @@ class PlaythroughModel:
 
 
 def _sorted_locations(locations: Iterable["Location"]) -> list["Location"]:
+    """Input: locations. Returns: sorted list."""
     return sorted(
         locations,
         key=lambda loc: (
@@ -92,6 +105,7 @@ def _sorted_locations(locations: Iterable["Location"]) -> list["Location"]:
 
 
 def _to_entry(sphere_index: int, location: "Location") -> SphereLocationEntry:
+    """Input: sphere index, location. Returns: entry."""
     return SphereLocationEntry(
         sphere=sphere_index,
         location_player=location.player,
@@ -105,14 +119,7 @@ def _to_entry(sphere_index: int, location: "Location") -> SphereLocationEntry:
 
 
 def decompose_logical_spheres(multiworld: "MultiWorld") -> tuple[list[list["Location"]], list["Location"]]:
-    """
-    Split MultiWorld logical spheres into reachable sphere lists and unreachable locations.
-
-    Uses MultiWorld.get_spheres(), which may emit:
-    - normal sphere sets
-    - an empty set separator
-    - a final set of unreachable locations
-    """
+    """Input: multiworld. Returns: (reachable spheres, unreachable)."""
     reachable_spheres: list[list["Location"]] = []
     unreachable_locations: list["Location"] = []
     next_is_unreachable = False
@@ -134,6 +141,7 @@ def decompose_logical_spheres(multiworld: "MultiWorld") -> tuple[list[list["Loca
 
 
 def build_playthrough_model(multiworld: "MultiWorld") -> PlaythroughModel:
+    """Input: multiworld. Returns: PlaythroughModel."""
     players = {
         player: {
             "name": multiworld.player_name.get(player, f"Player {player}"),

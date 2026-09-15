@@ -96,6 +96,11 @@ class FunkinWorld(World):
     game = "Friday Night Funkin"
     web = FunkinWeb()
     ut_can_gen_without_yaml = True
+    # Mystery game cannot create FNF slots automatically: FNF requires a yaml
+    # in the Players folder to define songs; without it generation falls back
+    # to defaults and is not correct. Only a preset yaml could supply that,
+    # so disallow entirely for now.
+    mystery_game_allowance = False
 
     required_client_version = (0, 5, 0)
     topology_present = False

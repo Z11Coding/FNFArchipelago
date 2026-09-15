@@ -1,25 +1,6 @@
 from __future__ import annotations
 
-"""Run code after all AP worlds finish loading.
-
-Problem: import order between world folders is alphabetical-ish and
-undefined for the task at hand (``worlds/APAPI`` loads before
-``worlds/tunic``, for example). Code that patches another world at import
-time therefore races: the target may not exist yet, so the hook silently
-never applies depending on who loaded first.
-
-Solution: queue the work and run it once loading is done.
-
-- :func:`on_worlds_loaded` fires after ``worlds/__init__.py`` finishes
-  importing every loose world folder (detected via the
-  ``network_data_package`` attribute it sets at the end of the load loop).
-- :func:`when_game_available` fires with the world's class as soon as
-  ``game`` appears in ``AutoWorldRegister.world_types``; if loading
-  completes without it (or the timeout expires) the callback fires with
-  ``None`` so callers can log and skip instead of hanging generation.
-
-Only uses ``sys.modules`` polling from a daemon thread — no core edits.
-"""
+"""Defer callbacks until worlds are loaded or a game is available."""
 
 import sys
 import threading
@@ -32,9 +13,7 @@ from .debug import dprint
 import logging
 logger = logging.getLogger("APAPI.WorldReady")
 
-# callback() -> None
 _LoadedCallback = Callable[[], None]
-# callback(world_type | None) -> None
 _GameCallback = Callable[[Any], None]
 
 _loaded_queue: list[_LoadedCallback] = []
@@ -48,13 +27,13 @@ _TIMEOUT: float = 120.0
 
 
 def worlds_loading_complete() -> bool:
-    """True once ``worlds/__init__.py`` has built ``network_data_package``."""
+    """Returns: True if network_data_package exists."""
     worlds_module: Any = sys.modules.get("worlds")
     return worlds_module is not None and hasattr(worlds_module, "network_data_package")
 
 
 def is_game_available(game: str) -> bool:
-    """True if ``game`` is already registered in ``AutoWorldRegister``."""
+    """Input: game. Returns: True if registered."""
     try:
         from worlds.AutoWorld import AutoWorldRegister
     except Exception:
@@ -63,7 +42,7 @@ def is_game_available(game: str) -> bool:
 
 
 def get_world_type(game: str) -> Any | None:
-    """Return the registered world class for ``game``, or None."""
+    """Input: game. Returns: world class or None."""
     try:
         from worlds.AutoWorld import AutoWorldRegister
     except Exception:
@@ -72,7 +51,7 @@ def get_world_type(game: str) -> Any | None:
 
 
 def on_worlds_loaded(callback: _LoadedCallback) -> None:
-    """Queue ``callback`` until all loose worlds are loaded; immediate if done."""
+    """Input: callback. Returns: None (fires now or queues)."""
     with _queue_lock:
         if _worlds_ready or worlds_loading_complete():
             _mark_ready_locked()
@@ -85,7 +64,7 @@ def on_worlds_loaded(callback: _LoadedCallback) -> None:
 
 
 def when_game_available(game: str, callback: _GameCallback) -> None:
-    """Queue ``callback(world_type)`` until ``game`` registers (or fires None)."""
+    """Input: game, callback. Returns: None (fires now or queues)."""
     world_type: Any | None = get_world_type(game)
     if world_type is not None:
         dprint("ready", f"{game} already loaded; firing callback immediately")
@@ -98,6 +77,7 @@ def when_game_available(game: str, callback: _GameCallback) -> None:
 
 
 def _mark_ready_locked() -> None:
+    """Input: None. Returns: None (marks ready)."""
     global _worlds_ready
     if not _worlds_ready:
         _worlds_ready = True
@@ -105,6 +85,7 @@ def _mark_ready_locked() -> None:
 
 
 def _fire_loaded(callback: _LoadedCallback) -> None:
+    """Input: callback. Returns: None (runs it)."""
     try:
         callback()
         dprint("ready", f"worlds-loaded callback {getattr(callback, '__name__', callback)} succeeded")
@@ -114,6 +95,7 @@ def _fire_loaded(callback: _LoadedCallback) -> None:
 
 
 def _fire_game(game: str, callback: _GameCallback, world_type: Any | None) -> None:
+    """Input: game, callback, world_type. Returns: None (runs it)."""
     try:
         callback(world_type)
         if world_type is None:
@@ -125,6 +107,7 @@ def _fire_game(game: str, callback: _GameCallback, world_type: Any | None) -> No
 
 
 def _ensure_worker_locked() -> None:
+    """Input: None. Returns: None (starts poll worker)."""
     global _worker_started
     if _worker_started:
         return
@@ -135,25 +118,23 @@ def _ensure_worker_locked() -> None:
 
 
 def _poll_worker() -> None:
+    """Input: None. Returns: None (polls until ready/timeout)."""
     start: float = time.perf_counter()
     while True:
         time.sleep(_POLL_INTERVAL)
         with _queue_lock:
             if worlds_loading_complete():
                 _mark_ready_locked()
-            # Fire game callbacks whose game just appeared.
             for game in list(_game_queues):
                 world_type = get_world_type(game)
                 if world_type is not None:
                     for callback in _game_queues.pop(game):
                         _fire_game(game, callback, world_type)
-            # Flush worlds-loaded callbacks once ready.
             if _worlds_ready and _loaded_queue:
                 pending = _loaded_queue[:]
                 del _loaded_queue[:]
             else:
                 pending = []
-            # Timeout: flush leftovers so nothing hangs forever.
             timed_out: bool = (time.perf_counter() - start) > _TIMEOUT
             leftover_games: dict[str, list[_GameCallback]] = {}
             if timed_out and (_loaded_queue or _game_queues):

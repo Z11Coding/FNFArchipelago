@@ -8,8 +8,8 @@ _session_key_cache = None
 _upload_mode_cache = None
 _upload_initialized = False
 _session_key_init = False
-_launcher_patched = False
 _multiserver_patched = False
+_first_time_notice_shown = False
 
 
 def _initialize_configuration():
@@ -50,7 +50,7 @@ def _patch_main_for_upload():
                     zipfilename = f"output/AP_{multiworld.seed_name}.zip"
                     _attempt_auto_upload(multiworld, zipfilename)
             except Exception as e:
-                pass
+                logger.warning(f"[ArchipelagoUploader] Auto-upload step failed: {e}")
             return result
         Main.main = patched_main
         logger.info("[ArchipelagoUploader] Patched Main.main()")
@@ -63,6 +63,7 @@ def _attempt_auto_upload(multiworld, filename: str):
     try:
         from .UploaderConfig import is_enabled
         if not is_enabled():
+            logger.info("[ArchipelagoUploader] Disabled in host.yaml, skipping auto-upload.")
             return
     except Exception as e:
         logger.debug(f"Failed to check if uploader is enabled: {e}")
@@ -79,6 +80,7 @@ def _attempt_auto_upload(multiworld, filename: str):
         except Exception as e:
             logger.debug(f"Could not search for zip files: {e}")
     if not zip_path:
+        logger.info("[ArchipelagoUploader] No output zip found, skipping auto-upload.")
         return
     if upload_mode == "prompt":
         from .SessionKeyDialog import show_upload_mode_dialog
@@ -88,7 +90,14 @@ def _attempt_auto_upload(multiworld, filename: str):
             pass
             return
     if upload_mode == "none":
+        logger.info("[ArchipelagoUploader] Upload mode is 'none', skipping auto-upload.")
         return
+    if upload_mode not in ("prompt", "online", "online-room", "local"):
+        logger.warning(f"[ArchipelagoUploader] Unknown upload mode {upload_mode!r} "
+                       f"(config not loaded?), skipping auto-upload.")
+        return
+    if _first_time_install:
+        _show_first_time_notice()
     if upload_mode in ("online", "online-room"):
         if not session_key:
             from .SessionKeyDialog import show_session_key_dialog
@@ -154,38 +163,22 @@ def _is_first_time_install() -> bool:
         return False
 
 
-def _patch_launcher_for_first_time_prompt():
-    global _launcher_patched
-    if _launcher_patched:
+def _show_first_time_notice():
+    """One-time installed notice. Called only from the upload flow itself —
+    never at import, so no app/window is created before auto-uploading."""
+    global _first_time_notice_shown
+    if _first_time_notice_shown:
         return
-    _launcher_patched = True
-    if not _is_first_time_install():
-        return
+    _first_time_notice_shown = True
+    text = ("The Archipelago Auto-Uploader has been installed!\n\nTo configure it, edit your host.yaml file "
+            "and look for the 'archipelago_uploader' section.\n\nNote: online-room mode requires a valid "
+            "session key to create rooms on your behalf.")
+    logger.info("[ArchipelagoUploader] %s", text.replace("\n\n", " "))
     try:
-        import Launcher
-        original_run_gui = Launcher.run_gui
-        def patched_run_gui(launch_components=None, args=None):
-            result = original_run_gui(launch_components, args)
-            return result
-        Launcher.run_gui = patched_run_gui
-        _show_first_time_in_launcher()
-    except ImportError:
+        from Utils import messagebox
+        messagebox("Auto-Uploader Installed", text, error=False)
+    except Exception:
         pass
-    except Exception as e:
-        logger.warning(f"[ArchipelagoUploader] Failed to patch Launcher: {e}")
-
-
-def _show_first_time_in_launcher():
-    import threading, time
-    def show_prompt():
-        time.sleep(1)
-        try:
-            from Utils import messagebox
-            messagebox("Auto-Uploader Installed", "The Archipelago Auto-Uploader has been installed!\n\nTo configure it, edit your host.yaml file and look for the 'archipelago_uploader' section.\n\nNote: online-room mode requires a valid session key to create rooms on your behalf.", error=False)
-        except Exception:
-            pass
-    thread = threading.Thread(target=show_prompt, daemon=True)
-    thread.start()
 
 
 def _patch_multiserver_for_auto_local():
@@ -242,10 +235,12 @@ def _patch_multiserver_for_auto_local():
     _multiserver_patched = True
 
 
-# Initialize on module import
+# Initialize on module import. Import-time work is strictly headless (config
+# file + function patches): no app/window is created until _attempt_auto_upload
+# runs after a generation completes.
 _initialize_configuration()
+_first_time_install = _is_first_time_install()
 _patch_main_for_upload()
-_patch_launcher_for_first_time_prompt()
 _patch_multiserver_for_auto_local()
 logger.info("[ArchipelagoUploader] Ready")
 

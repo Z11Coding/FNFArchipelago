@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-"""Generation-stage tracking for APAPI.
-
-Tracks which world-generation stage is currently executing by wrapping
-``worlds.AutoWorld.call_all`` / ``call_single``. Safe to import from
-custom_worlds: it only adds wrappers, never edits core files.
-"""
+"""Generation stage tracking via AutoWorld call wrappers."""
 
 from collections.abc import Callable
 import functools
@@ -18,7 +13,6 @@ from .hard_patch import hard_patches
 
 logger = logging.getLogger("APAPI")
 
-#: Ordered generation stages as called from Main.main.
 KNOWN_STAGES = [
     "assert_generate",
     "generate_early",
@@ -35,7 +29,6 @@ KNOWN_STAGES = [
     "modify_multidata",
 ]
 
-#: A stage listener receives ``(multiworld, *args, **kwargs)``.
 StageCallback = Callable[..., None]
 
 _current_stage: str | None = None
@@ -44,25 +37,27 @@ _patched = False
 
 
 def get_current_stage(default: str | None = None) -> str | None:
-    """Return the generation stage currently executing, if known."""
+    """Input: default. Returns: current stage or default."""
     return _current_stage if _current_stage is not None else default
 
 
 def on_stage(stage: str, callback: StageCallback) -> None:
-    """Run ``callback(multiworld, *args)`` whenever ``stage`` starts."""
+    """Input: stage, callback. Returns: None (registers listener)."""
     _stage_listeners.setdefault(stage, []).append(callback)
     dprint("stages", f"listener registered for stage '{stage}'")
 
 
 def _notify_stage(stage: str, multiworld: Any, *args: Any) -> None:
+    """Input: stage, multiworld, args. Returns: None (fires listeners)."""
     for callback in list(_stage_listeners.get(stage, [])):
         try:
             callback(multiworld, *args)
-        except Exception as exc:  # never break generation for a listener
+        except Exception as exc:
             logger.warning("APAPI stage listener for %s failed: %s", stage, exc)
 
 
 def _wrap_call_all(next_callable: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Input: next_callable, args. Returns: result (tracks stage)."""
     global _current_stage
     method_name = args[1] if len(args) >= 2 else kwargs.get("method_name")
     multiworld = args[0] if args else kwargs.get("multiworld")
@@ -86,6 +81,7 @@ def _wrap_call_all(next_callable: Callable[..., Any], *args: Any, **kwargs: Any)
 
 
 def _wrap_call_single(next_callable: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Input: next_callable, args. Returns: result (tracks stage)."""
     global _current_stage
     method_name = args[1] if len(args) >= 2 else kwargs.get("method_name")
     previous = _current_stage
@@ -98,7 +94,7 @@ def _wrap_call_single(next_callable: Callable[..., Any], *args: Any, **kwargs: A
 
 
 def initialize_stage_tracking() -> None:
-    """Install wrappers around AutoWorld.call_all / call_single (idempotent)."""
+    """Input: None. Returns: None (installs wrappers, idempotent)."""
     global _patched
     if _patched:
         dprint("init", "stage tracking already initialized")
@@ -108,7 +104,6 @@ def initialize_stage_tracking() -> None:
         hard_patches.add_wrapper("worlds.AutoWorld.call_single", _wrap_call_single, load_missing=False)
         dprint("init", "stage tracking initialized")
     except Exception as exc:
-        # AutoWorld may not be importable yet in some contexts; retry lazily.
         dprint("init", f"stage tracking deferred ({exc})")
         try:
             hard_patches.add_wrapper("worlds.AutoWorld.call_all", _wrap_call_all, load_missing=True)

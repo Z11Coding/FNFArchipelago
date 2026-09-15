@@ -2,14 +2,82 @@ from __future__ import annotations
 
 from collections import OrderedDict
 import inspect
+import logging
+import time
 from typing import Dict, List, Type
 
 from BaseClasses import MultiWorld
-from Options import OptionGroup, PerGameCommonOptions
+from Options import OptionGroup, PerGameCommonOptions, Range
 from worlds.AutoWorld import AutoWorldRegister, WebWorld, WebWorldRegister
 
 from .debug import dprint
 from .injection import GameRef
+
+logger = logging.getLogger("APAPI.Options")
+
+
+class FlexibleRange(Range):
+    """
+    A Range that allows out-of-bounds values with warnings instead of hard errors.
+
+    Set ``allow_below_range`` / ``allow_above_range`` to permit values outside
+    the bounds (below-range is still rejected unless explicitly allowed).
+    When an out-of-bounds value is allowed, ``verify()`` warns; with
+    ``needs_confirmation`` (default) it prompts to proceed like normal,
+    otherwise it shows the warning for a moment and continues.
+    """
+    allow_below_range: bool = False
+    allow_above_range: bool = False
+    needs_confirmation: bool = True
+
+    def __init__(self, value: int):
+        # Check bounds but allow if configured to do so
+        if value < self.range_start:
+            if not self.allow_below_range:
+                raise Exception(f"{value} is lower than minimum {self.range_start} for option {self.__class__.__name__}")
+            else:
+                # Value is below range but allowed - store with warning
+                logger.warning(f"{self.__class__.__name__}: {value} is below recommended minimum of {self.range_start}")
+        elif value > self.range_end:
+            if not self.allow_above_range:
+                raise Exception(f"{value} is higher than maximum {self.range_end} for option {self.__class__.__name__}")
+            else:
+                # Value is above range but allowed - store with warning
+                logger.warning(f"{self.__class__.__name__}: {value} is above recommended maximum of {self.range_end}")
+        self.value = value
+
+    def _confirm_or_pause(self, warning_msg: str, player_name: str) -> None:
+        display_name = getattr(self, "display_name", self.__class__.__name__)
+        if self.needs_confirmation:
+            try:
+                response = input(warning_msg + "\nProceed? (y/n): ").strip().lower()
+            except (EOFError, OSError):
+                raise Exception(f"Generation cancelled for player {player_name}. "
+                                f"{display_name} out-of-bounds value was not able to be confirmed.")
+            if response != "y":
+                raise Exception(f"Generation cancelled for player {player_name}. "
+                                f"{display_name} out-of-bounds value was not confirmed.")
+        else:
+            # No confirmation needed: show the warning for a moment, then continue.
+            logger.warning(warning_msg + "Continuing generation.")
+            time.sleep(1)
+
+    def verify(self, world, player_name: str, plando_options) -> None:
+        """Warn about out-of-bounds values; confirm or pause, then continue."""
+        display_name = getattr(self, "display_name", self.__class__.__name__)
+
+        if self.value < self.range_start and self.allow_below_range:
+            self._confirm_or_pause(
+                f"Player {player_name}: {display_name} is set to {self.value}, which is below the recommended "
+                f"minimum of {self.range_start}. This may cause unexpected behavior. ",
+                player_name,
+            )
+        elif self.value > self.range_end and self.allow_above_range:
+            self._confirm_or_pause(
+                f"Player {player_name}: {display_name} is set to {self.value}, which is above the recommended "
+                f"maximum of {self.range_end}. This may cause unexpected behavior. ",
+                player_name,
+            )
 
 
 _registered_options: "OrderedDict[str, type]" = OrderedDict()

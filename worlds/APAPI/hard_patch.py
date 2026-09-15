@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Hard patch registry: wrapper-based patching for dotted targets."""
+
 from collections.abc import Callable
 import functools
 import importlib
@@ -13,11 +15,7 @@ Wrapper = Callable[[Callable[..., Any], Any], Any]
 
 
 def resolve_dotted_target(target_path: str, load_missing: bool = True) -> tuple[object, str, Callable[..., Any]]:
-    """
-    Resolve a dotted target path (e.g. Main.main, BaseClasses.MultiWorld.__init__).
-
-    Returns (owner, attribute_name, current_callable).
-    """
+    """Input: dotted path, load_missing. Returns: (owner, attr, callable)."""
     parts = target_path.split(".")
     if len(parts) < 2:
         raise ValueError(f"Invalid target path: {target_path}")
@@ -58,7 +56,7 @@ def resolve_dotted_target(target_path: str, load_missing: bool = True) -> tuple[
 
 
 class HardPatchRegistry:
-    """Central wrapper-based patch registry for hard-patching callables."""
+    """Input: patch ops. Output: patched callables via wrappers/before/after."""
 
     def __init__(self) -> None:
         self._originals: Dict[str, Callable[..., Any]] = {}
@@ -68,6 +66,7 @@ class HardPatchRegistry:
         self._targets: Dict[str, Tuple[object, str]] = {}
 
     def add_wrapper(self, target_path: str, wrapper: Callable[..., Any], load_missing: bool = True) -> None:
+        """Input: target, wrapper. Returns: None."""
         owner, attribute_name, current = resolve_dotted_target(target_path, load_missing=load_missing)
 
         if target_path not in self._originals:
@@ -82,7 +81,7 @@ class HardPatchRegistry:
         setattr(owner, attribute_name, rebuilt)
 
     def add_before(self, target_path: str, callback: Callable[..., Any], load_missing: bool = True) -> None:
-        """Register a hard patch callback that runs before the target callable executes."""
+        """Input: target, callback. Returns: None."""
         owner, attribute_name, current = resolve_dotted_target(target_path, load_missing=load_missing)
 
         if target_path not in self._originals:
@@ -97,7 +96,7 @@ class HardPatchRegistry:
         setattr(owner, attribute_name, rebuilt)
 
     def add_after(self, target_path: str, callback: Callable[..., Any], load_missing: bool = True) -> None:
-        """Register a hard patch callback that runs after the target callable executes."""
+        """Input: target, callback. Returns: None."""
         owner, attribute_name, current = resolve_dotted_target(target_path, load_missing=load_missing)
 
         if target_path not in self._originals:
@@ -112,6 +111,7 @@ class HardPatchRegistry:
         setattr(owner, attribute_name, rebuilt)
 
     def _build_callable(self, target_path: str) -> Callable[..., Any]:
+        """Input: target_path. Returns: rebuilt callable with hooks."""
         original = self._originals[target_path]
         wrappers = list(self._wrappers[target_path])
         before_hooks = list(self._before_hooks.get(target_path, []))
@@ -146,9 +146,11 @@ class HardPatchRegistry:
         return call_chain
 
     def get_original(self, target_path: str) -> Callable[..., Any] | None:
+        """Input: target_path. Returns: original callable or None."""
         return self._originals.get(target_path)
 
     def unpatch(self, target_path: str) -> bool:
+        """Input: target_path. Returns: True if unpatched."""
         if target_path not in self._originals:
             return False
         owner, attribute_name = self._targets[target_path]
@@ -161,6 +163,7 @@ class HardPatchRegistry:
         return True
 
     def list_targets(self) -> list[str]:
+        """Returns: sorted patched target paths."""
         return sorted(self._wrappers)
 
 
@@ -168,10 +171,12 @@ hard_patches = HardPatchRegistry()
 
 
 def register_before_patch(target_path: str, callback: Callable[..., Any], load_missing: bool = True) -> None:
+    """Input: target, callback, load_missing. Returns: None."""
     hard_patches.add_before(target_path, callback, load_missing=load_missing)
 
 
 def register_after_patch(target_path: str, callback: Callable[..., Any], load_missing: bool = True) -> None:
+    """Input: target, callback, load_missing. Returns: None."""
     hard_patches.add_after(target_path, callback, load_missing=load_missing)
 
 
@@ -181,11 +186,7 @@ def register_scoped_local_wrapper(
     local_wrapper_factory: Callable[[Callable[..., Any]], Callable[..., Any]],
     load_missing: bool = True,
 ) -> None:
-    """
-    Hard-patch a scoped local function declared inside a target function.
-
-    Example target/local pair: Main.main / write_multidata
-    """
+    """Input: target, local name, wrapper factory. Returns: None."""
 
     def scoped_wrapper(next_callable: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         patched_outer = wrap_runtime_local_function(next_callable, local_name, local_wrapper_factory)

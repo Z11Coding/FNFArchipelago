@@ -1,15 +1,6 @@
 from __future__ import annotations
 
-"""Centralized injection: the only place that waits for games or patches them.
-
-Add-on packs stay declarative (``inject_option`` / ``inject_world_behavior``);
-APAPI handles load-order waiting, patching, and option plumbing:
-
-- options apply now when loaded, later via ``when_game_available`` or the
-  register wrapper, with native ``__init__`` support (dataclass re-run) and
-  a cooperative ``set_options`` wrapper so values always land;
-- behavior patches are version-gated class patches firing on registration.
-"""
+"""Option and behavior injection into world classes."""
 
 import logging
 import threading
@@ -26,15 +17,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("APAPI.Injection")
 
-#: A game reference: either a game-name string (resolved via the registry,
-#: waiting if needed) or a world class directly when the caller has access.
-#: Union (not |) so this stays a runtime expression on every Python.
 GameRef = Union[str, "type[World]"]
 
 _registry_lock = threading.RLock()
-#: option_key -> option class, applied to every game.
 _global_options: dict[str, "type[Option[Any]]"] = {}
-#: game -> {option_key -> option class}, applied only to that game.
 _targeted_options: dict[str, dict[str, "type[Option[Any]]"]] = {}
 
 _register_patched = False
@@ -42,6 +28,7 @@ _set_options_wrapped = False
 
 
 def _clear_type_hint_cache() -> None:
+    """Input: None. Returns: None (clears option type hint cache)."""
     try:
         from Options import OptionsMetaProperty
         OptionsMetaProperty.type_hints.fget.cache_clear()
@@ -50,18 +37,14 @@ def _clear_type_hint_cache() -> None:
 
 
 def _pending_for_game(game: str) -> dict[str, "type[Option[Any]]"]:
+    """Input: game. Returns: merged pending options dict."""
     merged: dict[str, "type[Option[Any]]"] = dict(_global_options)
     merged.update(_targeted_options.get(game, {}))
     return merged
 
 
 def _resolve_target(ref: GameRef) -> "tuple[str, type[World] | None]":
-    """Normalize a game reference to ``(game_name, world_class_or_None)``.
-
-    Strings resolve via the registry (None when not loaded — caller queues).
-    Classes are used as-is since the caller already has access; the game
-    name comes from the class's ``game`` attribute.
-    """
+    """Input: game ref string/class. Returns: (name, class or None)."""
     if isinstance(ref, str):
         try:
             from worlds.AutoWorld import AutoWorldRegister
@@ -79,7 +62,7 @@ def _resolve_target(ref: GameRef) -> "tuple[str, type[World] | None]":
 
 
 def _apply_to_world(game: str, world_type: "type[World]") -> list[str]:
-    """Apply all pending injections for ``game`` to an already-created world class."""
+    """Input: game, world class. Returns: list of applied keys."""
     try:
         options_dc: Any = world_type.options_dataclass
     except Exception:
@@ -94,18 +77,11 @@ def _apply_to_world(game: str, world_type: "type[World]") -> list[str]:
     fields: Any = getattr(options_dc, "__dataclass_fields__", {})
     for key, option_class in pending.items():
         if key in annotations and key in fields:
-            continue  # already natively supported
+            continue
         annotations[key] = option_class
         applied.append(key)
     if not applied:
         return []
-    # Re-run dataclass processing so the generated __init__ natively accepts
-    # the new keys (NoLogic achieves the same for future worlds via
-    # __init_subclass__; post-hoc re-run is the targeted equivalent).
-    # NOTE: dataclass() never overwrites an existing __init__/__repr__/__eq__
-    # (_set_new_attribute guard), so those generated members must be removed
-    # first. Option containers never define custom ones (verified by scan),
-    # and originals are restored if regeneration fails.
     saved_dunder: dict[str, Any] = {}
     try:
         import dataclasses
@@ -138,7 +114,7 @@ def _apply_to_world(game: str, world_type: "type[World]") -> list[str]:
 
 
 def _sync_web_groups_for_world(game: str, world_type: "type[World]") -> None:
-    """Insert injection option groups into the world's web option groups."""
+    """Input: game, world class. Returns: None (syncs web groups)."""
     try:
         from .options_api import _build_group, _group_names, _insert_group_into
     except Exception:
@@ -163,7 +139,7 @@ def _sync_web_groups_for_world(game: str, world_type: "type[World]") -> None:
 
 
 def _patch_autoworld_register() -> None:
-    """Wrap the world metaclass so later-registered worlds get pending injections."""
+    """Input: None. Returns: None (wraps AutoWorldRegister)."""
     global _register_patched
     if _register_patched:
         return
@@ -195,7 +171,7 @@ def _patch_autoworld_register() -> None:
 
 
 def _attach_injected_values(multiworld: "MultiWorld", args: Any) -> None:
-    """Attach injected option values to each world (runs after real set_options)."""
+    """Input: multiworld, args. Returns: None (attaches option values)."""
     with _registry_lock:
         snapshot: dict[str, dict[str, type]] = {game: dict(options)
                                                 for game, options in _targeted_options.items()}
@@ -213,7 +189,7 @@ def _attach_injected_values(multiworld: "MultiWorld", args: Any) -> None:
             continue
         for key, option_class in pending.items():
             if hasattr(world.options, key):
-                continue  # native or previously attached value wins
+                continue
             value: Any = None
             try:
                 per_player: Any = getattr(args, key, None)
@@ -232,7 +208,7 @@ def _attach_injected_values(multiworld: "MultiWorld", args: Any) -> None:
 
 
 def _install_set_options_wrapper() -> None:
-    """Wrap MultiWorld.set_options outermost so injected values always land."""
+    """Input: None. Returns: None (wraps MultiWorld.set_options)."""
     global _set_options_wrapped
     if _set_options_wrapped:
         return
@@ -266,16 +242,7 @@ def inject_option(
     group_name: str = "APAPI Add-On Options",
     start_collapsed: bool = True,
 ) -> None:
-    """Inject ``option_class`` under ``option_key`` so it acts native to those games.
-
-    Each entry of ``games`` may be a game-name string (resolved via the
-    registry, waiting if needed) or a world class directly when the caller
-    already has access to it. ``games=None`` means every game (global, like
-    No Logic's meta options). APAPI exclusively handles waiting: loaded
-    worlds (or given classes) are patched now, missing names via
-    :func:`when_game_available`, future worlds via the register wrapper.
-    Generation ``args`` values are attached cooperatively at ``set_options``.
-    """
+    """Input: key, class, games, group, collapsed. Returns: None."""
     from .options_api import (
         _group_names,
         _patch_multiworld_set_options,
@@ -309,8 +276,6 @@ def inject_option(
     _patch_autoworld_register()
     _patch_webworld_register()
     _sync_webworld_groups()
-    # Keep the legacy overflow path available for already-compiled dataclasses
-    # whose re-run failed; harmless otherwise (flag-guarded, runs once).
     try:
         _patch_multiworld_set_options()
     except Exception:
@@ -339,7 +304,6 @@ def inject_option(
         name, world_type = _resolve_target(entry)
         names.append(name)
         if world_type is not None:
-            # Covers both given classes (access exists) and loaded names.
             with _registry_lock:
                 _apply_to_world(name, world_type)
         else:
@@ -374,14 +338,7 @@ def inject_world_behavior(
     min_version: str | tuple[int, int, int] | None = None,
     max_version: str | tuple[int, int, int] | None = None,
 ) -> None:
-    """Queue a version-gated class-level behavior patch for ``game``.
-
-    ``game`` may be a game-name string (patch fires via
-    :func:`when_game_available`, so import order can never prevent it) or a
-    world class directly when the caller already has access to it (patched
-    immediately, no waiting). Out-of-range versions log a warning but still
-    apply.
-    """
+    """Input: game, method, hooks, version range. Returns: None (queues patch)."""
     from .world_hooks import patch_world_class_method
 
     def _apply(name: str, world_type: "type[World] | None") -> None:
@@ -405,17 +362,15 @@ def inject_world_behavior(
 
     name, world_type = _resolve_target(game)
     if world_type is not None and not isinstance(game, str):
-        # Direct class access: patch now, no waiting involved.
         _apply(name, world_type)
         dprint("inject", f"behavior {name}.{method_name} applied directly")
         return
-    # Name strings always go through the queue (immediate when loaded).
     when_game_available(name, lambda found: _apply(name, found))
     dprint("inject", f"behavior {name}.{method_name} queued")
 
 
 def list_injected_options() -> dict[str, list[str]]:
-    """Return ``{game: [keys]}`` of targeted injections plus ``{'*': [...]}`` globals."""
+    """Returns: {game: [keys]} plus {'*': globals}."""
     with _registry_lock:
         result: dict[str, list[str]] = {"*": sorted(_global_options)}
         for game, options in _targeted_options.items():

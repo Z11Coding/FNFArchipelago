@@ -1,0 +1,18 @@
+name: Myst
+game: Mystery Game
+Mystery Game:
+  game_counts:
+    TUNIC: 1
+    Ship of Harkinian: 1
+    2 Ship 2 Harkinian (MM): 1
+  game_options:
+    TUNIC:
+      hexagon_quest: true
+      hexagon_goal: 30
+      grass_randomizer: true
+  slot_options:
+    "TUNIC 1":
+      hexagon_goal: 10
+  slot_lock_mode: frozen
+  enable_unlocks: true
+  puzzle_count: 0

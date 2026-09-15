@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Runtime patching for local functions via sys.settrace."""
+
 from collections.abc import Callable
 import functools
 import logging
@@ -15,11 +17,7 @@ def wrap_runtime_local_function(
     local_name: str,
     wrapper_factory: Callable[[Callable[..., Any]], Callable[..., Any]],
 ) -> Callable[..., Any]:
-    """
-    Experimental helper for patching a lexical local function at runtime.
-
-    This is best-effort only. Python may not propagate writes to frame locals in all contexts.
-    """
+    """Input: outer func, local name, wrapper factory. Returns: wrapped outer func."""
 
     @functools.wraps(outer_function)
     def wrapped_outer(*args: Any, **kwargs: Any) -> Any:

@@ -1,16 +1,6 @@
 from __future__ import annotations
 
-"""Run-state capture for APAPI: spoiler/output settings of this generation.
-
-``Main.main(args, ...)`` owns the spoiler/output flags (``args.spoiler``,
-``args.skip_output``, ``args.spoiler_only``), but worlds never see ``args``.
-This module captures them with a chained wrapper installed by a deferred
-thread once ``Main`` is imported (mirroring the existing scoped-wrapper
-pattern), so worlds can ask e.g. whether a spoiler file will be written.
-
-All getters return ``None`` when nothing was captured (unit tests, tracker
-fake-gens, or Main never running) — callers must fail open.
-"""
+"""Run-state capture for spoiler/output flags."""
 
 import logging
 import sys
@@ -29,6 +19,7 @@ _captured: dict[str, Any] | None = None
 
 
 def _capture_wrapper(next_callable: Any, *args: Any, **kwargs: Any) -> Any:
+    """Input: next_callable, args. Returns: result (captures flags)."""
     global _captured
     raw_args: Any = args[0] if args else kwargs.get("args")
     try:
@@ -45,6 +36,7 @@ def _capture_wrapper(next_callable: Any, *args: Any, **kwargs: Any) -> Any:
 
 
 def _install_deferred() -> None:
+    """Input: None. Returns: None (installs wrapper when Main loads)."""
     for _ in range(240):
         if "Main" in sys.modules:
             try:
@@ -58,7 +50,7 @@ def _install_deferred() -> None:
 
 
 def ensure_run_info() -> None:
-    """Start the deferred capture worker (idempotent)."""
+    """Input: None. Returns: None (starts worker, idempotent)."""
     global _worker_started
     if _worker_started:
         return
@@ -68,20 +60,20 @@ def ensure_run_info() -> None:
 
 
 def get_run_flags() -> dict[str, Any] | None:
-    """Captured ``Main.main`` flags, or None when unknown."""
+    """Returns: captured flags or None."""
     ensure_run_info()
     with _lock:
         return dict(_captured) if _captured is not None else None
 
 
 def get_spoiler_level() -> int | None:
-    """Spoiler verbosity (``args.spoiler``), or None when unknown."""
+    """Returns: spoiler level or None."""
     flags: dict[str, Any] | None = get_run_flags()
     return int(flags["spoiler"]) if flags is not None else None
 
 
 def is_output_enabled() -> bool | None:
-    """False when output is skipped; None when unknown."""
+    """Returns: False if skipped, True if enabled, None if unknown."""
     flags: dict[str, Any] | None = get_run_flags()
     if flags is None:
         return None

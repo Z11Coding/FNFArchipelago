@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Core hook registration and patching for APAPI."""
+
 import logging
 import threading
 import time
@@ -66,6 +68,7 @@ _pending_after: dict[str, list[Callable[..., Any]]] = {}
 
 
 def _make_soft_wrapper(hook_name: str) -> Callable[..., Any]:
+    """Input: hook_name. Returns: wrapper callable."""
     def wrapper(next_callable: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         soft_hooks.run_before(hook_name, *args, **kwargs)
         result = next_callable(*args, **kwargs)
@@ -76,6 +79,7 @@ def _make_soft_wrapper(hook_name: str) -> Callable[..., Any]:
 
 
 def initialize_core_hooks() -> None:
+    """Input: None. Returns: None (installs core hooks)."""
     global _initialized
     global _worker_started
 
@@ -95,6 +99,7 @@ def initialize_core_hooks() -> None:
 
 
 def _patch_loaded_targets() -> None:
+    """Input: None. Returns: None (patches loaded targets)."""
     for hook_name, spec in CORE_HOOK_SPECS.items():
         target_path = spec["target"]
         if target_path in _patched_targets:
@@ -116,11 +121,11 @@ def _patch_loaded_targets() -> None:
             _patched_targets.add(target_path)
             dprint("hooks", f"core hook '{hook_name}' -> {target_path} patched successfully")
         except Exception:
-            # Not loaded yet (or currently inaccessible); the deferred worker will retry.
             continue
 
 
 def _deferred_patch_worker() -> None:
+    """Input: None. Returns: None (retries patching in background)."""
     for _ in range(240):
         _patch_loaded_targets()
         if len(_patched_targets) == len(CORE_HOOK_SPECS):
@@ -134,6 +139,7 @@ def _deferred_patch_worker() -> None:
 
 
 def register_soft_before(hook_name: str, callback: Callable[..., Any]) -> None:
+    """Input: hook_name, callback. Returns: None."""
     try:
         soft_hooks.register_before(hook_name, callback)
     except KeyError:
@@ -143,6 +149,7 @@ def register_soft_before(hook_name: str, callback: Callable[..., Any]) -> None:
 
 
 def register_soft_after(hook_name: str, callback: Callable[..., Any]) -> None:
+    """Input: hook_name, callback. Returns: None."""
     try:
         soft_hooks.register_after(hook_name, callback)
     except KeyError:
@@ -152,8 +159,10 @@ def register_soft_after(hook_name: str, callback: Callable[..., Any]) -> None:
 
 
 def register_hard_wrapper(target_path: str, wrapper: Callable[..., Any]) -> None:
+    """Input: target_path, wrapper. Returns: None."""
     hard_patches.add_wrapper(target_path, wrapper)
 
 
 def list_core_hook_points() -> list[str]:
+    """Returns: sorted hook point names."""
     return sorted(set(soft_hooks.list_points()) | set(CORE_HOOK_TARGETS))

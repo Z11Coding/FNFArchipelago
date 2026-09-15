@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-"""Logical analysis helpers for APAPI.
-
-- ``sphere_summary`` / ``blockade_summary`` answer "what do spheres look like
-  with a given inventory" and "when do the first blockades appear".
-- Implemented read-only on top of ``CollectionState`` so add-on worlds never
-  mutate generation state.
-"""
+"""Logic analysis helpers for sphere and blockade queries."""
 
 from collections import Counter
 from copy import deepcopy
@@ -17,6 +11,7 @@ if TYPE_CHECKING:
 
 
 def _clone_state(multiworld: "MultiWorld") -> "CollectionState":
+    """Input: multiworld. Returns: cloned CollectionState."""
     state = multiworld.get_all_state()
     try:
         return state.copy()
@@ -30,12 +25,7 @@ def sphere_summary_with_inventory(
     extra_items: dict[str, int] | None = None,
     max_spheres: int = 25,
 ) -> list[dict[str, Any]]:
-    """Simulate reachability for ``player`` with ``extra_items`` added.
-
-    Returns a list of ``{"sphere": i, "reachable_locations": [...],
-    "newly_reachable": [...]}``. Locations are identified by name. This does
-    not modify the real state.
-    """
+    """Input: multiworld, player, extra_items, max_spheres. Returns: sphere list."""
     from BaseClasses import ItemClassification
 
     state = _clone_state(multiworld)
@@ -47,7 +37,6 @@ def sphere_summary_with_inventory(
                 item = world.create_item(name)
             except Exception:
                 break
-            # Force ownership to this player for the simulation.
             item.player = player
             state.collect(item, prevent_sweep=True)
     try:
@@ -70,7 +59,6 @@ def sphere_summary_with_inventory(
         seen.update(newly)
         if not newly:
             break
-        # Advance one step: collect everything newly reachable (progression only).
         progressed = False
         for loc in list(multiworld.get_locations()):
             if loc.player == player and loc.name in newly and loc.item:
@@ -92,12 +80,7 @@ def sphere_summary_with_inventory(
 def first_blockades(
     multiworld: "MultiWorld", player: int, limit: int = 10
 ) -> list[dict[str, Any]]:
-    """Return locations of ``player`` that are unreachable with starting inventory.
-
-    Each entry is ``{"location": name, "requires": [missing item names]}``.
-    Best-effort: uses the world's ``get_rule`` closure source is opaque, so we
-    report which progression items exist in the pool but are not yet held.
-    """
+    """Input: multiworld, player, limit. Returns: blocked locations."""
     state = _clone_state(multiworld)
     blocked = []
     for loc in multiworld.get_locations():

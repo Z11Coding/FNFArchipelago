@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""APAPI package exports."""
+
 from .core_hooks import (
     CORE_HOOK_TARGETS,
     initialize_core_hooks,
@@ -37,6 +39,7 @@ from .run_info import ensure_run_info, get_run_flags, get_spoiler_level, is_outp
 from .logic_api import first_blockades, sphere_summary_with_inventory
 from .nested_hooks import wrap_runtime_local_function
 from .options_api import (
+    FlexibleRange,
     list_global_options,
     register_global_option,
     register_global_options,
@@ -80,6 +83,8 @@ from .playthrough_model import (
     decompose_logical_spheres,
 )
 from .soft_patch import FuncStack
+from .appack import install_appack, list_top_level_folders
+from .loader import initialize as initialize_appack_loader, install_appack_ui, scan_and_unpack_pending
 
 
 __all__ = [
@@ -101,6 +106,7 @@ __all__ = [
     "register_main_write_multidata_before",
     "register_main_write_multidata_after",
     "set_current_multiworld",
+    "FlexibleRange",
     "register_global_option",
     "register_global_options",
     "register_option_for_games",
@@ -163,11 +169,16 @@ __all__ = [
     "build_playthrough_model",
     "decompose_logical_spheres",
     "wrap_runtime_local_function",
+    "install_appack",
+    "list_top_level_folders",
+    "initialize_appack_loader",
+    "install_appack_ui",
+    "scan_and_unpack_pending",
 ]
 
 
-# Auto-activate APAPI core hooks when the world package is imported.
 initialize_core_hooks()
 initialize_multiworld_features()
 initialize_stage_tracking()
 ensure_run_info()
+initialize_appack_loader()

@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-"""Version-aware helpers for APAPI consumers.
-
-Custom worlds evolve outside this repo (e.g. TUNIC has newer versions
-elsewhere). These helpers let add-on worlds gate behavior on the loaded
-world's version without importing that world directly.
-"""
+"""Version helpers for checking loaded world versions."""
 
 from typing import Any
 
@@ -14,7 +9,7 @@ from Utils import Version
 
 
 def get_world_version(game: str) -> Version | None:
-    """Return the loaded world's ``world_version``, or None if unknown."""
+    """Input: game name. Returns: Version or None."""
     world_type = AutoWorldRegister.world_types.get(game)
     if world_type is None:
         return None
@@ -32,7 +27,7 @@ def check_world_version(
     min_version: str | tuple[int, int, int] | Version | None = None,
     max_version: str | tuple[int, int, int] | Version | None = None,
 ) -> bool:
-    """True if the loaded ``game`` world version is within [min, max]."""
+    """Input: game, min/max version. Returns: True if version in range."""
 
     def _coerce(value: Any) -> Version | None:
         if value is None:
@@ -60,6 +55,7 @@ def check_world_version(
 
 
 def is_game_loaded(game: str) -> bool:
+    """Input: game name. Returns: True if loaded."""
     return game in AutoWorldRegister.world_types
 
 

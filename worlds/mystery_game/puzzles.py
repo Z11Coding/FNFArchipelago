@@ -1,34 +1,6 @@
 from __future__ import annotations
 
-"""Dynamic items/locations for Mystery Game (No Logic style).
-
-``item_name_to_id`` / ``location_name_to_id`` must be complete at import
-time (the datapackage is built right after all worlds load), but the actual
-puzzles are per-seed. Like No Logic, we therefore:
-
-- reserve fixed ID blocks at import (puzzle completion items/locations,
-  unlock items/locations, plus per-puzzle piece and hint items),
-- scan ``<player_files_path>/mystery/*.yaml`` for puzzle packs when
-  available. Each doc may be ``{puzzles: [...]}`` or a plain list, and each
-  entry may be a bare name or a mapping::
-
-      puzzles:
-        - "Riddle of Echoes"                      # bare name
-        - name: "The Silent Vault"                # full pack entry
-          pieces: 4                               # piece items required (else the option)
-          hints:
-            - "It echoes where water falls."
-            - "Count the bells, then subtract one."
-
-- fill the rest with generic ``Puzzle <n>`` entries up to ``MAX_PUZZLES``,
-  after the world-shipped ``puzzle_packs/`` (player packs win ties and come
-  first in the roster),
-- always reserve generic ``Unlock Slot <n>`` entries up to
-  ``MAX_UNLOCK_SLOTS`` (per-seed slot mapping happens in ``generate_early``).
-
-Piece/hint item names are static per ``(puzzle, index)`` (``#i``); how many
-of them a seed uses comes from options/pack data at generation time.
-"""
+"""Mystery puzzles: reserves fixed ID blocks and builds roster from packs."""
 
 import logging
 from pathlib import Path
@@ -48,7 +20,7 @@ logger = logging.getLogger("APAPI.MysteryGame")
 
 MYSTERY_BASE_ID: int = 1_000_000
 MAX_PUZZLES: int = 64
-MAX_UNLOCK_SLOTS: int = 32
+MAX_UNLOCK_SLOTS: int = 100
 MAX_PIECES: int = 8
 MAX_HINTS: int = 8
 
@@ -62,29 +34,42 @@ HINT_ITEM_BASE: int = MYSTERY_BASE_ID + 5_000
 MYSTERY_TOKEN_ITEM: str = "Mystery Token"
 MYSTERY_TOKEN_ID: int = MYSTERY_BASE_ID + 9_000
 
+EXTRA_LIFE_ITEM: str = "Extra Life"
+EXTRA_LIFE_ID: int = MYSTERY_BASE_ID + 6_000
+
 
 def puzzle_item_name(puzzle: str) -> str:
-    """Item granted when a puzzle is solved."""
+    """Input: puzzle. Returns: item name for solving it."""
     return f"Puzzle Complete: {puzzle}"
 
 
 def puzzle_location_name(puzzle: str) -> str:
-    """Checkable location for a puzzle."""
+    """Input: puzzle. Returns: location name for solving it."""
     return f"Solve Puzzle: {puzzle}"
 
 
 def unlock_item_name(index: int) -> str:
-    """Item that unlocks scrambled slot number ``index`` (1-based)."""
+    """Input: 1-based index. Returns: unlock item name (generic)."""
     return f"Unlock Slot {index}"
 
 
 def unlock_location_name(index: int) -> str:
-    """Location holding the unlock item for scrambled slot ``index``."""
+    """Input: 1-based index. Returns: unlock location name (generic)."""
     return f"Unlock Check: Slot {index}"
 
 
+def unlock_item_name_for_slot(slot_name: str) -> str:
+    """Input: slot name. Returns: unlock item name for that specific slot."""
+    return f"Unlock Slot {slot_name}"
+
+
+def unlock_location_name_for_slot(slot_name: str) -> str:
+    """Input: slot name. Returns: unlock location name for that specific slot."""
+    return f"Unlock Check: {slot_name}"
+
+
 def _parse_pack_entry(entry: Any) -> tuple[str, list[str], int | None] | None:
-    """Parse one puzzle entry into ``(name, hints, pieces_override)``."""
+    """Input: pack entry. Returns: (name, hints, pieces) or None."""
     if isinstance(entry, str) and entry.strip():
         return entry.strip(), [], None
     if isinstance(entry, dict):
@@ -104,7 +89,7 @@ def _parse_pack_entry(entry: Any) -> tuple[str, list[str], int | None] | None:
 
 def _collect_pack_docs(docs: list[Any], names: list[str],
                        hints: dict[str, list[str]], pieces: dict[str, int]) -> None:
-    """Fold parsed YAML docs into the pack tables (first-seen wins)."""
+    """Input: docs, names, hints, pieces. Output: folds docs into tables."""
     for document in docs:
         candidates: Any = document.get("puzzles") if isinstance(document, dict) else document
         if not isinstance(candidates, list):
@@ -123,7 +108,7 @@ def _collect_pack_docs(docs: list[Any], names: list[str],
 
 
 def _builtin_pack_docs() -> list[Any]:
-    """Parse the world-shipped packs (zip-safe via importlib.resources)."""
+    """Returns: world-shipped pack docs."""
     docs: list[Any] = []
     try:
         from importlib import resources
@@ -144,7 +129,6 @@ def _builtin_pack_docs() -> list[Any]:
             return docs
     except Exception:
         pass
-    # Loose-folder fallback for unusual loaders.
     try:
         folder = Path(__file__).parent / "puzzle_packs"
         if folder.is_dir():
@@ -160,12 +144,7 @@ def _builtin_pack_docs() -> list[Any]:
 
 
 def discover_puzzle_packs() -> tuple[list[str], dict[str, list[str]], dict[str, int]]:
-    """Puzzle packs: player files first (they win ties), then built-in packs.
-
-    Returns ``(names, hints_by_puzzle, pieces_by_puzzle)``; generic fill
-    happens in :func:`build_puzzle_roster`. Backwards compatible with
-    bare-name lists.
-    """
+    """Returns: (names, hints_by_puzzle, pieces_by_puzzle). Player packs first."""
     names: list[str] = []
     hints: dict[str, list[str]] = {}
     pieces: dict[str, int] = {}
@@ -189,13 +168,13 @@ def discover_puzzle_packs() -> tuple[list[str], dict[str, list[str]], dict[str, 
 
 
 def discover_puzzle_names() -> list[str]:
-    """Named puzzles from ``Players/mystery/*.yaml`` (empty when none found)."""
+    """Returns: named puzzles from Players/mystery."""
     names, _hints, _pieces = discover_puzzle_packs()
     return names
 
 
 def build_puzzle_roster(custom: list[str] | None = None) -> list[str]:
-    """Full puzzle roster: custom names first, generic fill up to MAX_PUZZLES."""
+    """Input: custom names. Returns: roster padded with generic Puzzle N to MAX_PUZZLES."""
     roster: list[str] = list(custom or [])
     index: int = 1
     while len(roster) < MAX_PUZZLES:
@@ -211,8 +190,8 @@ PUZZLE_ROSTER: list[str] = build_puzzle_roster(_PACK_NAMES)
 
 
 def build_item_name_to_id() -> dict[str, int]:
-    """Import-time item table (static IDs so the datapackage is stable)."""
-    table: dict[str, int] = {MYSTERY_TOKEN_ITEM: MYSTERY_TOKEN_ID}
+    """Returns: import-time item table with static IDs."""
+    table: dict[str, int] = {MYSTERY_TOKEN_ITEM: MYSTERY_TOKEN_ID, EXTRA_LIFE_ITEM: EXTRA_LIFE_ID}
     for index, puzzle in enumerate(PUZZLE_ROSTER):
         table[puzzle_item_name(puzzle)] = PUZZLE_ITEM_BASE + index
         for piece in range(1, MAX_PIECES + 1):
@@ -225,7 +204,7 @@ def build_item_name_to_id() -> dict[str, int]:
 
 
 def build_location_name_to_id() -> dict[str, int]:
-    """Import-time location table (static IDs so the datapackage is stable)."""
+    """Returns: import-time location table with static IDs."""
     table: dict[str, int] = {}
     for index, puzzle in enumerate(PUZZLE_ROSTER):
         table[puzzle_location_name(puzzle)] = PUZZLE_LOCATION_BASE + index
@@ -253,4 +232,6 @@ __all__ = [
     "puzzle_location_name",
     "unlock_item_name",
     "unlock_location_name",
+    "unlock_item_name_for_slot",
+    "unlock_location_name_for_slot",
 ]

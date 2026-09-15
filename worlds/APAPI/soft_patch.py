@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Soft hook stacks and registry for before/after hooks."""
+
 from collections.abc import Callable, Mapping, Sequence
 import inspect
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union, get_type_hints
@@ -10,6 +12,7 @@ ReturnAsType = Union[Type[list], Type[dict]]
 
 
 def _is_mapping_type(tp: type) -> bool:
+    """Input: type. Returns: True if Mapping."""
     try:
         return issubclass(tp, Mapping)
     except TypeError:
@@ -17,6 +20,7 @@ def _is_mapping_type(tp: type) -> bool:
 
 
 def _is_sequence_type(tp: type) -> bool:
+    """Input: type. Returns: True if Sequence."""
     try:
         return issubclass(tp, Sequence)
     except TypeError:
@@ -24,7 +28,7 @@ def _is_sequence_type(tp: type) -> bool:
 
 
 class FuncStack(list, Generic[T]):
-    """A function stack that can collect results and enforce return types."""
+    """Function stack with return type enforcement."""
 
     def __init__(self, return_as: ReturnAsType = list, global_return_type: Optional[type] = None) -> None:
         super().__init__()
@@ -38,6 +42,7 @@ class FuncStack(list, Generic[T]):
         self.func_type_constraints: Dict[Callable, Optional[type]] = {}
 
     def _extract_return_type(self, func: Callable) -> Optional[type]:
+        """Input: func. Returns: return annotation or None."""
         try:
             hints = get_type_hints(func)
             return_type = hints.get("return")
@@ -48,6 +53,7 @@ class FuncStack(list, Generic[T]):
         return None
 
     def push(self, func: Callable, return_type: Optional[type] = None) -> None:
+        """Input: func, return_type. Returns: None."""
         self.append(func)
         if return_type is not None:
             self.func_type_constraints[func] = return_type
@@ -55,6 +61,7 @@ class FuncStack(list, Generic[T]):
             self.func_type_constraints[func] = self._extract_return_type(func)
 
     def pop(self) -> Optional[Callable]:
+        """Returns: popped func or None."""
         if self:
             func = super().pop()
             self.func_type_constraints.pop(func, None)
@@ -62,6 +69,7 @@ class FuncStack(list, Generic[T]):
         return None
 
     def __call__(self, *args: Any, **kwargs: Any) -> Union[List[Any], Dict[str, Any]]:
+        """Input: args. Returns: collected results."""
         is_mapping = _is_mapping_type(self.return_as)
         results = {} if is_mapping else []
 
@@ -84,6 +92,7 @@ class FuncStack(list, Generic[T]):
         return results
 
     def as_generator(self, *args: Any, **kwargs: Any) -> Any:
+        """Input: args. Returns: generator yielding results."""
         for i, func in enumerate(self.copy()):
             result = func(*args, **kwargs)
             expected_type = self.func_type_constraints.get(func) or self.global_return_type
@@ -96,6 +105,7 @@ class FuncStack(list, Generic[T]):
             yield result
 
     def combine_to_single_function(self) -> Callable:
+        """Returns: single callable combining all funcs."""
         functions_copy = list(self).copy()
         constraints_copy = dict(self.func_type_constraints).copy()
         return_as_type = self.return_as
@@ -127,6 +137,7 @@ class FuncStack(list, Generic[T]):
 
 
 def _required_call_from_signature(signature: inspect.Signature) -> tuple[list[Any], dict[str, Any]]:
+    """Input: signature. Returns: (args, kwargs) for validation."""
     sentinel = object()
     args: list[Any] = []
     kwargs: dict[str, Any] = {}
@@ -143,7 +154,7 @@ def _required_call_from_signature(signature: inspect.Signature) -> tuple[list[An
 
 
 def validate_hook_signature(target: Callable[..., Any], hook: Callable[..., Any]) -> None:
-    """Validate that hook can be called with the target's required arguments."""
+    """Input: target, hook. Returns: None (raises if incompatible)."""
     target_sig = inspect.signature(target)
     hook_sig = inspect.signature(hook)
     args, kwargs = _required_call_from_signature(target_sig)
@@ -157,7 +168,7 @@ def validate_hook_signature(target: Callable[..., Any], hook: Callable[..., Any]
 
 
 class SoftHookPoint:
-    """A named soft hook point with before/after function stacks."""
+    """Named hook point with before/after stacks."""
 
     def __init__(
         self,
@@ -172,15 +183,19 @@ class SoftHookPoint:
         self.after = FuncStack(return_as=list, global_return_type=after_return_type)
 
     def register_before(self, hook: Callable[..., Any]) -> None:
+        """Input: hook. Returns: None."""
         validate_hook_signature(self.target, hook)
         self.before.push(hook)
 
     def register_after(self, hook: Callable[..., Any]) -> None:
+        """Input: hook. Returns: None."""
         validate_hook_signature(self.target, hook)
         self.after.push(hook)
 
 
 class SoftHookRegistry:
+    """Registry of named soft hook points."""
+
     def __init__(self) -> None:
         self._points: dict[str, SoftHookPoint] = {}
 
@@ -191,6 +206,7 @@ class SoftHookRegistry:
         before_return_type: Optional[type] = None,
         after_return_type: Optional[type] = None,
     ) -> SoftHookPoint:
+        """Input: name, target, types. Returns: point."""
         point = self._points.get(name)
         if point is None:
             point = SoftHookPoint(
@@ -209,30 +225,35 @@ class SoftHookRegistry:
         return point
 
     def register_before(self, name: str, hook: Callable[..., Any]) -> None:
+        """Input: name, hook. Returns: None."""
         point = self._points.get(name)
         if point is None:
             raise KeyError(f"Soft hook point {name} is not registered.")
         point.register_before(hook)
 
     def register_after(self, name: str, hook: Callable[..., Any]) -> None:
+        """Input: name, hook. Returns: None."""
         point = self._points.get(name)
         if point is None:
             raise KeyError(f"Soft hook point {name} is not registered.")
         point.register_after(hook)
 
     def run_before(self, name: str, *args: Any, **kwargs: Any) -> List[Any]:
+        """Input: name, args. Returns: before results."""
         point = self._points.get(name)
         if point is None:
             return []
         return point.before(*args, **kwargs)
 
     def run_after(self, name: str, *args: Any, **kwargs: Any) -> List[Any]:
+        """Input: name, args. Returns: after results."""
         point = self._points.get(name)
         if point is None:
             return []
         return point.after(*args, **kwargs)
 
     def list_points(self) -> list[str]:
+        """Returns: sorted point names."""
         return sorted(self._points)
 
 

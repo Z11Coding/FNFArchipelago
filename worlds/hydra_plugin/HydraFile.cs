@@ -3,6 +3,10 @@ using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using BinaryReader = System.IO.BinaryReader;
+using Stream = System.IO.Stream;
+using DeflateStream = System.IO.Compression.DeflateStream;
+using MemoryStream = System.IO.MemoryStream;
 
 /// <summary>
 /// Mini reader for Archipelago <c>.hydra</c> files (see worlds/hydra_plugin).
@@ -14,7 +18,7 @@ using System.Text;
 ///   nonce_len u16 + nonce bytes (per-file random),
 ///   payload_len u64 + payload bytes (raw-deflate compressed, then
 ///   XORed with SHA256(key || nonce || counter_be64) keystream).
-/// Only BCL types are used (no NuGet packages).
+/// (In case you are curious.)
 /// </summary>
 public sealed class HydraFile
 {
@@ -26,7 +30,7 @@ public sealed class HydraFile
     public byte[] Nonce { get; private set; } = Array.Empty<byte>();
     public byte Flags { get; private set; }
 
-    /// <summary>Decrypted + decompressed JSON payload.</summary>
+    /// <summary>Decrypted + decompressed JSON.</summary>
     public string Json { get; private set; } = "";
 
     public bool Compressed => (Flags & 0x01) != 0;
@@ -128,7 +132,6 @@ public sealed class HydraFile
 
     private static byte[] Inflate(byte[] data)
     {
-        // Python writes raw deflate (zlib wbits -15); DeflateStream reads exactly that.
         using var input = new MemoryStream(data, writable: false);
         using var deflate = new DeflateStream(input, CompressionMode.Decompress);
         using var output = new MemoryStream();
