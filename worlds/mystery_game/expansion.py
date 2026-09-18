@@ -919,7 +919,7 @@ def build_mystery_specs(args: GenArgs, seed: Any) -> list[Any]:
             while True:
                 _attempts += 1
                 if _attempts > 80:
-                    # Fall back to old deterministic scheme to guarantee termination.
+                    # Fallback to old deterministic scheme to guarantee termination.
                     if kind == "count":
                         game_counters[game] = game_counters.get(game, 0) + 1
                         _auto_idx = game_counters[game] - 1

@@ -147,17 +147,6 @@ try:
 except Exception:
     pass
 
-# Bridge to Universal Tracker via APAPI (optional, only if tracker installed)
-try:
-    from . import tracker_bridge  # noqa: F401
-except Exception:
-    pass
-
-try:
-    from . import custom_goal  # noqa: F401
-except Exception:
-    pass
-
 
 class MysteryWeb(WebWorld):
     """Web integration for Mystery Game."""
@@ -212,7 +201,7 @@ class MysteryGameWorld(World):
         self.nuzlocke_lives_per_slot: dict[str, int] = {}
         self.nuzlocke_extra_lives: int = 0
         self.nuzlocke_extra_distribution: int = 0
-        self.nuzlocke_extra_assignments: list[str] = []                                                
+        self.nuzlocke_extra_assignments: list[str] = []  # for specific mode: slot per extra life index
         self.nuzlocke_shared_lives: bool = False
         self.nuzlocke_shared_extra_lives: bool = False
         self.game_code_sets: dict[str, str] = {}
@@ -461,9 +450,10 @@ class MysteryGameWorld(World):
                 groups: list[list[int]] = list(set_to_players.values())
                 for p in non_set_players:
                     groups.append([p])
+                # Sample groups
                 sampled_groups = self.random.sample(groups, min(starting, len(groups)))
-                self.preunlocked = [self.random.choice(group) for group in sampled_groups]
-                dprint("mystery", f"per-set unlock: starting={starting} sampled {len(sampled_groups)} sets -> {len(self.preunlocked)} slots (one per set)")
+                self.preunlocked = [p for group in sampled_groups for p in group]
+                dprint("mystery", f"per-set unlock: starting={starting} sampled {len(sampled_groups)} sets -> {len(self.preunlocked)} slots")
             else:
                 self.preunlocked = self.random.sample(others, min(starting, len(others)))
         else:

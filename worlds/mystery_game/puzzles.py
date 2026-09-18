@@ -37,24 +37,6 @@ MYSTERY_TOKEN_ID: int = MYSTERY_BASE_ID + 9_000
 EXTRA_LIFE_ITEM: str = "Extra Life"
 EXTRA_LIFE_ID: int = MYSTERY_BASE_ID + 6_000
 
-CUSTOM_GOAL_TOKEN_ITEM: str = "Mystery Goal Token"
-CUSTOM_GOAL_TOKEN_ID: int = MYSTERY_BASE_ID + 7_000
-
-MAX_CUSTOM_GOALS: int = 3000
-CUSTOM_GOAL_LOCATION_BASE: int = MYSTERY_BASE_ID + 7_100
-CUSTOM_GOAL_REWARD_LOCATION_BASE: int = MYSTERY_BASE_ID + 20_000
-# 7_100..10_099 = 3000 goal locations, 20_000..22_999 = 3000 reward locations (relocated to avoid collision with MYSTERY_TOKEN_ID at 9_000)
-
-
-def custom_goal_location_name(index: int) -> str:
-    """Input: 1-based index. Returns: Mystery custom goal location name."""
-    return f"Mystery Goal {index}"
-
-
-def custom_goal_reward_location_name(index: int) -> str:
-    """Input: 1-based index. Returns: Mystery custom goal reward location name."""
-    return f"Mystery Goal Reward {index}"
-
 
 def puzzle_item_name(puzzle: str) -> str:
     """Input: puzzle. Returns: item name for solving it."""
@@ -209,11 +191,7 @@ PUZZLE_ROSTER: list[str] = build_puzzle_roster(_PACK_NAMES)
 
 def build_item_name_to_id() -> dict[str, int]:
     """Returns: import-time item table with static IDs."""
-    table: dict[str, int] = {
-        MYSTERY_TOKEN_ITEM: MYSTERY_TOKEN_ID,
-        EXTRA_LIFE_ITEM: EXTRA_LIFE_ID,
-        CUSTOM_GOAL_TOKEN_ITEM: CUSTOM_GOAL_TOKEN_ID,
-    }
+    table: dict[str, int] = {MYSTERY_TOKEN_ITEM: MYSTERY_TOKEN_ID, EXTRA_LIFE_ITEM: EXTRA_LIFE_ID}
     for index, puzzle in enumerate(PUZZLE_ROSTER):
         table[puzzle_item_name(puzzle)] = PUZZLE_ITEM_BASE + index
         for piece in range(1, MAX_PIECES + 1):
@@ -232,9 +210,6 @@ def build_location_name_to_id() -> dict[str, int]:
         table[puzzle_location_name(puzzle)] = PUZZLE_LOCATION_BASE + index
     for index in range(MAX_UNLOCK_SLOTS):
         table[unlock_location_name(index + 1)] = UNLOCK_LOCATION_BASE + index
-    for index in range(1, MAX_CUSTOM_GOALS + 1):
-        table[custom_goal_location_name(index)] = CUSTOM_GOAL_LOCATION_BASE + (index - 1)
-        table[custom_goal_reward_location_name(index)] = CUSTOM_GOAL_REWARD_LOCATION_BASE + (index - 1)
     return table
 
 

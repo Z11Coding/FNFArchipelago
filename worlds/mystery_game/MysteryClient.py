@@ -5,7 +5,7 @@ import functools
 import logging
 import socket
 import time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from CommonClient import (
     ClientCommandProcessor,
@@ -370,60 +370,6 @@ class MysteryCommandProcessor(ClientCommandProcessor):
         """Alias for sync."""
         return self._cmd_mystery_sync()
 
-    def _cmd_mystery_rewards(self) -> bool:
-        """Show paired reward locations."""
-        ctx: Any = self.ctx
-        if not isinstance(ctx, MysteryContext):
-            self.output("Not connected as a Mystery Game slot.")
-            return False
-        if not getattr(ctx, "custom_goal_enabled", False):
-            self.output("Custom goal not enabled.")
-            return False
-        pairs = getattr(ctx, "custom_goal_pairs", []) or []
-        if not pairs:
-            # fallback to internal_map
-            im = getattr(ctx, "custom_goal_internal_map", {}) or {}
-            if im:
-                self.output(f"Reward pairs ({len(im)}) - token count gated, paired to source:")
-                for src, rew in sorted(im.items()):
-                    self.output(f"  {rew} -> {src} [paired={getattr(ctx,'custom_goal_reward_paired',False)}]")
-                return True
-            self.output("No reward pairs (no custom goal locations).")
-            return True
-        self.output(f"Reward pairs ({len(pairs)}) - each reward is logically paired to its source location:")
-        for p in sorted(pairs, key=lambda x: x.get("index", 0)):
-            src = p.get("source", "?")
-            rew = p.get("reward", "?")
-            pid = p.get("source_player")
-            region = p.get("source_region", "?")
-            game = p.get("source_game", "?")
-            self.output(f"  {rew} -> {src} [p{pid} {game} @ {region}] requires can_reach(source) + tokens")
-        if getattr(ctx, "custom_goal_reward_paired", False):
-            self.output("Paired logic: rewards require reaching source area (e.g., dungeon) + token count - use for OoT key consistency")
-        return True
-
-    def _cmd_mystery_goal(self) -> bool:
-        """Show custom goal status."""
-        ctx: Any = self.ctx
-        if not isinstance(ctx, MysteryContext):
-            self.output("Not connected as a Mystery Game slot.")
-            return False
-        if not getattr(ctx, "custom_goal_enabled", False):
-            self.output("Custom goal not enabled.")
-            return False
-        locs = getattr(ctx, "custom_goal_locations", set())
-        items = getattr(ctx, "custom_goal_items", {})
-        self.output(f"Custom goal: {len(locs)} locations, {len(items)} item requirements, token={getattr(ctx,'custom_goal_token','?')}")
-        for loc in sorted(locs)[:20]:
-            rew = ctx.get_reward_for_source(loc) or "?"
-            self.output(f"  GOAL: {loc} -> {rew}")
-        if len(locs) > 20:
-            self.output(f"  ... and {len(locs)-20} more")
-        for name, cnt in items.items():
-            self.output(f"  ITEM: {name} x{cnt}")
-        self.output(f"Goal done: {getattr(ctx,'custom_goal_done',False)} paired={getattr(ctx,'custom_goal_reward_paired',False)}")
-        return True
-
 class MysteryContext(CommonContext):
     """Mystery slot context."""
 
@@ -471,18 +417,6 @@ class MysteryContext(CommonContext):
         self.proxy_port: int = MYSTERY_PROXY_PORT
         self.mystery_tab: Any = None
         self.proxy_tab: Any = None
-        self.relay_tracker_tab: Any = None
-        self.custom_goal_enabled: bool = False
-        self.custom_goal_locations: set = set()
-        self.custom_goal_items: Dict[str, int] = {}
-        self.custom_goal_any_items: bool = False
-        self.custom_goal_tag: str = "mystery_custom_goal"
-        self.custom_goal_token: str = "Mystery Goal Token"
-        self.custom_goal_internal_map: Dict[str, str] = {}
-        self.custom_goal_pairs: List[dict] = []
-        self.custom_goal_reward_map: Dict[str, str] = {}
-        self.custom_goal_reward_paired: bool = False
-        self.custom_goal_done: bool = False
         self._cheese_tried: bool = False
         self._local_item_ids: Dict[str, int] = {}
         self._local_location_ids: Dict[str, int] = {}
@@ -569,7 +503,6 @@ class MysteryContext(CommonContext):
             super().on_package(cmd, args)
             self._check_unlock_items(args)
             self._check_extra_life_items(args)
-            self._check_custom_goal(args)
             self._refresh_ui()
             return
         if cmd == "PrintJSON" and args.get("type") == "ItemSend" and args.get("receiving") != self.slot:
@@ -674,54 +607,6 @@ class MysteryContext(CommonContext):
                               dict(slot_data.get("mystery_puzzle_pieces", {})).items()}
         self.puzzle_hints = {str(puzzle): [str(text) for text in hints] for puzzle, hints in
                              dict(slot_data.get("mystery_puzzle_hints", {})).items()}
-        try:
-            self.custom_goal_enabled = bool(slot_data.get("mystery_custom_goal", False))
-            self.custom_goal_locations = {str(x).strip() for x in slot_data.get("mystery_custom_goal_locations", []) if isinstance(x, str) and str(x).strip()}
-            raw_items = slot_data.get("mystery_custom_goal_items", {})
-            if isinstance(raw_items, dict):
-                self.custom_goal_items = {str(k).strip(): int(v) for k, v in raw_items.items() if isinstance(k, str) and isinstance(v, int) and int(v) >= 1}
-            else:
-                self.custom_goal_items = {}
-            self.custom_goal_any_items = bool(slot_data.get("mystery_custom_goal_any_items", False))
-            self.custom_goal_tag = str(slot_data.get("mystery_custom_goal_tag", "mystery_custom_goal"))
-            self.custom_goal_token = str(slot_data.get("mystery_custom_goal_token", "Mystery Goal Token"))
-            self.custom_goal_internal_map = dict(slot_data.get("mystery_custom_goal_internal_map", {}))
-            # Paired reward info - exposed for client and external tools
-            raw_pairs = slot_data.get("mystery_custom_goal_pairs", [])
-            if isinstance(raw_pairs, list):
-                self.custom_goal_pairs = [dict(p) for p in raw_pairs if isinstance(p, dict) and "source" in p and "reward" in p]
-            else:
-                self.custom_goal_pairs = []
-            raw_rmap = slot_data.get("mystery_custom_goal_reward_map", {})
-            if isinstance(raw_rmap, dict):
-                self.custom_goal_reward_map = {str(k): str(v) for k, v in raw_rmap.items()}
-            elif self.custom_goal_internal_map:
-                # fallback: invert internal map
-                self.custom_goal_reward_map = {v: k for k, v in self.custom_goal_internal_map.items()}
-            else:
-                self.custom_goal_reward_map = {}
-            self.custom_goal_reward_paired = bool(slot_data.get("mystery_custom_goal_reward_paired", False))
-            self.custom_goal_done = False
-            if self.custom_goal_enabled:
-                client_logger.info("Mystery custom goal: locations=%s items=%s any=%s pairs=%d paired=%s", self.custom_goal_locations, self.custom_goal_items, self.custom_goal_any_items, len(self.custom_goal_pairs), self.custom_goal_reward_paired)
-                if self.custom_goal_pairs:
-                    for p in self.custom_goal_pairs[:5]:
-                        client_logger.info("  pair %s -> %s (player %s region %s)", p.get("source"), p.get("reward"), p.get("source_player"), p.get("source_region"))
-                    if len(self.custom_goal_pairs) > 5:
-                        client_logger.info("  ... and %d more pairs", len(self.custom_goal_pairs)-5)
-        except Exception as e:
-            client_logger.debug(f"Mystery custom goal parse failed: {e}")
-            self.custom_goal_enabled = False
-            self.custom_goal_locations = set()
-            self.custom_goal_items = {}
-            self.custom_goal_any_items = False
-            self.custom_goal_tag = "mystery_custom_goal"
-            self.custom_goal_token = "Mystery Goal Token"
-            self.custom_goal_internal_map = {}
-            self.custom_goal_pairs = []
-            self.custom_goal_reward_map = {}
-            self.custom_goal_reward_paired = False
-            self.custom_goal_done = False
         client_logger.info(
             "Mystery connected: %d puzzle(s), %d unlock(s), lock=%s, %d tracked slot(s)",
             len(self.puzzle_names), len(self.unlock_map),
@@ -752,7 +637,6 @@ class MysteryContext(CommonContext):
             if self.global_bridge is not None and getattr(self.global_bridge, "running", False):
                 async_start(self.stop_global_bridge())
         self._refresh_ui()
-        self._check_custom_goal()
 
     def _sync_server_state(self) -> None:
         if self.slot is None:
@@ -1203,145 +1087,6 @@ class MysteryContext(CommonContext):
         except Exception:
             pass
         self._refresh_ui()
-        self._check_custom_goal(args)
-
-    def _is_custom_goal_met(self) -> bool:
-        """Check if custom goal is met based on received items."""
-        if not getattr(self, "custom_goal_enabled", False):
-            return False
-        if getattr(self, "custom_goal_done", False):
-            return True
-        # Check locations: need standard Goal Tokens count
-        locs = getattr(self, "custom_goal_locations", set())
-        if locs:
-            token_name = getattr(self, "custom_goal_token", "Mystery Goal Token")
-            need_tokens = len(locs)
-            have_tokens = 0
-            for it in getattr(self, "items_received", []):
-                try:
-                    name = self.item_name_for(getattr(it, "item", None))
-                except Exception:
-                    continue
-                if name == token_name:
-                    have_tokens += 1
-                # Backwards compat: also accept old per-location tokens
-                elif name.startswith("Mystery Goal Token: "):
-                    have_tokens += 1
-            if have_tokens < need_tokens:
-                return False
-        # Check items: need counts, handling any vs specific via flags
-        needed: Dict[str, int] = getattr(self, "custom_goal_items", {})
-        if needed:
-            any_mode = bool(getattr(self, "custom_goal_any_items", False))
-            # For any_mode, count any item with matching name
-            # For specific, count only GOAL_MARKED items (flags & 8)
-            counts: Dict[str, int] = {}
-            for it in getattr(self, "items_received", []):
-                try:
-                    name = self.item_name_for(getattr(it, "item", None))
-                except Exception:
-                    continue
-                if name not in needed:
-                    continue
-                if not any_mode:
-                    # Specific: only count if GOAL_MARKED
-                    flags = int(getattr(it, "flags", 0) or 0)
-                    is_marked = bool(flags & 8)  # GOAL_MARKED_FLAG
-                    # Also accept attribute if present (fallback)
-                    if not is_marked:
-                        # Check if NetworkItem has extra? items_received entries are NetworkItem with flags
-                        # If not flagged, skip (don't count unmarked filler)
-                        continue
-                counts[name] = counts.get(name, 0) + 1
-                # For any_mode we already counted; for specific we only counted marked
-            # For any_mode, the above counted only filtered names, but for specific we filtered by flag.
-            # For any_mode, we counted all; for specific, only marked.
-            # However, if specific items are not flagged due to old generation, fallback to counting all (compat)
-            # Detect if no marked items were found but we expected specific: fallback
-            if not any_mode:
-                # If zero counted but there are needed items, check if any of those items exist without flag (old saves)
-                # We can fallback to counting by name if no flagged items at all
-                if all(counts.get(n, 0) == 0 for n in needed):
-                    # Fallback: count by name without flag filter
-                    fallback_counts: Dict[str, int] = {}
-                    for it in getattr(self, "items_received", []):
-                        try:
-                            name = self.item_name_for(getattr(it, "item", None))
-                        except Exception:
-                            continue
-                        if name in needed:
-                            fallback_counts[name] = fallback_counts.get(name, 0) + 1
-                    # Use fallback if it has counts
-                    if any(fallback_counts.values()):
-                        counts = fallback_counts
-            for name, need in needed.items():
-                if counts.get(name, 0) < int(need):
-                    return False
-        return True
-
-    def _check_custom_goal(self, args: dict | None = None) -> None:
-        """Track custom goal and send goaled if met."""
-        if not getattr(self, "custom_goal_enabled", False):
-            return
-        if getattr(self, "custom_goal_done", False):
-            return
-        if self._is_custom_goal_met():
-            self.custom_goal_done = True
-            client_logger.info("Mystery: custom goal completed - %s locations, %s items", self.custom_goal_locations, self.custom_goal_items)
-            try:
-                from NetUtils import ClientStatus
-                async_start(self.send_msgs([{"cmd": "StatusUpdate", "status": ClientStatus.CLIENT_GOAL}]))
-            except Exception:
-                try:
-                    async_start(self.send_msgs([{"cmd": "StatusUpdate", "status": 30}]))
-                except Exception:
-                    pass
-            try:
-                self.finished_game = True
-            except Exception:
-                pass
-            self._refresh_ui()
-
-    # --- Custom goal paired reward helpers (exposed for client/UI and external tools) ---
-    def get_reward_for_source(self, source_name: str) -> Optional[str]:
-        """Given a source location name, return its paired reward location name, if any."""
-        try:
-            if self.custom_goal_internal_map and source_name in self.custom_goal_internal_map:
-                return self.custom_goal_internal_map[source_name]
-            for p in getattr(self, "custom_goal_pairs", []):
-                if p.get("source") == source_name:
-                    return p.get("reward")
-        except Exception:
-            pass
-        return None
-
-    def get_source_for_reward(self, reward_name: str) -> Optional[str]:
-        """Given a reward location name, return its source location name, if any."""
-        try:
-            if self.custom_goal_reward_map and reward_name in self.custom_goal_reward_map:
-                return self.custom_goal_reward_map[reward_name]
-            for p in getattr(self, "custom_goal_pairs", []):
-                if p.get("reward") == reward_name:
-                    return p.get("source")
-        except Exception:
-            pass
-        # fallback inverse
-        try:
-            for src, rew in self.custom_goal_internal_map.items():
-                if rew == reward_name:
-                    return src
-        except Exception:
-            pass
-        return None
-
-    def get_pair_for_reward(self, reward_name: str) -> Optional[dict]:
-        try:
-            for p in getattr(self, "custom_goal_pairs", []):
-                if p.get("reward") == reward_name:
-                    return p
-        except Exception:
-            pass
-        return None
 
     def submit_guess(self, slot_query: str, game_guess: str) -> Optional[str]:
         slot: Optional[str] = self.find_slot(slot_query)
@@ -1651,12 +1396,14 @@ class MysteryContext(CommonContext):
             client_logger.warning("Mystery: Nuzlocke hit %s %d/%d%s (remaining %d) – relay stays up", log_slot, new_hits, lives, f" ({cause})" if cause else "", remaining)
             if self.proxy is not None:
                 try:
-                    # Broadcast hit to all clients for this slot (multi-client)
-                    for ws in list(self.proxy._get_sockets_for_slot(slot)):
-                        try:
-                            await ws.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} hit {new_hits}/{lives} – {remaining} lives remaining{': ' + cause if cause else '.'}"}]}]))
-                        except Exception:
-                            pass
+                    for alias, routed in list(self.proxy.routes.items()):
+                        if routed == slot and alias in self.proxy.game_sockets:
+                            try:
+                                sock = self.proxy.game_sockets.get(alias)
+                                if sock is not None:
+                                    await sock.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} hit {new_hits}/{lives} – {remaining} lives remaining{': ' + cause if cause else '.'}"}]}]))
+                            except Exception:
+                                pass
                 except Exception:
                     pass
             self._refresh_ui()
@@ -1683,16 +1430,15 @@ class MysteryContext(CommonContext):
                     self.proxy.notify_relay_failed(set_name, "Nuzlocke dead (set)")
                     for s in self.code_set_slots.get(set_name, []):
                         self.proxy.notify_relay_failed(s, "Nuzlocke dead (set)")
-                        for ws in list(self.proxy._get_sockets_for_slot(s)):
-                            try:
-                                await ws.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {set_name} has died. Relay permanently closed ({new_hits}/{lives}){': ' + cause if cause else '.'} - {s}"}]}]))
-                                await ws.close()
-                            except Exception:
-                                pass
-                            try:
-                                self.proxy._unregister_socket(ws)
-                            except Exception:
-                                pass
+                        for alias, routed in list(self.proxy.routes.items()):
+                            if routed == s and alias in self.proxy.game_sockets:
+                                try:
+                                    sock = self.proxy.game_sockets.pop(alias, None)
+                                    if sock is not None:
+                                        await sock.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {set_name} has died. Relay permanently closed ({new_hits}/{lives}){': ' + cause if cause else '.'} - {s}"}]}]))
+                                        await sock.close()
+                                except Exception:
+                                    pass
                 except Exception:
                     pass
             client_logger.warning("Mystery: Nuzlocke killed set %s%s (%d/%d) - %s", set_name, f" ({cause})" if cause else "", new_hits, lives, ", ".join(self.code_set_slots.get(set_name, [])))
@@ -1711,16 +1457,15 @@ class MysteryContext(CommonContext):
             if self.proxy is not None:
                 try:
                     self.proxy.notify_relay_failed(slot, "Nuzlocke dead")
-                    for ws in list(self.proxy._get_sockets_for_slot(slot)):
-                        try:
-                            await ws.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} has died. Relay permanently closed ({new_hits}/{lives}){': ' + cause if cause else '.'}"}]}]))
-                            await ws.close()
-                        except Exception:
-                            pass
-                        try:
-                            self.proxy._unregister_socket(ws)
-                        except Exception:
-                            pass
+                    for alias, routed in list(self.proxy.routes.items()):
+                        if routed == slot and alias in self.proxy.game_sockets:
+                            try:
+                                sock = self.proxy.game_sockets.pop(alias, None)
+                                if sock is not None:
+                                    await sock.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} has died. Relay permanently closed ({new_hits}/{lives}){': ' + cause if cause else '.'}"}]}]))
+                                    await sock.close()
+                            except Exception:
+                                pass
                 except Exception:
                     pass
             client_logger.warning("Mystery: Nuzlocke killed %s%s (%d/%d)", slot, f" ({cause})" if cause else "", new_hits, lives)
@@ -1926,12 +1671,6 @@ class MysteryContext(CommonContext):
                 self.mystery_tab.update_status()
             if self.proxy_tab is not None:
                 self.proxy_tab.update_status()
-            if self.relay_tracker_tab is not None:
-                try:
-                    # RelayTrackerTab has refresh_all
-                    self.relay_tracker_tab.refresh_all()
-                except Exception:
-                    pass
         except Exception:
             pass
 
@@ -1977,94 +1716,9 @@ class MysteryContext(CommonContext):
     async def connection_closed(self) -> None:
         await super().connection_closed()
         await self.drop_all_relays("main connection closed")
-        # Ensure no stale slot_data remains for next connect
-        self._clear_session_state()
-
-    def _clear_session_state(self) -> None:
-        """Clear all per-connection state to avoid desync on reconnect."""
-        # Puzzles / unlocks
-        self.puzzle_names = []
-        self.unlock_map = {}
-        self.solved_puzzles = set()
-        self.revealed_unlocks = {}
-        self.lock_mode = LOCK_OFF
-        self.real_slots = {}
-        self.untouched_slots = {}
-        self.identities = {}
-        self.unlocked_slots = {}
-        self.scrambled = False
-        self.expose_proxied_items = True
-        self.puzzle_pieces = {}
-        self.puzzle_hints = {}
-        self.puzzle_state = {}
-        self.caches = {}
-        # Nuzlocke
-        self.nuzlocke_enabled = False
-        self.nuzlocke_deathlink = 0
-        self.nuzlocke_per_game_modes = {}
-        self.nuzlocke_lives = 1
-        self.nuzlocke_lives_per_slot = {}
-        self.nuzlocke_hits = {}
-        self.nuzlocke_extra_lives = 0
-        self.nuzlocke_extra_distribution = 0
-        self.nuzlocke_extra_assignments = []
-        self.nuzlocke_extra_earned = {}
-        self.nuzlocke_dead = set()
-        self.nuzlocke_set_hits = {}
-        self.nuzlocke_set_extra_earned = {}
-        # Custom goal
-        self.custom_goal_enabled = False
-        self.custom_goal_locations = set()
-        self.custom_goal_items = {}
-        self.custom_goal_any_items = False
-        self.custom_goal_tag = "mystery_custom_goal"
-        self.custom_goal_token = "Mystery Goal Token"
-        self.custom_goal_internal_map = {}
-        self.custom_goal_pairs = []
-        self.custom_goal_reward_map = {}
-        self.custom_goal_reward_paired = False
-        self.custom_goal_done = False
-        # Relays
-        self.relays = {}
-        self.active_relay = None
-        self.relay_disabled = set()
-        # Ensure proxy/bridge state is not stale (ports kept, but routes cleared)
-        if self.proxy is not None:
-            try:
-                self.proxy.routes.clear()
-                self.proxy.game_sockets.clear()
-                self.proxy._sockets.clear()
-                self.proxy._socket_alias.clear()
-                self.proxy._socket_slot.clear()
-                self.proxy._socket_tags.clear()
-                self.proxy._socket_handling.clear()
-                self.proxy._socket_sent_connected.clear()
-                self.proxy.slot_to_sockets.clear()
-                self.proxy.slot_to_aliases.clear()
-                self.proxy.preamble.clear()
-                self.proxy.pending_packets.clear()
-            except Exception:
-                pass
-        if self.global_bridge is not None:
-            try:
-                self.global_bridge.routes.clear()
-                self.global_bridge.game_sockets.clear()
-                self.global_bridge._sockets.clear()
-                self.global_bridge._socket_alias.clear()
-                self.global_bridge._socket_slot.clear()
-                self.global_bridge._socket_tags.clear()
-                self.global_bridge._socket_handling.clear()
-                self.global_bridge._socket_sent_connected.clear()
-                self.global_bridge.slot_to_sockets.clear()
-                self.global_bridge.slot_to_aliases.clear()
-                self.global_bridge.preamble.clear()
-                self.global_bridge.pending_packets.clear()
-            except Exception:
-                pass
-        self._refresh_ui()
 
     async def disconnect(self, allow_autoreconnect: bool = False) -> None:
-        """Disconnect - ensure full cleanup so reconnect is fresh."""
+        """Disconnect."""
         await self.drop_all_relays("client disconnecting")
         if self.proxy is not None:
             try:
@@ -2076,7 +1730,6 @@ class MysteryContext(CommonContext):
                 await self.stop_global_bridge()
             except Exception:
                 pass
-        self._clear_session_state()
         await super().disconnect(allow_autoreconnect)
 
     def make_gui(self) -> Any:
@@ -2176,18 +1829,6 @@ class RelayContext(CommonContext):
     def on_package(self, cmd: str, args: dict) -> None:
         if cmd in ("Connected", "RoomInfo"):
             super().on_package(cmd, args)
-            if cmd == "Connected":
-                # Store slot_data for optional Relay Tracker tab
-                try:
-                    self.slot_data = dict(args.get("slot_data", {}))  # type: ignore[attr-defined]
-                except Exception:
-                    self.slot_data = {}  # type: ignore[attr-defined]
-                # Notify relay tracker tab if present
-                try:
-                    if getattr(self.owner, "relay_tracker_tab", None) is not None:
-                        self.owner._refresh_ui()
-                except Exception:
-                    pass
             if self.owner.proxy is not None:
                 async_start(self.owner.proxy.note_preamble(self.relay_slot, cmd, dict(args)))
             if cmd == "Connected":
@@ -2241,18 +1882,7 @@ class RelayContext(CommonContext):
             if cmd == "DataPackage" and not getattr(self.owner, "expose_proxied_items", True):
                 data = args.get("data", {})
                 if isinstance(data, dict) and isinstance(data.get("games"), dict):
-                    allowed = {"Archipelago", "Mystery Game"}
-                    try:
-                        real = self.owner.real_slots.get(self.relay_slot, "")
-                        if isinstance(real, str) and real:
-                            allowed.add(real)
-                        info = self.owner.identities.get(self.relay_slot, {})
-                        rg = info.get("game")
-                        if isinstance(rg, str) and rg:
-                            allowed.add(rg)
-                    except Exception:
-                        pass
-                    filtered_games = {k: v for k, v in data["games"].items() if k in allowed}
+                    filtered_games = {k: v for k, v in data["games"].items() if k in ("Archipelago", "Mystery Game")}
                     args = dict(args, data=dict(data, games=filtered_games))
             async_start(self.owner.proxy.send_to_slot_game(
                 self.relay_slot, {"cmd": cmd, **args}))
@@ -2278,135 +1908,19 @@ class MysteryProxy:
         self.port: int = port
         self.is_global: bool = bool(is_global)
         self.routes: Dict[str, str] = {}
-        # Multi-client tracking: alias -> list of sockets, slot -> list of sockets, plus per-socket metadata
-        self.game_sockets: Dict[str, List[Any]] = {}  # alias -> list[websocket] (multi-client)
-        self._sockets: Dict[int, Any] = {}  # id(ws) -> websocket
-        self._socket_alias: Dict[int, str] = {}  # id -> alias
-        self._socket_slot: Dict[int, str] = {}  # id -> slot
-        self._socket_tags: Dict[int, set] = {}  # id -> tags set
-        self._socket_handling: Dict[int, int] = {}  # id -> items_handling
-        self._socket_sent_connected: set = set()  # set of id(ws) that have received Connected preamble
-        self.slot_to_sockets: Dict[str, List[Any]] = {}  # slot -> list[websocket]
-        self.slot_to_aliases: Dict[str, set] = {}  # slot -> set(alias)
+        self.game_sockets: Dict[str, Any] = {}
         self.preamble: Dict[str, List[dict]] = {}
         self._relay_events: Dict[str, asyncio.Event] = {}
         self._relay_failed: Dict[str, str] = {}
         self._known_checksums: Dict[str, str] = {}
-        self.game_tags: Dict[str, set] = {}  # aggregated union per slot
-        self.game_items_handling: Dict[str, int] = {}  # aggregated OR per slot
-        self._sent_connected: set = set()  # legacy alias set (compat)
+        self.game_tags: Dict[str, set] = {}
+        self.game_items_handling: Dict[str, int] = {}
+        self._sent_connected: set = set()
         self.slot_servers: Dict[str, Any] = {}
         self.slot_ports: Dict[str, int] = {}
         self.pending_packets: Dict[str, List[dict]] = {}
         self.server: Any = None
         self.running: bool = False
-
-    # ---------- Multi-client helpers ----------
-    def _sid(self, ws: Any) -> int:
-        """_sid."""
-        return id(ws)
-
-    def _register_socket(self, ws: Any, alias: str, slot: str, tags: Optional[set] = None, handling: Optional[int] = None) -> None:
-        """_register_socket."""
-        sid = self._sid(ws)
-        self._sockets[sid] = ws
-        self._socket_alias[sid] = alias
-        self._socket_slot[sid] = slot
-        if tags is not None:
-            self._socket_tags[sid] = set(tags)
-        if handling is not None:
-            self._socket_handling[sid] = int(handling)
-        # alias -> list
-        self.game_sockets.setdefault(alias, [])
-        if ws not in self.game_sockets[alias]:
-            self.game_sockets[alias].append(ws)
-        # slot -> list
-        self.slot_to_sockets.setdefault(slot, [])
-        if ws not in self.slot_to_sockets[slot]:
-            self.slot_to_sockets[slot].append(ws)
-        self.slot_to_aliases.setdefault(slot, set()).add(alias)
-        self.routes[alias] = slot
-        self._recompute_slot_aggregates(slot)
-
-    def _unregister_socket(self, ws: Any) -> Optional[tuple[str, str]]:
-        """_unregister_socket."""
-        sid = self._sid(ws)
-        alias = self._socket_alias.pop(sid, None)
-        slot = self._socket_slot.pop(sid, None)
-        self._sockets.pop(sid, None)
-        self._socket_tags.pop(sid, None)
-        self._socket_handling.pop(sid, None)
-        self._socket_sent_connected.discard(sid)
-        if alias is not None and alias in self.game_sockets:
-            lst = self.game_sockets[alias]
-            if ws in lst:
-                lst.remove(ws)
-            if not lst:
-                self.game_sockets.pop(alias, None)
-                self.routes.pop(alias, None)
-                self._sent_connected.discard(alias)
-        if slot is not None and slot in self.slot_to_sockets:
-            lst2 = self.slot_to_sockets[slot]
-            if ws in lst2:
-                lst2.remove(ws)
-            if not lst2:
-                self.slot_to_sockets.pop(slot, None)
-                self.slot_to_aliases.pop(slot, None)
-                # keep aggregates? recompute will clear
-            else:
-                self._recompute_slot_aggregates(slot)
-        else:
-            if slot is not None:
-                self._recompute_slot_aggregates(slot)
-        if alias is not None:
-            self._sent_connected.discard(alias)
-        return (alias, slot) if alias and slot else None
-
-    def _recompute_slot_aggregates(self, slot: str) -> None:
-        """_recompute_slot_aggregates."""
-        tags_union: set = set()
-        handling_or: Optional[int] = None
-        has_any = False
-        for sid, s_slot in list(self._socket_slot.items()):
-            if s_slot == slot:
-                has_any = True
-                tags_union.update(self._socket_tags.get(sid, set()))
-                h = self._socket_handling.get(sid)
-                if isinstance(h, int):
-                    if handling_or is None:
-                        handling_or = h
-                    else:
-                        handling_or |= h
-        if has_any:
-            if tags_union:
-                self.game_tags[slot] = tags_union
-            else:
-                self.game_tags.pop(slot, None)
-            if handling_or is not None:
-                self.game_items_handling[slot] = handling_or
-            else:
-                self.game_items_handling.pop(slot, None)
-        else:
-            self.game_tags.pop(slot, None)
-            self.game_items_handling.pop(slot, None)
-
-    def _get_sockets_for_slot(self, slot: str) -> List[Any]:
-        """_get_sockets_for_slot."""
-        return list(self.slot_to_sockets.get(slot, []))
-
-    def _get_sockets_for_alias(self, alias: str) -> List[Any]:
-        """_get_sockets_for_alias."""
-        return list(self.game_sockets.get(alias, []))
-
-    def _get_handling_for_socket(self, ws: Any) -> Optional[int]:
-        """_get_handling_for_socket."""
-        sid = self._sid(ws)
-        if sid in self._socket_handling:
-            return self._socket_handling[sid]
-        slot = self._socket_slot.get(sid)
-        if slot and slot in self.game_items_handling:
-            return self.game_items_handling[slot]
-        return None
 
     async def start(self) -> None:
         try:
@@ -2637,7 +2151,7 @@ class MysteryProxy:
                         else:
                             if alias is None:
                                 continue
-                            await self._handle_game_message(websocket, alias, msg)
+                            await self._handle_game_message(alias, msg)
                     except Exception as exc:
                         logger.warning("MysteryProxy: dropping bad message: %s", exc)
                         await self._send_invalid_packet(
@@ -2650,61 +2164,18 @@ class MysteryProxy:
             if not got_message:
                 logger.info("MysteryProxy: %s closed without sending anything "
                             "(probe, retry abort, or wrong address?)", peer)
-            # Multi-client unregister - only remove this socket, not all for alias
-            try:
-                self._unregister_socket(websocket)
-            except Exception:
-                # Fallback legacy cleanup
-                if alias is not None:
-                    try:
-                        lst = self.game_sockets.get(alias, [])
-                        if websocket in lst:
-                            lst.remove(websocket)
-                            if not lst:
-                                self.game_sockets.pop(alias, None)
-                                self.routes.pop(alias, None)
-                    except Exception:
-                        self.game_sockets.pop(alias, None)
-                    self._sent_connected.discard(alias)
+            if alias is not None:
+                self.game_sockets.pop(alias, None)
+                self._sent_connected.discard(alias)
 
     async def stop(self) -> None:
         self.running = False
-        # Close all multi-client sockets
-        all_sockets: List[Any] = []
-        try:
-            all_sockets.extend(list(self._sockets.values()))
-        except Exception:
-            pass
-        # Fallback: legacy game_sockets lists
-        for lst in list(self.game_sockets.values()):
-            if isinstance(lst, list):
-                all_sockets.extend(lst)
-            else:
-                all_sockets.append(lst)
-        # Deduplicate
-        seen_ids = set()
-        uniq: List[Any] = []
-        for s in all_sockets:
-            sid = id(s)
-            if sid not in seen_ids:
-                seen_ids.add(sid)
-                uniq.append(s)
-        for socket in uniq:
+        for socket in list(self.game_sockets.values()):
             try:
                 await socket.close()
             except Exception:
                 pass
         self.game_sockets.clear()
-        self._sockets.clear()
-        self._socket_alias.clear()
-        self._socket_slot.clear()
-        self._socket_tags.clear()
-        self._socket_handling.clear()
-        self._socket_sent_connected.clear()
-        self.slot_to_sockets.clear()
-        self.slot_to_aliases.clear()
-        self.game_tags.clear()
-        self.game_items_handling.clear()
         for slot, slot_server in list(self.slot_servers.items()):
             try:
                 slot_server.close()
@@ -2796,38 +2267,21 @@ class MysteryProxy:
                 {"text": "This game isn't unlocked yet."}]}]))
             await websocket.close()
             return None
-        # Multi-client: parse tags/handling per-socket
-        incoming_tags: set = set()
+        self.routes[alias] = slot
+        self.game_sockets[alias] = websocket
+        logger.info("MysteryProxy: %s connected as %s", alias, slot)
         try:
             incoming: Any = msg.get("tags", [])
             if isinstance(incoming, list):
-                incoming_tags = {str(tag) for tag in incoming}
+                self.game_tags[slot] = {str(tag) for tag in incoming}
         except Exception:
-            incoming_tags = set()
-        incoming_handling: Optional[int] = None
+            pass
         try:
-            ih_tmp = msg.get("items_handling")
-            if isinstance(ih_tmp, int) and 0 <= ih_tmp <= 7:
-                incoming_handling = int(ih_tmp)
+            ih = msg.get("items_handling")
+            if isinstance(ih, int) and 0 <= ih <= 7:
+                self.game_items_handling[slot] = ih
         except Exception:
-            incoming_handling = None
-        # Register socket (multi-client)
-        try:
-            self._register_socket(websocket, alias, slot, incoming_tags, incoming_handling)
-        except Exception:
-            # Fallback legacy
-            self.routes[alias] = slot
-            if alias not in self.game_sockets:
-                self.game_sockets[alias] = []
-            if websocket not in self.game_sockets[alias]:
-                self.game_sockets[alias].append(websocket)
-            if incoming_tags:
-                self.game_tags[slot] = incoming_tags
-            if incoming_handling is not None:
-                self.game_items_handling[slot] = incoming_handling
-        logger.info("MysteryProxy: %s connected as %s (handling=%s tags=%s) [total %d client(s) for %s]",
-                    alias, slot, incoming_handling, sorted(incoming_tags) if incoming_tags else "[]",
-                    len(self._get_sockets_for_slot(slot)), slot)
+            pass
         relay: Optional[RelayContext] = self.owner.relays.get(slot)
         if relay is not None and slot in self._relay_failed:
             self.owner.relays.pop(slot, None)
@@ -2844,18 +2298,8 @@ class MysteryProxy:
             relay = self.owner.relays.get(slot)
             if relay is None:
                 await self._send_connect_error(websocket, self._relay_refusal(slot))
-                try:
-                    self._unregister_socket(websocket)
-                except Exception:
-                    self.routes.pop(alias, None)
-                    try:
-                        lst = self.game_sockets.get(alias, [])
-                        if websocket in lst:
-                            lst.remove(websocket)
-                            if not lst:
-                                self.game_sockets.pop(alias, None)
-                    except Exception:
-                        self.game_sockets.pop(alias, None)
+                self.routes.pop(alias, None)
+                self.game_sockets.pop(alias, None)
                 try:
                     await websocket.close()
                 except Exception:
@@ -2869,77 +2313,53 @@ class MysteryProxy:
                 pass
         else:
             try:
-                # Update relay tags/handling from aggregated union across all clients for this slot
-                aggregated_tags = self.game_tags.get(slot, set())
-                if aggregated_tags:
-                    relay.tags = set(aggregated_tags) | {"MysteryRelay"}
-                aggregated_handling = self.game_items_handling.get(slot)
-                if isinstance(aggregated_handling, int) and getattr(relay, "items_handling", 0b111) != aggregated_handling:
-                    relay.items_handling = aggregated_handling
+                stored: set = self.game_tags.get(slot, set())
+                if stored:
+                    relay.tags = set(stored) | {"MysteryRelay"}
+                ih = self.game_items_handling.get(slot)
+                if isinstance(ih, int) and getattr(relay, "items_handling", 0b111) != ih:
+                    relay.items_handling = ih
                     await relay.send_connect(name=relay.auth, password=relay.password)
-                elif aggregated_tags:
+                elif stored:
                     await relay.send_connect(name=relay.auth, password=relay.password)
                 else:
                     pass
             except Exception as exc:
                 logger.debug("MysteryProxy: relay re-auth skipped for %s: %s", slot, exc)
         if self._relay_preamble_ready(slot):
-            await self._send_preamble(websocket, alias, slot)
+            await self._send_preamble(alias, slot)
         else:
             if not await self._wait_relay(
                     slot, lambda: self._relay_preamble_ready(slot), timeout=30):
                 reason: str = self._relay_failed.get(slot, "relay unreachable")
                 await self._send_connect_error(
                     websocket, f"MysteryProxy: could not reach {slot} ({reason}).")
-                try:
-                    self._unregister_socket(websocket)
-                except Exception:
-                    self.routes.pop(alias, None)
-                    try:
-                        lst = self.game_sockets.get(alias, [])
-                        if websocket in lst:
-                            lst.remove(websocket)
-                            if not lst:
-                                self.game_sockets.pop(alias, None)
-                    except Exception:
-                        self.game_sockets.pop(alias, None)
+                self.routes.pop(alias, None)
+                self.game_sockets.pop(alias, None)
                 try:
                     await websocket.close()
                 except Exception:
                     pass
                 return None
-            await self._send_preamble(websocket, alias, slot)
+            await self._send_preamble(alias, slot)
         await self.deliver_held(slot)
         await self.deliver_pending(slot, alias)
         return alias
 
-    async def _send_preamble(self, websocket: Any, alias: str, slot: str) -> None:
+    async def _send_preamble(self, alias: str, slot: str) -> None:
         """Send preamble."""
-        # Use the explicit websocket, not alias lookup, to support multi-client
-        target = websocket
-        if target is None:
-            # fallback to alias lookup
-            lst = self.game_sockets.get(alias, [])
-            if not lst:
-                return
-            target = lst[-1]
-        sid = self._sid(target)
-        # Avoid duplicate send per socket
-        if sid in self._socket_sent_connected:
+        socket: Any = self.game_sockets.get(alias)
+        if socket is None:
             return
         for packet in self.preamble.get(slot, []):
             if packet.get("cmd") == "RoomInfo":
                 continue
             out: dict = self._connected_for(slot, packet)
             try:
-                await target.send(encode([out]))
+                await socket.send(encode([out]))
             except Exception:
-                try:
-                    self._unregister_socket(target)
-                except Exception:
-                    self.game_sockets.get(alias, []).remove(target)  # type: ignore
+                self.game_sockets.pop(alias, None)
                 return
-        self._socket_sent_connected.add(sid)
         self._sent_connected.add(alias)
 
     async def _send_connect_error(self, websocket: Any, text: str) -> None:
@@ -3017,13 +2437,6 @@ class MysteryProxy:
                     for game, checksum in base_checksums.items():
                         if isinstance(game, str) and isinstance(checksum, str):
                             known.setdefault(game, checksum)
-                    # Also pull from _known_checksums (proxy's cache of all seen checksums)
-                    try:
-                        for game, checksum in dict(getattr(self, "_known_checksums", {}) or {}).items():
-                            if isinstance(game, str) and isinstance(checksum, str):
-                                known.setdefault(game, checksum)
-                    except Exception:
-                        pass
                 except Exception:
                     pass
                 if expose:
@@ -3032,46 +2445,22 @@ class MysteryProxy:
                         for info in ctx.identities.values():
                             real = info.get("game")
                             server = info.get("server_game")
-                            if isinstance(real, str) and isinstance(server, str):
-                                if server in known and real not in known:
-                                    # Always map real -> server checksum, even if server not in known yet (use base or ctx)
-                                    # Try to find checksum for server in any source
-                                    cs = known.get(server) or base_checksums.get(server) or getattr(ctx, "checksums", {}).get(server) or self._known_checksums.get(server)
-                                    if cs:
-                                        real_to_server.setdefault(real, cs)
-                                    else:
-                                        # Fallback: if we have no checksum for server, still map to allow GetDataPackage translation
-                                        real_to_server.setdefault(real, known.get(server, ""))
-                                elif server in known:
-                                    real_to_server.setdefault(real, known[server])
+                            if isinstance(real, str) and isinstance(server, str) and server in known:
+                                real_to_server.setdefault(real, known[server])
                     except Exception:
                         pass
                     checksums: Dict[str, str] = {}
                     for game in games:
-                        if game in known and known[game]:
+                        if game in known:
                             checksums[game] = known[game]
-                        elif game in real_to_server and real_to_server[game]:
+                        elif game in real_to_server:
                             checksums[game] = real_to_server[game]
-                        elif game in base_checksums and base_checksums[game]:
+                        elif game in base_checksums:
                             checksums[game] = base_checksums[game]
                         else:
                             try:
                                 if game in getattr(ctx, "checksums", {}):
                                     checksums[game] = ctx.checksums[game]
-                                elif game in self._known_checksums:
-                                    checksums[game] = self._known_checksums[game]
-                            except Exception:
-                                pass
-                    # Ensure every game in `games` has a checksum entry, even if empty, to avoid TUNIC "incompatible"
-                    # For TUNIC and other proxied games, ensure we have an entry even if we had to synthesize
-                    for game in games:
-                        if game not in checksums:
-                            # Try to find via identities: if game is real, use server's checksum
-                            try:
-                                for info in ctx.identities.values():
-                                    if info.get("game") == game and info.get("server_game") in known:
-                                        checksums[game] = known[info.get("server_game")]
-                                        break
                             except Exception:
                                 pass
                     packet["datapackage_checksums"] = checksums
@@ -3119,13 +2508,8 @@ class MysteryProxy:
             pass
         return packet
 
-    async def _handle_game_message(self, websocket: Any, alias: str, msg: dict) -> None:
-        """_handle_game_message."""
-        sid = self._sid(websocket)
-        # Resolve slot via per-socket mapping if available, else alias
-        slot: Optional[str] = self._socket_slot.get(sid)
-        if slot is None:
-            slot = self.slot_for_alias(alias)
+    async def _handle_game_message(self, alias: str, msg: dict) -> None:
+        slot: Optional[str] = self.slot_for_alias(alias)
         if slot is None:
             return
         if msg.get("cmd") == "Connect":
@@ -3136,12 +2520,13 @@ class MysteryProxy:
             self.owner.start_relay(slot, make_active=False)
             relay = self.owner.relays.get(slot)
             if relay is None:
-                # Send error to the specific websocket that sent the message
-                try:
-                    await websocket.send(encode([{"cmd": "PrintJSON", "data": [
-                        {"text": self._relay_refusal(slot)}]}]))
-                except Exception:
-                    pass
+                socket: Any = self.game_sockets.get(alias)
+                if socket is not None:
+                    try:
+                        await socket.send(encode([{"cmd": "PrintJSON", "data": [
+                            {"text": self._relay_refusal(slot)}]}]))
+                    except Exception:
+                        pass
                 return
         if msg.get("cmd") == "LocationChecks":
             checks: List[int] = [loc for loc in msg.get("locations", []) if isinstance(loc, int)]
@@ -3158,12 +2543,14 @@ class MysteryProxy:
                     slot, lambda: self._relay_online_ready(slot), timeout=10):
                 logger.warning("MysteryProxy: relay for %s offline, dropping %s",
                                slot, msg.get("cmd"))
-                try:
-                    await websocket.send(encode([{"cmd": "PrintJSON", "data": [
-                        {"text": f"MysteryProxy: relay for {slot} unreachable, "
-                                 f"{msg.get('cmd')} dropped (retry)."}]}]))
-                except Exception:
-                    pass
+                socket: Any = self.game_sockets.get(alias)
+                if socket is not None:
+                    try:
+                        await socket.send(encode([{"cmd": "PrintJSON", "data": [
+                            {"text": f"MysteryProxy: relay for {slot} unreachable, "
+                                     f"{msg.get('cmd')} dropped (retry)."}]}]))
+                    except Exception:
+                        pass
                 return
             relay = self.owner.relays.get(slot)
         if relay is not None and relay.server:
@@ -3176,19 +2563,13 @@ class MysteryProxy:
                     if isinstance(tags, list):
                         cleaned: set = {str(tag) for tag in tags}
                         cleaned.discard("MysteryRelay")
-                        # Update per-socket tags
-                        self._socket_tags[sid] = cleaned
-                        self._recompute_slot_aggregates(slot)
-                        # Use aggregated for relay
-                        aggregated = self.game_tags.get(slot, set())
-                        msg = dict(msg, tags=sorted(aggregated | {"MysteryRelay"}))
+                        self.game_tags[slot] = cleaned
+                        msg = dict(msg, tags=sorted(cleaned | {"MysteryRelay"}))
                     ih = msg.get("items_handling")
                     if isinstance(ih, int) and 0 <= ih <= 7:
-                        self._socket_handling[sid] = int(ih)
-                        self._recompute_slot_aggregates(slot)
-                        aggregated_h = self.game_items_handling.get(slot)
-                        if aggregated_h is not None and getattr(relay, "items_handling", None) != aggregated_h:
-                            relay.items_handling = aggregated_h
+                        self.game_items_handling[slot] = ih
+                        if relay is not None and getattr(relay, "items_handling", None) != ih:
+                            relay.items_handling = ih
                 except Exception:
                     pass
             if msg.get("cmd") == "Bounce":
@@ -3203,17 +2584,15 @@ class MysteryProxy:
                                 cause = str(data.get("cause") or data.get("source") or "")
                         except Exception:
                             cause = ""
-                        # Determine which socket sent this Bounce for targeted feedback
-                        sender_ws = websocket
                         if mode == 1:
                             async_start(self.owner.trigger_nuzlocke(slot, cause))
                             try:
-                                await sender_ws.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} died – relay permanently closed (DeathLink suppressed)."}]}]))
-                                await sender_ws.close()
-                            except Exception:
-                                pass
-                            try:
-                                self._unregister_socket(sender_ws)
+                                sock = self.game_sockets.get(alias)
+                                if sock is not None:
+                                    await sock.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} died – relay permanently closed (DeathLink suppressed)."}]}]))
+                                    await sock.close()
+                                    self.game_sockets.pop(alias, None)
+                                    self.routes.pop(alias, None)
                             except Exception:
                                 pass
                             return
@@ -3225,12 +2604,12 @@ class MysteryProxy:
                                 await relay.send_msgs([iso_msg])
                             async_start(self.owner.trigger_nuzlocke(slot, cause))
                             try:
-                                await sender_ws.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} died – relay permanently closed (DeathLink isolated)."}]}]))
-                                await sender_ws.close()
-                            except Exception:
-                                pass
-                            try:
-                                self._unregister_socket(sender_ws)
+                                sock = self.game_sockets.get(alias)
+                                if sock is not None:
+                                    await sock.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} died – relay permanently closed (DeathLink isolated)."}]}]))
+                                    await sock.close()
+                                    self.game_sockets.pop(alias, None)
+                                    self.routes.pop(alias, None)
                             except Exception:
                                 pass
                             return
@@ -3238,12 +2617,12 @@ class MysteryProxy:
                             await relay.send_msgs([msg])
                             async_start(self.owner.trigger_nuzlocke(slot, cause))
                             try:
-                                await sender_ws.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} died – relay permanently closed."}]}]))
-                                await sender_ws.close()
-                            except Exception:
-                                pass
-                            try:
-                                self._unregister_socket(sender_ws)
+                                sock = self.game_sockets.get(alias)
+                                if sock is not None:
+                                    await sock.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} died – relay permanently closed."}]}]))
+                                    await sock.close()
+                                    self.game_sockets.pop(alias, None)
+                                    self.routes.pop(alias, None)
                             except Exception:
                                 pass
                             return
@@ -3252,23 +2631,10 @@ class MysteryProxy:
             if msg.get("cmd") == "GetDataPackage" and not getattr(self.owner, "expose_proxied_items", True):
                 requested = msg.get("games", [])
                 if isinstance(requested, list):
-                    # Always allow the slot's real game even when not exposing, otherwise TUNIC etc. gets incompatible
-                    allowed = {"Archipelago", "Mystery Game"}
-                    try:
-                        real = self.owner.real_slots.get(slot, "")
-                        if isinstance(real, str) and real:
-                            allowed.add(real)
-                        # Also allow any game that is in identities for this slot
-                        info = self.owner.identities.get(slot, {})
-                        rg = info.get("game")
-                        if isinstance(rg, str) and rg:
-                            allowed.add(rg)
-                    except Exception:
-                        pass
-                    filtered = [g for g in requested if g in allowed]
+                    filtered = [g for g in requested if g in ("Archipelago", "Mystery Game")]
                     if not filtered:
                         try:
-                            await websocket.send(encode([{"cmd": "DataPackage", "data": {"games": {}}}]))
+                            await self.game_sockets[alias].send(encode([{"cmd": "DataPackage", "data": {"games": {}}}]))
                         except Exception:
                             pass
                         return
@@ -3299,15 +2665,6 @@ class MysteryProxy:
         else:
             logger.warning("MysteryProxy: no relay for %s, dropping %s",
                            slot, msg.get("cmd"))
-        # Also keep per-socket handling updated if message contained items_handling outside ConnectUpdate
-        try:
-            ih = msg.get("items_handling")
-            if isinstance(ih, int) and 0 <= ih <= 7:
-                if self._socket_handling.get(sid) != ih:
-                    self._socket_handling[sid] = ih
-                    self._recompute_slot_aggregates(slot)
-        except Exception:
-            pass
 
     async def note_preamble(self, slot: str, cmd: str, packet: dict) -> None:
         """Remember preamble."""
@@ -3333,29 +2690,13 @@ class MysteryProxy:
         elif slot in self.owner.unlocked_slots:
             packet = self._revealed_for(slot, packet)
         delivered: bool = False
-        # Broadcast to all sockets for this slot (Tracker + Game etc.)
-        for ws in list(self._get_sockets_for_slot(slot)):
-            try:
-                await ws.send(encode([packet]))
-                delivered = True
-            except Exception:
+        for alias, routed in list(self.routes.items()):
+            if routed == slot and alias in self.game_sockets:
                 try:
-                    self._unregister_socket(ws)
+                    await self.game_sockets[alias].send(encode([packet]))
+                    delivered = True
                 except Exception:
-                    pass
-        # Legacy fallback: also try alias map if slot_to_sockets empty
-        if not delivered:
-            for alias, routed in list(self.routes.items()):
-                if routed == slot and alias in self.game_sockets:
-                    for ws in list(self.game_sockets.get(alias, [])):
-                        try:
-                            await ws.send(encode([packet]))
-                            delivered = True
-                        except Exception:
-                            try:
-                                self._unregister_socket(ws)
-                            except Exception:
-                                pass
+                    self.game_sockets.pop(alias, None)
         if not delivered:
             if packet.get("cmd") not in ("Connected", "RoomInfo"):
                 buf = self.pending_packets.setdefault(slot, [])
@@ -3372,33 +2713,13 @@ class MysteryProxy:
         self.pending_packets[slot] = []
         if not to_send:
             return
-        # Determine targets: if alias specified, deliver only to sockets for that alias; else all for slot
-        target_sockets: List[Any] = []
-        if alias is not None:
-            # Prefer per-alias sockets, fallback to slot
-            lst = self._get_sockets_for_alias(alias)
-            if lst and self.routes.get(alias) == slot:
-                target_sockets = lst
-            else:
-                target_sockets = self._get_sockets_for_slot(slot)
-                if not target_sockets:
-                    # legacy
-                    target_sockets = []
-                    for a, r in list(self.routes.items()):
-                        if r == slot and a in self.game_sockets:
-                            target_sockets.extend(self.game_sockets.get(a, []))
+        if alias is not None and alias in self.game_sockets and self.routes.get(alias) == slot:
+            targets = [alias]
         else:
-            target_sockets = self._get_sockets_for_slot(slot)
-            if not target_sockets:
-                for a, r in list(self.routes.items()):
-                    if r == slot and a in self.game_sockets:
-                        target_sockets.extend(self.game_sockets.get(a, []))
-            if not target_sockets:
+            targets = [a for a, r in list(self.routes.items()) if r == slot and a in self.game_sockets]
+            if not targets:
                 self.pending_packets.setdefault(slot, []).extend(to_send)
                 return
-        if not target_sockets:
-            self.pending_packets.setdefault(slot, []).extend(to_send)
-            return
         for raw in to_send:
             if not self._forwardable(slot, raw):
                 continue
@@ -3407,14 +2728,14 @@ class MysteryProxy:
                 out = self._connected_for(slot, raw)
             elif slot in self.owner.unlocked_slots:
                 out = self._revealed_for(slot, raw)
-            for ws in list(target_sockets):
+            for tgt in list(targets):
+                sock = self.game_sockets.get(tgt)
+                if sock is None:
+                    continue
                 try:
-                    await ws.send(encode([out]))
+                    await sock.send(encode([out]))
                 except Exception:
-                    try:
-                        self._unregister_socket(ws)
-                    except Exception:
-                        pass
+                    self.game_sockets.pop(tgt, None)
 
     def _slot_player_id(self, slot: str) -> Optional[int]:
         """Player id for slot."""
@@ -3513,20 +2834,9 @@ class MysteryProxy:
         held: List[dict] = list(entry.get("held_items", []))
         if not held:
             return
-        connected: bool = len(self._get_sockets_for_slot(slot)) > 0
-        if not connected:
-            # legacy fallback via routes
-            for alias, routed in list(self.routes.items()):
-                if routed == slot and alias in self.game_sockets and self.game_sockets.get(alias):
-                    # value is list; non-empty means connected
-                    try:
-                        lst = self.game_sockets.get(alias)
-                        if lst and len(lst) > 0:
-                            connected = True
-                            break
-                    except Exception:
-                        connected = True
-                        break
+        connected: bool = any(
+            routed == slot and sock is not None
+            for routed, sock in self.game_sockets.items())
         if not connected:
             return
         await self.send_to_slot_game(slot, {"cmd": "ReceivedItems", "index": 0, "items": [
@@ -3677,28 +2987,6 @@ if gui_enabled:
                         port_info = " " + " ".join(ports)
                 except Exception:
                     pass
-                # Multi-client count
-                try:
-                    cnt = 0
-                    if proxy is not None:
-                        cnt += len(proxy._get_sockets_for_slot(slot))
-                    if gbridge is not None and gbridge is not proxy:
-                        cnt += len(gbridge._get_sockets_for_slot(slot))
-                    if cnt > 0:
-                        port_info += f" [{cnt} client(s)]"
-                        # Show per-client handling breakdown for debugging
-                        try:
-                            handlings = []
-                            for ws in proxy._get_sockets_for_slot(slot) if proxy else []:
-                                h = proxy._socket_handling.get(proxy._sid(ws))
-                                if h is not None:
-                                    handlings.append(str(h))
-                            if handlings:
-                                port_info += f" h:{','.join(handlings)}"
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
                 if ctx.nuzlocke_enabled:
                     lives = ctx.get_nuzlocke_lives(slot)
                     hits = ctx.get_nuzlocke_hits(slot)
@@ -3742,7 +3030,7 @@ if gui_enabled:
                 pass
 
     class MysteryManager(GameManager):
-        """Stub manager."""
+        """Manager."""
 
         base_title = "Mystery Client"
 
@@ -3750,15 +3038,6 @@ if gui_enabled:
             container = super().build()
             self.add_client_tab("Mystery", MysteryTab(self.ctx))
             self.add_client_tab("Proxy", ProxyTab(self.ctx))
-            # Optional Relay Tracker tab – only if Universal Tracker is installed
-            try:
-                from .tracker_bridge import is_tracker_available, create_relay_tracker_tab
-                if is_tracker_available():
-                    tab = create_relay_tracker_tab(self.ctx)
-                    if tab is not None:
-                        self.add_client_tab("Relay Tracker", tab)
-            except Exception as exc:
-                logger.debug("Mystery: Relay Tracker tab not added: %s", exc)
             return container
 
         def update_hints(self) -> None:
@@ -3766,40 +3045,15 @@ if gui_enabled:
             try:
                 ctx: Any = self.ctx
                 combined: list = []
-                seen: set = set()
-                def _hint_key(h: Any) -> Any:
-                    try:
-                        if isinstance(h, dict):
-                            return (
-                                h.get("receiving_player"),
-                                h.get("finding_player"),
-                                h.get("location"),
-                                h.get("item"),
-                                h.get("entrance", ""),
-                            )
-                        # Hint NamedTuple or object
-                        return (
-                            getattr(h, "receiving_player", None),
-                            getattr(h, "finding_player", None),
-                            getattr(h, "location", None),
-                            getattr(h, "item", None),
-                            getattr(h, "entrance", ""),
-                        )
-                    except Exception:
-                        return str(h)
-                def _add_unique(items: Any) -> None:
-                    for h in items or []:
-                        k = _hint_key(h)
-                        if k not in seen:
-                            seen.add(k)
-                            combined.append(h)
                 if getattr(ctx, "slot", None) is not None:
-                    _add_unique(ctx.stored_data.get(f"_read_hints_{ctx.team}_{ctx.slot}", []))
+                    combined.extend(
+                        ctx.stored_data.get(f"_read_hints_{ctx.team}_{ctx.slot}", []) or [])
                 for name in sorted(getattr(ctx, "relays", {})):
                     relay: Any = ctx.relays[name]
                     if getattr(relay, "slot", None) is None:
                         continue
-                    _add_unique(relay.stored_data.get(f"_read_hints_{relay.team}_{relay.slot}", []))
+                    combined.extend(
+                        relay.stored_data.get(f"_read_hints_{relay.team}_{relay.slot}", []) or [])
                 self.hint_log.refresh_hints(combined)
             except Exception:
                 super().update_hints()
