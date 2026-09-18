@@ -50,7 +50,7 @@ def sphere_summary_with_inventory(
         reachable = [
             loc.name
             for loc in multiworld.get_locations()
-            if loc.player == player and loc.can_access(state)
+            if loc.player == player and loc.can_reach(state)
         ]
         newly = [name for name in reachable if name not in seen]
         spheres.append(
@@ -87,7 +87,7 @@ def first_blockades(
         if loc.player != player:
             continue
         try:
-            if not loc.can_access(state):
+            if not loc.can_reach(state):
                 blocked.append({"location": loc.name, "region": loc.parent_region.name if loc.parent_region else None})
         except Exception:
             continue

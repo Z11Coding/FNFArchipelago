@@ -17,11 +17,25 @@ logger = logging.getLogger("APAPI")
 APAPI_DEFAULT_CONFIG = {
     "apapi": {
         "debug": {
-            "enabled": True,
+            "enabled": False,
         },
         "universal_tracker_snapshot": {
             "enabled": True,
             "verbose_location_log": True,
+        },
+        "verbose_collection_state": {
+            "enabled": False,
+            "log_has": True,
+            "log_has_all": True,
+            "log_count": True,
+            "log_can_reach": True,
+            "log_can_reach_location": True,
+            "log_can_reach_region": True,
+            "log_locations_checked": True,
+            "max_log_entries": 200000,
+            "log_stack_depth": 6,
+            "report_on_fill_error": True,
+            "ask_force_continue": True,
         }
     }
 }

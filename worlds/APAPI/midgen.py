@@ -17,10 +17,85 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("APAPI.Midgen")
 
+_midgen_hooks: dict[str, list[dict[str, Any]]] = {}
+
+
+def hook_midgen_instance(
+    world: "World",
+    method_name: str,
+    *,
+    before: Any | None = None,
+    after: Any | None = None,
+    wrapper: Any | None = None,
+) -> Any:
+    """Hook a midgen world instance like world_hooks. Returns unhook."""
+    from .world_hooks import hook_world_method
+
+    return hook_world_method(world, method_name, before=before, after=after, wrapper=wrapper)
+
+
+def register_midgen_hook(
+    game: str,
+    method_name: str,
+    *,
+    before: Any | None = None,
+    after: Any | None = None,
+    wrapper: Any | None = None,
+    as_static: bool = False,
+) -> None:
+    """Register a hook for future midgen-injected worlds of game. Applied on inject."""
+    _midgen_hooks.setdefault(game, []).append(
+        {"method": method_name, "before": before, "after": after, "wrapper": wrapper, "as_static": as_static}
+    )
+    dprint("midgen", f"registered midgen hook {game}.{method_name} static={as_static}")
+
+
+def _apply_midgen_hooks(world: "World") -> None:
+    """Apply registered midgen hooks to a newly injected world."""
+    game = getattr(world, "game", None)
+    if not isinstance(game, str):
+        return
+    for hook in list(_midgen_hooks.get(game, [])):
+        method = hook["method"]
+        before = hook["before"]
+        after = hook["after"]
+        wrapper = hook["wrapper"]
+        as_static = hook.get("as_static", False)
+        try:
+            if as_static:
+                # Install as staticmethod on the instance's class
+                orig = getattr(world, method, None)
+                if callable(orig):
+                    base = getattr(orig, "__apapi_unwrapped__", orig)
+                    # Create wrapper that doesn't pass self
+                    @__import__("functools").wraps(base)
+                    def static_patched(*args: Any, **kwargs: Any) -> Any:
+                        return base(*args, **kwargs)
+
+                    static_patched.__apapi_unwrapped__ = base  # type: ignore[attr-defined]
+                    setattr(world, method, staticmethod(static_patched))
+                    # Also update class for consistency if needed
+                    try:
+                        setattr(type(world), method, staticmethod(static_patched))
+                    except Exception:
+                        pass
+                    dprint("midgen", f"applied static midgen hook {game}.{method}")
+                else:
+                    # If no original, just set static
+                    if wrapper is not None:
+                        setattr(world, method, staticmethod(wrapper))
+                    elif before is not None:
+                        setattr(world, method, staticmethod(before))
+            else:
+                hook_midgen_instance(world, method, before=before, after=after, wrapper=wrapper)
+                dprint("midgen", f"applied midgen hook {game}.{method}")
+        except Exception as exc:
+            logger.warning("APAPI midgen hook failed for %s.%s: %s", game, method, exc)
+
 
 @dataclass
 class ExpansionSpec:
-    """Input: game, name, options. Output: spec for new player."""
+    """Spec for a new player to inject. Holds game, name and options."""
 
     game: str
     name: str
@@ -167,6 +242,7 @@ def inject_player_now(multiworld: "MultiWorld", spec: ExpansionSpec) -> int:
         world: "World" = world_type(multiworld, player)
         world.options = world_type.options_dataclass(**kwargs)
         multiworld.worlds[player] = world
+        _apply_midgen_hooks(world)
     except Exception as exc:
         raise LiveInjectError(f"Cannot instantiate {spec.game} world: {exc}") from exc
     dprint("midgen", f"instantiated {spec.game} as player {player} ({spec.name!r})")
@@ -191,4 +267,4 @@ def inject_player_now(multiworld: "MultiWorld", spec: ExpansionSpec) -> int:
     return player
 
 
-__all__ = ["ExpansionSpec", "LiveInjectError", "inject_player_now"]
+__all__ = ["ExpansionSpec", "LiveInjectError", "inject_player_now", "hook_midgen_instance", "register_midgen_hook"]

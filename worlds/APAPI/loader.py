@@ -192,6 +192,11 @@ def initialize() -> None:
             logger.warning("[APAPI:loader] launcher registration failed: %s", exc)
         _registered = True
     try:
+        from .appack import ensure_appack_association
+        ensure_appack_association()
+    except Exception as exc:
+        logger.debug("[APAPI:loader] appack association check failed: %s", exc)
+    try:
         from .world_ready import on_worlds_loaded, worlds_loading_complete
         if worlds_loading_complete():
             _auto_unpack_once()

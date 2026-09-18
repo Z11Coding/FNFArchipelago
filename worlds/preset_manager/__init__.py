@@ -19,17 +19,27 @@ except Exception as e:
     preset_manager = None
 
 
-# Attempt to patch OptionsCreator at module level
-try:
-    from .options_hook import patch_options_creator
-    patch_options_creator()
-    print("[PRESET-MANAGER] Successfully patched OptionsCreator")
-except ImportError:
-    print("[PRESET-MANAGER] options_hook module not available")
-except Exception as e:
-    print(f"[PRESET-MANAGER] Failed to patch OptionsCreator: {e}")
-    import traceback
-    traceback.print_exc()
+# Attempt to patch OptionsCreator at module level — deferred during generation to avoid kivy Window
+def _try_patch_options_creator():
+    try:
+        from worlds.APAPI.launch_context import should_skip_gui_patch
+        if should_skip_gui_patch():
+            print("[PRESET-MANAGER] Skipping OptionsCreator patch during generation")
+            return
+    except Exception:
+        pass
+    try:
+        from .options_hook import patch_options_creator
+        patch_options_creator()
+        print("[PRESET-MANAGER] Successfully patched OptionsCreator")
+    except ImportError:
+        print("[PRESET-MANAGER] options_hook module not available")
+    except Exception as e:
+        print(f"[PRESET-MANAGER] Failed to patch OptionsCreator: {e}")
+        import traceback
+        traceback.print_exc()
+
+_try_patch_options_creator()
 
 
 # Register Launcher component

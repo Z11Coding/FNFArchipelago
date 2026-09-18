@@ -196,6 +196,14 @@ def _get_steam_games() -> List[str]:
 
 
 try:
+    # Defer kivy import during generation — no Window should be created
+    try:
+        from worlds.APAPI.launch_context import should_skip_gui_patch
+        _skip_kivy = should_skip_gui_patch()
+    except Exception:
+        _skip_kivy = False
+    if _skip_kivy:
+        raise ImportError("Skipping kivy during generation")
     from kvui import ScrollBox, dp, MDBoxLayout, MDButton, MDButtonText, MDLabel, MDTextField, Widget, ThemedApp
     from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogSupportingText, MDDialogButtonContainer, MDDialogContentContainer
     from kivymd.uix.menu import MDDropdownMenu
@@ -205,9 +213,16 @@ try:
     KIVY_AVAILABLE = True
 except ImportError:
     KIVY_AVAILABLE = False
-    print("[SHORTCUT-MANAGER] Kivy/KivyMD unavailable.")
-    import traceback
-    traceback.print_exc()
+    # Only spam traceback outside generation
+    try:
+        from worlds.APAPI.launch_context import should_skip_gui_patch
+        _is_gen = should_skip_gui_patch()
+    except Exception:
+        _is_gen = False
+    if not _is_gen:
+        print("[SHORTCUT-MANAGER] Kivy/KivyMD unavailable.")
+        import traceback
+        traceback.print_exc()
 
 
 if KIVY_AVAILABLE:

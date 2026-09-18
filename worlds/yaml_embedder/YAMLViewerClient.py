@@ -37,7 +37,7 @@ from kivymd.uix.divider import MDDivider
 from kivymd.uix.dialog import MDDialog
 
 logger = logging.getLogger("YAML Viewer")
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 
 # Ensure we have a handler for INFO+ messages
 if not logger.handlers:

@@ -687,9 +687,18 @@ def _setup_launcher_restart_on_failure() -> None:
 
 
 try:
-    _add_game_type_to_enum()
-    initialize_shortcuts()
-    _setup_launcher_restart_on_failure()
-    print("[SHORTCUT-MANAGER] Initialized with auto-restart on failure.")
+    _skip_init = False
+    try:
+        from worlds.APAPI.launch_context import should_skip_gui_patch
+        _skip_init = should_skip_gui_patch()
+    except Exception:
+        pass
+    if _skip_init:
+        print("[SHORTCUT-MANAGER] Skipping init during generation (no GUI)")
+    else:
+        _add_game_type_to_enum()
+        initialize_shortcuts()
+        _setup_launcher_restart_on_failure()
+        print("[SHORTCUT-MANAGER] Initialized with auto-restart on failure.")
 except Exception as e:
     print(f"[SHORTCUT-MANAGER] Init failed: {e}")

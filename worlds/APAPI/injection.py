@@ -337,8 +337,10 @@ def inject_world_behavior(
     wrapper: HookWrapper | None = None,
     min_version: str | tuple[int, int, int] | None = None,
     max_version: str | tuple[int, int, int] | None = None,
+    sync_existing: bool = False,
+    as_static: bool = False,
 ) -> None:
-    """Input: game, method, hooks, version range. Returns: None (queues patch)."""
+    """Inject behavior into a world method. Args: game, method, hooks, versions, sync, static. Queues until loaded."""
     from .world_hooks import patch_world_class_method
 
     def _apply(name: str, world_type: "type[World] | None") -> None:
@@ -356,7 +358,7 @@ def inject_world_behavior(
             logger.warning("[APAPI:inject] Untested %s version %s for %s; attempting patch anyway.",
                            name, version, method_name)
         unhook: Any = patch_world_class_method(
-            world_type, method_name, before=before, after=after, wrapper=wrapper)
+            world_type, method_name, before=before, after=after, wrapper=wrapper, sync_existing=sync_existing, as_static=as_static)
         if unhook is None:
             dprint("inject", f"FAILED to patch {name}.{method_name}")
 

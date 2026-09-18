@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from worlds.APAPI.debug import dprint
+
 """Appack support: packs multiple world folders into apworld archives."""
 
 import logging
@@ -12,6 +14,7 @@ import zipfile
 logger = logging.getLogger("APAPI.AppPack")
 
 APPACK_SUFFIX = ".appack"
+APPACK_SUFFIX_ALT = ".apack"
 APWORLD_SUFFIX = ".apworld"
 
 
@@ -106,8 +109,8 @@ def install_appack(
     src = pathlib.Path(appack_src)
     if not src.is_file():
         raise Exception(f"APack file not found: {src}")
-    if src.suffix.lower() != APPACK_SUFFIX:
-        raise Exception(f"Wrong file format, looking for {APPACK_SUFFIX}. File identified: {src}")
+    if src.suffix.lower() != APPACK_SUFFIX and src.suffix.lower() != APPACK_SUFFIX_ALT:
+        raise Exception(f"Wrong file format, looking for {APPACK_SUFFIX} or {APPACK_SUFFIX_ALT}. File identified: {src}")
     try:
         if not zipfile.is_zipfile(src):
             raise Exception(f"File is not a valid zip archive: {src}")
@@ -153,10 +156,75 @@ def install_appack(
     return src, installed, skipped + skipped_existing
 
 
+def ensure_appack_association() -> bool:
+    """Ensure .apack/.appack files open with Archipelago Launcher on first frozen launch."""
+    try:
+        from Utils import is_frozen
+        if not is_frozen():
+            return False
+    except Exception:
+        import sys
+        if not getattr(sys, "frozen", False):
+            return False
+    try:
+        import sys
+        import winreg
+    except Exception:
+        return False
+    if sys.platform != "win32":
+        return False
+    try:
+        exe = sys.executable
+        if not exe.lower().endswith(".exe"):
+            return False
+    except Exception:
+        return False
+    # Check both suffixes (appack with one p and two p's) for robustness
+    for suffix in (APPACK_SUFFIX, APPACK_SUFFIX_ALT, ".apack", ".appack"):
+        if not suffix.startswith("."):
+            suffix = "." + suffix
+        prog_id = "ArchipelagoAPack"
+        # Use HKCU for per-user without admin, fallback to HKCR is handled by installer
+        # Check if already associated correctly
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{suffix}") as k:
+                val, _ = winreg.QueryValueEx(k, "")
+                if val == prog_id:
+                    # Check open command
+                    try:
+                        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}\\shell\\open\\command") as k2:
+                            cmd, _ = winreg.QueryValueEx(k2, "")
+                            if exe in cmd:
+                                continue
+                    except FileNotFoundError:
+                        pass
+        except FileNotFoundError:
+            pass
+        except Exception:
+            continue
+        # Not correctly associated, create it (first launch)
+        try:
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{suffix}") as k:
+                winreg.SetValueEx(k, "", 0, winreg.REG_SZ, prog_id)
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}") as k:
+                winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "Archipelago APack")
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}\\DefaultIcon") as k:
+                winreg.SetValueEx(k, "", 0, winreg.REG_SZ, f"{exe},0")
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}\\shell\\open\\command") as k:
+                winreg.SetValueEx(k, "", 0, winreg.REG_SZ, f'"{exe}" "%1"')
+            dprint("appack", f"associated {suffix} -> {prog_id} for first launch")
+            logger.info("Associated %s with Archipelago Launcher for first launch", suffix)
+        except Exception as exc:
+            logger.debug("APack association failed for %s: %s", suffix, exc)
+            continue
+    return True
+
+
 __all__ = [
     "APPACK_SUFFIX",
     "APWORLD_SUFFIX",
     "build_apworld_from_folder",
+    "ensure_appack_association",
     "install_appack",
     "list_top_level_folders",
 ]

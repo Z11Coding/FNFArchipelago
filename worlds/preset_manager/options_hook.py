@@ -1,9 +1,7 @@
-"""Hook to integrate Preset Manager into OptionsCreator."""
+"""Hook to integrate Preset Manager into OptionsCreator — defers kvui until needed."""
 
 import logging
 from typing import TYPE_CHECKING
-
-from kvui import dp, MDButton, MDButtonText, MDLabel, MDBoxLayout
 
 if TYPE_CHECKING:
     from OptionsCreator import OptionsCreator
@@ -13,16 +11,26 @@ logger = logging.getLogger("PresetManager")
 
 def patch_options_creator() -> None:
     """Patch OptionsCreator to add Preset Manager integration.
-    
+
     This function patches the OptionsCreator class to:
     1. Add a "Presets" button to the toolbar
     2. Hook into the build() method to initialize preset functionality
-    
+
     Should be called at import time before OptionsCreator is instantiated.
+    Skipped during generation (Generate/Main) to avoid premature kivy Window creation.
     """
+    # Gate: never open/patch kivy GUI during generation; Uploader is allowed but isn't Generate
     try:
-        from OptionsCreator import OptionsCreator
-        from .preset_dialogs import open_preset_selector_dialog
+        from worlds.APAPI.launch_context import should_skip_gui_patch
+        if should_skip_gui_patch():
+            logger.info("[PRESET-MANAGER] Skipping OptionsCreator patch during generation (no GUI).")
+            return
+    except Exception:
+        pass
+    try:
+        from kvui import dp, MDButton, MDButtonText, MDLabel, MDBoxLayout  # noqa: E402 — deferred until needed
+        from OptionsCreator import OptionsCreator  # noqa: E402
+        from .preset_dialogs import open_preset_selector_dialog  # noqa: E402
         
         # Store original build method
         original_build = OptionsCreator.build

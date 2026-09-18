@@ -56,7 +56,7 @@ def main():
     
     args = parser.parse_args()
     if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+        # logging.getLogger().setLevel(logging.DEBUG)
         logger.debug("[ArchipelagoUploader] Verbose logging enabled")
     try:
         from worlds.ArchipelagoUploader.UploadUtils import (

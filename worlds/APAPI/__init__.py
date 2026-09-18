@@ -2,6 +2,33 @@ from __future__ import annotations
 
 """APAPI package exports."""
 
+# Early tracer - logs first time root is set to DEBUG (the cause of Placed spam), deduped
+try:
+    import logging as _early_logging
+    import traceback as _early_tb
+    _orig_early_setLevel = _early_logging.Logger.setLevel
+    _early_seen: set[str] = set()
+    def _early_traced_setLevel(self, level):
+        try:
+            # Only log DEBUG sets, and only once per unique caller, skip our own progress wrapper
+            if level == _early_logging.DEBUG:
+                stack = "".join(_early_tb.format_stack(limit=10))
+                if "progress.py" in stack and "_wrap" in stack:
+                    return _orig_early_setLevel(self, level)
+                key = stack.split("File")[-1][:250] if "File" in stack else stack[:250]
+                if key not in _early_seen:
+                    _early_seen.add(key)
+                    import logging as _l
+                    lvl_name = _l.getLevelName(level)
+                    # Use print for early visibility before logger configured
+                    print(f"[EARLY-TRACER] setLevel {lvl_name} on {getattr(self, 'name', 'root')} by:\n{stack}")
+        except Exception:
+            pass
+        return _orig_early_setLevel(self, level)
+    _early_logging.Logger.setLevel = _early_traced_setLevel  # type: ignore
+except Exception:
+    pass
+
 from .core_hooks import (
     CORE_HOOK_TARGETS,
     initialize_core_hooks,
@@ -85,6 +112,25 @@ from .playthrough_model import (
 from .soft_patch import FuncStack
 from .appack import install_appack, list_top_level_folders
 from .loader import initialize as initialize_appack_loader, install_appack_ui, scan_and_unpack_pending
+from .generation_gate import initialize_generation_gate, wait_for_all_patches
+from .progress import initialize_progress, is_progress_enabled, set_progress_enabled
+from .launch_context import (
+    GENERATE as LAUNCH_GENERATE,
+    LAUNCHER as LAUNCH_LAUNCHER,
+    SERVER as LAUNCH_SERVER,
+    HOST as LAUNCH_HOST,
+    CLIENT as LAUNCH_CLIENT,
+    UPLOADER as LAUNCH_UPLOADER,
+    OPTIONS_CREATOR as LAUNCH_OPTIONS_CREATOR,
+    UNKNOWN as LAUNCH_UNKNOWN,
+    get_launch_context,
+    is_generate_context,
+    is_launcher_context,
+    is_server_context,
+    is_uploader_context,
+    should_skip_app_window,
+    should_skip_gui_patch,
+)
 
 
 __all__ = [
@@ -174,6 +220,26 @@ __all__ = [
     "initialize_appack_loader",
     "install_appack_ui",
     "scan_and_unpack_pending",
+    "initialize_generation_gate",
+    "wait_for_all_patches",
+    "initialize_progress",
+    "is_progress_enabled",
+    "set_progress_enabled",
+    "LAUNCH_GENERATE",
+    "LAUNCH_LAUNCHER",
+    "LAUNCH_SERVER",
+    "LAUNCH_HOST",
+    "LAUNCH_CLIENT",
+    "LAUNCH_UPLOADER",
+    "LAUNCH_OPTIONS_CREATOR",
+    "LAUNCH_UNKNOWN",
+    "get_launch_context",
+    "is_generate_context",
+    "is_launcher_context",
+    "is_server_context",
+    "is_uploader_context",
+    "should_skip_app_window",
+    "should_skip_gui_patch",
 ]
 
 
@@ -182,3 +248,10 @@ initialize_multiworld_features()
 initialize_stage_tracking()
 ensure_run_info()
 initialize_appack_loader()
+initialize_generation_gate()
+initialize_progress()
+# VerboseCollectionState – detailed Fill failure reports (host.yaml apapi.verbose_collection_state.enabled)
+try:
+    from . import verbose_state as _verbose_state  # noqa: F401
+except Exception:
+    pass

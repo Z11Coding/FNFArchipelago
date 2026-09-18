@@ -79,7 +79,7 @@ def _run_with_before_after(
     cancelled: bool = False
     if before is not None:
         decision: Any = before(*args, **kwargs)
-        if decision is False or decision is CANCEL:
+        if decision is CANCEL:
             cancelled = True
     result: Any = None if cancelled else base(*args, **kwargs)
     if after is not None:
@@ -124,8 +124,15 @@ def patch_world_class_method(
     before: HookBefore | None = None,
     after: HookAfter | None = None,
     wrapper: HookWrapper | None = None,
+    sync_existing: bool = False,
+    as_static: bool = False,
 ) -> Unhook | None:
-    """Input: game/class, method, hooks. Returns: unhook or None."""
+    """Patch a world class method and optionally sync existing instances.
+
+    Args: game, method name, hooks, sync, static flag.
+    Returns unhook or None. If sync_existing, also patches live worlds
+    in the current multiworld. If as_static, installs as staticmethod.
+    """
     world_type: Any | None
     label: str
     if isinstance(game, str):
@@ -165,8 +172,37 @@ def patch_world_class_method(
             return _run_with_before_after(base, before, after, (self, *args), kwargs)
 
     patched.__apapi_unwrapped__ = base  # type: ignore[attr-defined]
-    setattr(world_type, method_name, patched)
-    dprint("hooks", f"patched class {label}.{method_name} successfully")
+    if as_static:
+        setattr(world_type, method_name, staticmethod(patched))
+        dprint("hooks", f"patched class {label}.{method_name} as staticmethod successfully")
+    else:
+        setattr(world_type, method_name, patched)
+        dprint("hooks", f"patched class {label}.{method_name} successfully")
+
+    if sync_existing:
+        try:
+            from .multiworld_api import get_current_multiworld, has_current_multiworld
+            if has_current_multiworld():
+                mw = get_current_multiworld()
+                for pid in list(getattr(mw, "player_ids", [])):
+                    try:
+                        w = mw.worlds[pid]
+                    except Exception:
+                        continue
+                    if getattr(w, "game", None) != label and not (isinstance(game, type) and isinstance(w, game)):
+                        continue
+                    try:
+                        if as_static:
+                            setattr(w, method_name, getattr(world_type, method_name))
+                        else:
+                            # Sync by hooking instance or rebinding to new class method
+                            # Prefer hooking to keep before/after parity
+                            hook_world_method(w, method_name, before=before, after=after, wrapper=wrapper)
+                        dprint("hooks", f"synced existing instance {label}.{method_name} for player {pid}")
+                    except Exception as exc:
+                        logger.warning("APAPI sync_existing failed for %s.%s player %s: %s", label, method_name, pid, exc)
+        except Exception as exc:
+            logger.warning("APAPI sync_existing check failed for %s.%s: %s", label, method_name, exc)
 
     def unhook() -> None:
         try:
