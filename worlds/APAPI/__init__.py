@@ -114,6 +114,7 @@ from .appack import install_appack, list_top_level_folders
 from .loader import initialize as initialize_appack_loader, install_appack_ui, scan_and_unpack_pending
 from .generation_gate import initialize_generation_gate, wait_for_all_patches
 from .progress import initialize_progress, is_progress_enabled, set_progress_enabled
+from .fuzzy import did_you_mean, format_did_you_mean
 from .launch_context import (
     GENERATE as LAUNCH_GENERATE,
     LAUNCHER as LAUNCH_LAUNCHER,
@@ -225,6 +226,8 @@ __all__ = [
     "initialize_progress",
     "is_progress_enabled",
     "set_progress_enabled",
+    "did_you_mean",
+    "format_did_you_mean",
     "LAUNCH_GENERATE",
     "LAUNCH_LAUNCHER",
     "LAUNCH_SERVER",

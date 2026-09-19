@@ -207,7 +207,7 @@ def ensure_appack_association() -> bool:
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{suffix}") as k:
                 winreg.SetValueEx(k, "", 0, winreg.REG_SZ, prog_id)
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}") as k:
-                winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "Archipelago APack")
+                winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "Archipelago World Pack")
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}\\DefaultIcon") as k:
                 winreg.SetValueEx(k, "", 0, winreg.REG_SZ, f"{exe},0")
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}\\shell\\open\\command") as k:

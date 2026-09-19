@@ -86,8 +86,9 @@ def install_appack_ui(appack_src: str = "") -> None:
         if not appack_src:
             try:
                 import Utils
+                from .appack import APPACK_SUFFIX_ALT
                 picked = Utils.open_filename(
-                    "Select APack file to install", (("APack", (APPACK_SUFFIX,)),))
+                    "Select APack file to install", (("APack", (APPACK_SUFFIX, APPACK_SUFFIX_ALT)),))
             except Exception as exc:
                 raise Exception(f"Could not open file dialog: {exc}") from exc
             if not picked:
@@ -128,8 +129,9 @@ def scan_and_unpack_pending(notify: bool = True) -> tuple[list[pathlib.Path], li
     if not base.is_dir():
         return installed_all, notes
     try:
+        from .appack import APPACK_SUFFIX_ALT
         candidates = sorted(path for path in base.iterdir()
-                            if path.is_file() and path.suffix.lower() == APPACK_SUFFIX)
+                            if path.is_file() and path.suffix.lower() in (APPACK_SUFFIX, APPACK_SUFFIX_ALT))
     except OSError:
         return installed_all, notes
     for appack_path in candidates:
@@ -173,16 +175,18 @@ def initialize() -> None:
     if not _registered:
         try:
             from worlds.LauncherComponents import Component, SuffixIdentifier, components, Type
+            from .appack import APPACK_SUFFIX_ALT
             exists = any(
                 isinstance(getattr(c, "file_identifier", None), SuffixIdentifier)
                 and APPACK_SUFFIX in tuple(getattr(c.file_identifier, "suffixes", ()))
+                and APPACK_SUFFIX_ALT in tuple(getattr(c.file_identifier, "suffixes", ()))
                 for c in components
             )
             if not exists:
                 components.append(Component(
                     "Install APack",
                     func=install_appack_ui,
-                    file_identifier=SuffixIdentifier(APPACK_SUFFIX),
+                    file_identifier=SuffixIdentifier(APPACK_SUFFIX, APPACK_SUFFIX_ALT),
                     component_type=Type.MISC,
                     description="Install an APack (multi-world pack: each top-level folder "
                                 "becomes its own APWorld in custom_worlds).",

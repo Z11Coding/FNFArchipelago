@@ -51,10 +51,10 @@ class MysteryCustomGoalAnyItems(Toggle):
 
 CUSTOM_GOAL_TAG = "mystery_custom_goal"
 GOAL_MARKED_ATTR = "mystery_goal_marked"
-GOAL_MARKED_FLAG: int = 8  # custom flag (1=prog,2=useful,4=trap,8=goal)
+GOAL_MARKED_FLAG: int = 8
 
-# Mapping for goal-marked items – Item uses __slots__ so we cannot set .tags/.flags reliably.
-# Use id(item) -> True instead. Client checks this mapping via slot_data.
+
+
 GOAL_MARKED_MAP: dict[int, bool] = {}
 
 
@@ -112,7 +112,7 @@ def _get_custom_goal_data(world: World) -> dict[str, Any]:
 
 
 def _find_owner_world(mw: MultiWorld, item_name: str, preferred_player: int | None = None) -> tuple[Any, int] | None:
-    # Prefer the preferred_player's own world if it has the item (strict per-player)
+
     if preferred_player is not None:
         try:
             w = mw.worlds.get(preferred_player)
@@ -132,6 +132,21 @@ def _find_owner_world(mw: MultiWorld, item_name: str, preferred_player: int | No
     return best
 
 
+def _get_mystery_token_player(mw: MultiWorld, goal_player: int) -> int:
+    try:
+        for pid, w in mw.worlds.items():
+            if getattr(w, "game", "") == "Mystery Game":
+                exp = getattr(w, "expanded_players", None)
+                if isinstance(exp, list) and goal_player in exp:
+                    return int(pid)
+        for pid, w in mw.worlds.items():
+            if getattr(w, "game", "") == "Mystery Game":
+                return int(pid)
+    except Exception:
+        pass
+    return int(goal_player)
+
+
 def _create_goal_marked_item(owner_world: Any, target_player: int, item_name: str, classification: ItemClassification) -> Any:
     """Create item via owner's create_item for correct code, but for target_player.
 
@@ -141,32 +156,32 @@ def _create_goal_marked_item(owner_world: Any, target_player: int, item_name: st
     code stays as owner's game code.
     """
     tmp = owner_world.create_item(item_name)
-    # Use the item *from* create_item directly – do not clone via Item() which
-    # would lose the correct code/flags for cross-game items.
-    # Just retarget player and ensure mapping.
+
+
+
     try:
-        # Directly retarget – Item.__slots__ allows player assignment
+
         tmp.player = target_player
     except Exception:
-        # Fallback: if player is read-only, create new Item with same code
+
         try:
             item_id = getattr(tmp, "code", 0)
-            # Preserve original classification unless overridden
+
             orig_class = getattr(tmp, "classification", classification)
-            # Ensure at least progression
+
             if not (orig_class & ItemClassification.progression):
                 orig_class |= ItemClassification.progression
             tmp = Item(item_name, orig_class, item_id, target_player)
         except Exception:
             pass
-    # Ensure at least progression
+
     try:
         if not (tmp.classification & ItemClassification.progression):
             tmp.classification |= ItemClassification.progression
     except Exception:
         tmp.classification = ItemClassification.progression
     GOAL_MARKED_MAP[id(tmp)] = True
-    # Also mark via classification flag for Fill's advancement check (AP tries to make every progression reachable)
+
     return tmp
 
 
@@ -183,16 +198,16 @@ def _retrofit_any_items(mw: MultiWorld, items: dict[str, int], target_player: in
     if not items:
         return 0
     wanted = set(items.keys())
-    # Build reachable set via APAPI – generic, not Mystery-only
+
     try:
         state = mw.get_all_state()
     except Exception:
         state = None
-    # Collect pools with their location (if any) for reachability check
+
     pools: list[tuple[Any, Location | None]] = []
     try:
         for it in list(mw.itempool):
-            pools.append((it, None))  # itempool has no location yet – treat as reachable
+            pools.append((it, None))
     except Exception:
         pass
     try:
@@ -216,7 +231,7 @@ def _retrofit_any_items(mw: MultiWorld, items: dict[str, int], target_player: in
                     pools.append((it, loc))
     except Exception:
         pass
-    # Filter to reachable only when possible – use APAPI's can_reach
+
     reachable_pools: list[tuple[Any, Location | None]] = []
     for it, loc in pools:
         try:
@@ -224,7 +239,7 @@ def _retrofit_any_items(mw: MultiWorld, items: dict[str, int], target_player: in
                 continue
             if getattr(it, "name", None) not in wanted:
                 continue
-            # If it has a location, require that location be reachable
+
             if loc is not None and state is not None:
                 try:
                     if not loc.can_reach(state):
@@ -234,7 +249,7 @@ def _retrofit_any_items(mw: MultiWorld, items: dict[str, int], target_player: in
             reachable_pools.append((it, loc))
         except Exception:
             continue
-    # If none reachable, fall back to any (so we still mark something)
+
     target_pools = reachable_pools if reachable_pools else [p for p in pools if getattr(p[0], "player", None)==target_player and getattr(p[0], "name", None) in wanted]
     count = 0
     for it, _loc in target_pools:
@@ -262,7 +277,7 @@ def _make_paired_reward_rule(player: int, idx: int, source_loc: Location | None)
         raise ValueError(f"Paired reward {idx}: source location does not exist – cannot create rule")
 
     def paired(state, _src=source_loc):
-        # Primary: has the source been checked? (Fill-aware)
+
         try:
             if _src in getattr(state, "locations_checked", set()):
                 return True
@@ -289,7 +304,7 @@ def _get_location_for_player(mw: MultiWorld, loc_name: str, player: int) -> tupl
     players first, but still strictly – no lazy first-match across unrelated
     worlds, and we throw if not found.
     """
-    # Primary: exact player
+
     try:
         loc = mw.get_location(loc_name, player)
         if loc is not None and getattr(loc, "player", player) == player:
@@ -303,7 +318,7 @@ def _get_location_for_player(mw: MultiWorld, loc_name: str, player: int) -> tupl
                     return loc, player
     except Exception:
         pass
-    # Mystery cross-game: allow locations from worlds Mystery generated
+
     try:
         w = mw.worlds.get(player)
         if w is not None and getattr(w, "game", "") == "Mystery Game":
@@ -329,16 +344,16 @@ def _get_location_for_player(mw: MultiWorld, loc_name: str, player: int) -> tupl
 
 def _find_location_and_player(mw: MultiWorld, loc_name: str) -> tuple[Location | None, int | None]:
     """Deprecated: lazy first-match finder. Use _get_location_for_player."""
-    return _get_location_for_player(mw, loc_name, -1)  # will not find; kept for compat
-    # fallback legacy behavior if needed:
-    # for pid in list(mw.worlds.keys()):
-    #     try:
-    #         loc = mw.get_location(loc_name, pid)
-    #         if loc is not None:
-    #             return loc, pid
-    #     except Exception:
-    #         continue
-    # return None, None
+    return _get_location_for_player(mw, loc_name, -1)
+
+
+
+
+
+
+
+
+
 
 
 def _record_pair(world: World, idx: int, loc_name: str, reward_name: str, source_loc: Location | None, source_pid: int | None) -> None:
@@ -350,7 +365,7 @@ def _record_pair(world: World, idx: int, loc_name: str, reward_name: str, source
             world.mystery_custom_goal_reward_to_source = {}  # type: ignore
         pairs: list[dict[str, Any]] = getattr(world, "mystery_custom_goal_pairs")  # type: ignore
         reward_map: dict[str, str] = getattr(world, "mystery_custom_goal_reward_to_source")  # type: ignore
-        # Avoid duplicates
+
         for existing in pairs:
             if existing.get("reward") == reward_name:
                 return
@@ -401,25 +416,23 @@ def apply_custom_goal(world: World) -> None:
     )
     from BaseClasses import Region, Location
 
-    # For location goals: use existing game locations as goals.
-    # Ensure Mystery has a reward region for the displaced items.
+    token_player = _get_mystery_token_player(mw, player)
     reward_region: Region | None = None
     for r in mw.regions:
-        if r.name == "Mystery Goal Rewards" and r.player == player:
+        if r.name == "Mystery Goal Rewards" and r.player == token_player:
             reward_region = r
             break
     if reward_region is None:
         try:
-            # Find Menu to connect, else first Mystery region
             menu = None
             for r in mw.regions:
-                if r.name == "Menu" and r.player == player:
+                if r.name == "Menu" and r.player == token_player:
                     menu = r
                     break
-            reward_region = Region("Mystery Goal Rewards", player, mw)
+            reward_region = Region("Mystery Goal Rewards", token_player, mw)
             mw.regions.append(reward_region)
             if menu is not None:
-                # Connect via Puzzle Hall or directly - ensure reachable after Menu
+
                 try:
                     menu.connect(reward_region)
                 except Exception:
@@ -433,55 +446,55 @@ def apply_custom_goal(world: World) -> None:
             reward_region = None
 
     sorted_locs = sorted(locations)
-    # Keep internal_map for backwards compat, but now keys are the existing loc names
+
     if not hasattr(world, "mystery_custom_goal_internal_map"):
         world.mystery_custom_goal_internal_map = {}  # type: ignore
     if not hasattr(world, "mystery_custom_goal_pairs"):
         world.mystery_custom_goal_pairs = []  # type: ignore
     if not hasattr(world, "mystery_custom_goal_reward_to_source"):
         world.mystery_custom_goal_reward_to_source = {}  # type: ignore
-    # Defer actual placement to pre_fill to ensure all locations exist; if we are in create_items, just validate existence.
-    # We will handle placement in a pre_fill hook if needed, but for now handle immediately if loc exists.
-    # To ensure we run at a safe time (pre_fill), we store pending locations and let the pre_fill hook do the work.
-    # If we are currently in pre_fill, do the placement now; otherwise, defer.
+
+
+
+
     try:
         from worlds.APAPI.generation import get_current_stage
         cur_stage = get_current_stage()
     except Exception:
         cur_stage = None
-    # If not in pre_fill and not all locations may exist yet, defer the actual hijack to pre_fill
+
     is_pre_fill = (cur_stage == "pre_fill")
-    # Store pending for pre_fill – per-player to avoid cross-world contamination
+
     pending_key = f"_mystery_pending_loc_goals_{player}"
     if not is_pre_fill:
-        # In create_items stage: validate existence and queue for pre_fill
+
         existing_pending = getattr(mw, pending_key, None)
         if existing_pending is None:
             setattr(mw, pending_key, [])
             existing_pending = getattr(mw, pending_key)
-        # Also store on world for slot_data
+
         world.mystery_custom_goal_pending_locs = sorted_locs  # type: ignore
         for loc_name in sorted_locs:
             if loc_name not in existing_pending:
                 existing_pending.append(loc_name)
-        # Defer reward creation to pre_fill when source locations are guaranteed to exist.
-        # Do not create placeholders here – rewards are paired 1:1 and must be able to
-        # copy the source's reachability. If the source does not exist we throw.
+
+
+
         for idx, loc_name in enumerate(sorted_locs, start=1):
             if idx > MAX_CUSTOM_GOALS:
                 break
             internal_reward_name = custom_goal_reward_location_name(idx)
-            # Only record internal map entry for slot_data preview; actual Location
-            # and paired rule are created in pre_fill.
+
+
             if loc_name not in world.mystery_custom_goal_internal_map:  # type: ignore
                 world.mystery_custom_goal_internal_map[loc_name] = internal_reward_name  # type: ignore
     else:
-        # In pre_fill: do the actual hijack of existing locations and pair rewards
+
         for idx, loc_name in enumerate(sorted_locs, start=1):
             if idx > MAX_CUSTOM_GOALS:
                 break
             internal_reward_name = custom_goal_reward_location_name(idx)
-            # Find or create reward loc
+
             reward_loc_obj = None
             for r in mw.regions:
                 for l in r.locations:
@@ -490,7 +503,7 @@ def apply_custom_goal(world: World) -> None:
                         break
                 if reward_loc_obj:
                     break
-            # Find the existing location to hijack – must exist on the player who set the goal or we throw
+
             try:
                 target_loc, target_pid = _get_location_for_player(mw, loc_name, player)
                 if target_loc is None:
@@ -503,21 +516,21 @@ def apply_custom_goal(world: World) -> None:
                         except Exception:
                             GoalCls = Location
                         reward_id = CUSTOM_GOAL_REWARD_LOCATION_BASE + (idx - 1)
-                        reward_loc_obj = GoalCls(player, internal_reward_name, reward_id, reward_region)
-                        # Paired rule: reachable iff source item can be collected
+                        reward_loc_obj = GoalCls(_get_mystery_token_player(mw, player), internal_reward_name, reward_id, reward_region)
+
                         reward_loc_obj.access_rule = _make_paired_reward_rule(player, idx, target_loc)
                         if reward_region is not None:
                             reward_region.locations.append(reward_loc_obj)
                     except Exception as e:
                         raise RuntimeError(f"Failed to create paired reward '{internal_reward_name}' for '{loc_name}': {e}") from e
                 else:
-                    # Upgrade existing placeholder to paired rule
+
                     reward_loc_obj.access_rule = _make_paired_reward_rule(player, idx, target_loc)
-                # Record pairing with full source info
+
                 world.mystery_custom_goal_internal_map[loc_name] = internal_reward_name  # type: ignore
                 _record_pair(world, idx, loc_name, internal_reward_name, target_loc, target_pid)
-                # Create token
-                token_item = Item(CUSTOM_GOAL_TOKEN_ITEM, ItemClassification.progression, CUSTOM_GOAL_TOKEN_ID, player)
+                token_player = _get_mystery_token_player(mw, player)
+                token_item = Item(CUSTOM_GOAL_TOKEN_ITEM, ItemClassification.progression, CUSTOM_GOAL_TOKEN_ID, token_player)
                 try:
                     setattr(token_item, GOAL_MARKED_ATTR, True)
                 except Exception:
@@ -537,7 +550,7 @@ def apply_custom_goal(world: World) -> None:
                     token_item.tags = [CUSTOM_GOAL_TAG]  # type: ignore
                 except Exception:
                     pass
-                # If target already has an item (locked), move it to reward
+
                 existing_item = getattr(target_loc, "item", None)
                 if existing_item is not None:
                     try:
@@ -553,7 +566,7 @@ def apply_custom_goal(world: World) -> None:
                             mw.itempool.append(existing_item)
                         except Exception:
                             pass
-                # Place token at the existing location
+
                 try:
                     target_loc.place_locked_item(token_item)
                 except Exception as e:
@@ -569,17 +582,17 @@ def apply_custom_goal(world: World) -> None:
 
     if items:
         if any_items:
-            # Any mode: will retrofit after all items are created (pre_fill hook)
+
             world.mystery_custom_goal_any_items_pending = True  # type: ignore
         else:
-            # Specific mode: create GOAL_MARKED items for Mystery player using owner template
+
             for item_name, count in items.items():
                 owner_info = _find_owner_world(mw, item_name, preferred_player=player)
                 if owner_info is None:
                     owner_world, owner_player = world, player
                 else:
                     owner_world, owner_player = owner_info
-                    # Use Mystery player as target, but owner_world for template
+
                 total = sum(items.values())
                 classification = ItemClassification.progression
                 if total >= 5:
@@ -588,7 +601,7 @@ def apply_custom_goal(world: World) -> None:
                     classification |= ItemClassification.skip_balancing
                 for _ in range(count):
                     item = _create_goal_marked_item(owner_world, player, item_name, classification)
-                    # Ensure player is Mystery
+
                     try:
                         item.player = player
                     except Exception:
@@ -599,15 +612,14 @@ def apply_custom_goal(world: World) -> None:
                         continue
 
     def custom_completion(state) -> bool:
-        # Locations: need enough Goal Tokens
+        token_player = _get_mystery_token_player(mw, player)
         if locations:
-            # Internal goal count is len(sorted_locs) but we use tokens count
-            if state.count(CUSTOM_GOAL_TOKEN_ITEM, player) < len(sorted_locs):
+            if state.count(CUSTOM_GOAL_TOKEN_ITEM, token_player) < len(sorted_locs):
                 return False
-        # Items
+
         if items:
             if any_items:
-                # Any item: count any matching item for Mystery player
+
                 for name, need in items.items():
                     if state.count(name, player) < int(need):
                         return False
@@ -639,24 +651,24 @@ def _after_fill_slot_data(result: Any, world_self: Any, *args: Any, **kwargs: An
             result["mystery_custom_goal_any_items"] = bool(data["any_items"])
             result["mystery_custom_goal_tag"] = CUSTOM_GOAL_TAG
             result["mystery_custom_goal_token"] = "Mystery Goal Token"
-            result["mystery_custom_goal_token_id"] = 7000  # placeholder, client uses names
+            result["mystery_custom_goal_token_id"] = 7000
             try:
                 internal_map = getattr(world_self, "mystery_custom_goal_internal_map", {})
                 if internal_map:
                     result["mystery_custom_goal_internal_map"] = dict(internal_map)
             except Exception:
                 pass
-            # New: paired reward info for client/logic transparency
+
             try:
                 pairs = getattr(world_self, "mystery_custom_goal_pairs", None)
                 if isinstance(pairs, list) and pairs:
                     result["mystery_custom_goal_pairs"] = [dict(p) for p in pairs]
-                    # Also provide reward -> source map
+
                     rmap = getattr(world_self, "mystery_custom_goal_reward_to_source", {})
                     if isinstance(rmap, dict) and rmap:
                         result["mystery_custom_goal_reward_map"] = dict(rmap)
                 else:
-                    # Fallback: build from internal_map if pairs not yet built
+
                     im = getattr(world_self, "mystery_custom_goal_internal_map", {})
                     if isinstance(im, dict) and im:
                         result["mystery_custom_goal_pairs"] = [
@@ -666,10 +678,74 @@ def _after_fill_slot_data(result: Any, world_self: Any, *args: Any, **kwargs: An
                         result["mystery_custom_goal_reward_map"] = dict(im) if isinstance(im, dict) else {}
             except Exception:
                 pass
-            # Expose pairing rule type for client info (always paired now)
+
             result["mystery_custom_goal_reward_paired"] = True
             result["mystery_custom_goal_max"] = 3000
         else:
+            try:
+                if getattr(world_self, "game", "") == "Mystery Game":
+                    mw = getattr(world_self, "multiworld", None)
+                    exp = getattr(world_self, "expanded_players", None)
+                    if isinstance(exp, list) and exp and mw is not None:
+                        per_slot: dict[str, dict[str, Any]] = {}
+                        for pid in exp:
+                            w = mw.worlds.get(pid)
+                            if w is None or not getattr(w, "mystery_custom_goal_enabled", False):
+                                continue
+                            try:
+                                slot_name = str(mw.player_name.get(pid, f"P{pid}"))
+                            except Exception:
+                                slot_name = f"P{pid}"
+                            entry: dict[str, Any] = {}
+                            try:
+                                locs = getattr(w, "mystery_custom_goal_locations", set()) or set()
+                                entry["mystery_custom_goal"] = True
+                                entry["mystery_custom_goal_locations"] = sorted(set(locs) if isinstance(locs, (set, list, tuple)) else [])
+                            except Exception:
+                                entry["mystery_custom_goal_locations"] = []
+                            try:
+                                its = getattr(w, "mystery_custom_goal_items", {}) or {}
+                                entry["mystery_custom_goal_items"] = dict(its) if isinstance(its, dict) else {}
+                            except Exception:
+                                entry["mystery_custom_goal_items"] = {}
+                            try:
+                                entry["mystery_custom_goal_any_items"] = bool(getattr(w, "mystery_custom_goal_any_items", False))
+                            except Exception:
+                                entry["mystery_custom_goal_any_items"] = False
+                            entry["mystery_custom_goal_tag"] = CUSTOM_GOAL_TAG
+                            entry["mystery_custom_goal_token"] = "Mystery Goal Token"
+                            entry["mystery_custom_goal_token_id"] = 7000
+                            try:
+                                im = getattr(w, "mystery_custom_goal_internal_map", {}) or {}
+                                if isinstance(im, dict) and im:
+                                    entry["mystery_custom_goal_internal_map"] = dict(im)
+                            except Exception:
+                                pass
+                            try:
+                                ps = getattr(w, "mystery_custom_goal_pairs", []) or []
+                                if isinstance(ps, list) and ps:
+                                    entry["mystery_custom_goal_pairs"] = [dict(p) for p in ps if isinstance(p, dict) and "source" in p]
+                                    rm = getattr(w, "mystery_custom_goal_reward_to_source", {}) or {}
+                                    if isinstance(rm, dict) and rm:
+                                        entry["mystery_custom_goal_reward_map"] = dict(rm)
+                                else:
+                                    im2 = getattr(w, "mystery_custom_goal_internal_map", {}) or {}
+                                    if isinstance(im2, dict) and im2:
+                                        entry["mystery_custom_goal_pairs"] = [
+                                            {"index": i+1, "source": src, "reward": rew, "source_player": pid}
+                                            for i, (src, rew) in enumerate(sorted(im2.items()))
+                                        ]
+                                        entry["mystery_custom_goal_reward_map"] = dict(im2)
+                            except Exception:
+                                pass
+                            entry["mystery_custom_goal_reward_paired"] = True
+                            entry["mystery_custom_goal_max"] = 3000
+                            per_slot[slot_name] = entry
+                        if per_slot:
+                            result["mystery_custom_goal_per_slot"] = per_slot
+                            return result
+            except Exception:
+                pass
             result["mystery_custom_goal"] = False
     except Exception:
         pass
@@ -697,56 +773,56 @@ def _after_pre_fill(result: Any, world_self: Any, *args: Any, **kwargs: Any) -> 
         if mw is None:
             return result
         player = int(getattr(world_self, "player", 0))
-        # --- Location goals: hijack existing locations at pre_fill ---
+
         if data["locations"]:
-            # Only run once
+
             loc_flag = getattr(mw, f"_mystery_loc_goals_done_{player}", False) or getattr(mw, "_mystery_loc_goals_done", False)
             if not loc_flag:
                 from .puzzles import CUSTOM_GOAL_TOKEN_ITEM, CUSTOM_GOAL_TOKEN_ID, custom_goal_reward_location_name, CUSTOM_GOAL_REWARD_LOCATION_BASE
                 from BaseClasses import Item, ItemClassification
-                # Find pending locs (queued at create_items) per-player or use current data
+
                 pending = getattr(mw, f"_mystery_pending_loc_goals_{player}", None)
-                # Fallback to legacy global key for old saves
+
                 if pending is None:
                     pending = getattr(mw, "_mystery_pending_loc_goals", None)
                 locs_to_process = list(pending) if isinstance(pending, list) and pending else sorted(data["locations"])
-                # Ensure pairs structures exist
+
                 if not hasattr(world_self, "mystery_custom_goal_pairs"):
                     world_self.mystery_custom_goal_pairs = []  # type: ignore
                 if not hasattr(world_self, "mystery_custom_goal_reward_to_source"):
                     world_self.mystery_custom_goal_reward_to_source = {}  # type: ignore
                 if not hasattr(world_self, "mystery_custom_goal_internal_map"):
                     world_self.mystery_custom_goal_internal_map = {}  # type: ignore
-                # Now hijack each existing location
+
                 for idx, loc_name in enumerate(locs_to_process, start=1):
-                    # Find source location strictly for the player who owns the custom goal
+
                     target_loc, target_pid = _get_location_for_player(mw, loc_name, player)
                     if target_loc is None:
                         raise ValueError(f"Custom goal location '{loc_name}' does not exist for player {player} – cannot create paired reward '{custom_goal_reward_location_name(idx)}' (no rule without source)")
-                    # Find its reward location
+
                     reward_name = custom_goal_reward_location_name(idx)
                     reward_loc = None
+                    token_player = _get_mystery_token_player(mw, player)
                     for r in mw.regions:
                         for l in r.locations:
-                            if l.name == reward_name and l.player == player:
+                            if l.name == reward_name and l.player == token_player:
                                 reward_loc = l
                                 break
                         if reward_loc:
                             break
-                    # If reward not yet created, create it now with paired reachability
+
                     if reward_loc is None:
                         from BaseClasses import Region, Location
-                        # Find reward region
                         reward_region = None
                         for r in mw.regions:
-                            if r.name == "Mystery Goal Rewards" and r.player == player:
+                            if r.name == "Mystery Goal Rewards" and r.player == token_player:
                                 reward_region = r
                                 break
                         if reward_region is None:
-                            reward_region = Region("Mystery Goal Rewards", player, mw)
+                            reward_region = Region("Mystery Goal Rewards", token_player, mw)
                             mw.regions.append(reward_region)
                             for r in mw.regions:
-                                if r.name == "Menu" and r.player == player:
+                                if r.name == "Menu" and r.player == token_player:
                                     try:
                                         r.connect(reward_region)
                                     except Exception:
@@ -758,20 +834,20 @@ def _after_pre_fill(result: Any, world_self: Any, *args: Any, **kwargs: Any) -> 
                         except Exception:
                             GoalCls = Location
                         reward_id = CUSTOM_GOAL_REWARD_LOCATION_BASE + (idx - 1)
-                        reward_loc = GoalCls(player, reward_name, reward_id, reward_region)
+                        reward_loc = GoalCls(token_player, reward_name, reward_id, reward_region)
                         reward_loc.access_rule = _make_paired_reward_rule(player, idx, target_loc)
                         reward_region.locations.append(reward_loc)
                     else:
-                        # Update rule to paired (source must be reachable)
+
                         reward_loc.access_rule = _make_paired_reward_rule(player, idx, target_loc)
-                    # Record pairing (idempotent)
+
                     try:
                         _record_pair(world_self, idx, loc_name, reward_name, target_loc, target_pid)
                         if loc_name not in world_self.mystery_custom_goal_internal_map:  # type: ignore
                             world_self.mystery_custom_goal_internal_map[loc_name] = reward_name  # type: ignore
                     except Exception:
                         pass
-                    # Create token if not already placed (idempotent check)
+
                     existing_on_target = getattr(target_loc, "item", None)
                     is_token_already = False
                     try:
@@ -781,7 +857,8 @@ def _after_pre_fill(result: Any, world_self: Any, *args: Any, **kwargs: Any) -> 
                         pass
                     if is_token_already:
                         continue
-                    token_item = Item(CUSTOM_GOAL_TOKEN_ITEM, ItemClassification.progression, CUSTOM_GOAL_TOKEN_ID, player)
+                    token_player = _get_mystery_token_player(mw, player)
+                    token_item = Item(CUSTOM_GOAL_TOKEN_ITEM, ItemClassification.progression, CUSTOM_GOAL_TOKEN_ID, token_player)
                     try:
                         setattr(token_item, GOAL_MARKED_ATTR, True)
                     except Exception:
@@ -793,7 +870,7 @@ def _after_pre_fill(result: Any, world_self: Any, *args: Any, **kwargs: Any) -> 
                             _goal_marked_registry.add(id(token_item))  # type: ignore
                         except Exception:
                             pass
-                    # Move displaced item if any (should be None at this stage, but handle locked)
+
                     if existing_on_target is not None:
                         try:
                             if getattr(reward_loc, "item", None) is None:
@@ -805,7 +882,7 @@ def _after_pre_fill(result: Any, world_self: Any, *args: Any, **kwargs: Any) -> 
                                 mw.itempool.append(existing_on_target)
                             except Exception:
                                 pass
-                    # Place token at the existing location (hijack)
+
                     try:
                         target_loc.place_locked_item(token_item)
                     except Exception as e:
@@ -816,7 +893,7 @@ def _after_pre_fill(result: Any, world_self: Any, *args: Any, **kwargs: Any) -> 
                 setattr(mw, "_mystery_loc_goals_done", True)
                 import logging
                 logging.getLogger("MysteryCustomGoal").info(f"Hijacked {len(locs_to_process)} locations for custom goal (paired rewards)")
-        # --- Any-items retrofit ---
+
         if data["any_items"] and data["items"]:
             flag = getattr(mw, f"_mystery_any_retrofit_done_{player}", False) or getattr(mw, "_mystery_any_retrofit_done", False)
             if not flag:
@@ -843,7 +920,7 @@ try:
         inject_option("mystery_custom_goal_any_items", MysteryCustomGoalAnyItems, games=[_g], group_name="Mystery Custom Goal")
         inject_world_behavior(_g, "fill_slot_data", after=_after_fill_slot_data)
         inject_world_behavior(_g, "create_items", after=_after_create_items)
-        # Any-mode retrofit at pre_fill (after all create_items)
+
         inject_world_behavior(_g, "pre_fill", after=_after_pre_fill)
 except Exception:
     pass

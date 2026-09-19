@@ -381,7 +381,7 @@ class MysteryCommandProcessor(ClientCommandProcessor):
             return False
         pairs = getattr(ctx, "custom_goal_pairs", []) or []
         if not pairs:
-            # fallback to internal_map
+
             im = getattr(ctx, "custom_goal_internal_map", {}) or {}
             if im:
                 self.output(f"Reward pairs ({len(im)}) - token count gated, paired to source:")
@@ -483,6 +483,8 @@ class MysteryContext(CommonContext):
         self.custom_goal_reward_map: Dict[str, str] = {}
         self.custom_goal_reward_paired: bool = False
         self.custom_goal_done: bool = False
+        self.custom_goal_per_slot: Dict[str, dict] = {}
+        self.custom_goal_done_per_slot: Dict[str, bool] = {}
         self._cheese_tried: bool = False
         self._local_item_ids: Dict[str, int] = {}
         self._local_location_ids: Dict[str, int] = {}
@@ -573,7 +575,7 @@ class MysteryContext(CommonContext):
             self._refresh_ui()
             return
         if cmd == "PrintJSON" and args.get("type") == "ItemSend" and args.get("receiving") != self.slot:
-            # Ignore observer
+
             return
         super().on_package(cmd, args)
 
@@ -686,7 +688,7 @@ class MysteryContext(CommonContext):
             self.custom_goal_tag = str(slot_data.get("mystery_custom_goal_tag", "mystery_custom_goal"))
             self.custom_goal_token = str(slot_data.get("mystery_custom_goal_token", "Mystery Goal Token"))
             self.custom_goal_internal_map = dict(slot_data.get("mystery_custom_goal_internal_map", {}))
-            # Paired reward info - exposed for client and external tools
+
             raw_pairs = slot_data.get("mystery_custom_goal_pairs", [])
             if isinstance(raw_pairs, list):
                 self.custom_goal_pairs = [dict(p) for p in raw_pairs if isinstance(p, dict) and "source" in p and "reward" in p]
@@ -696,7 +698,7 @@ class MysteryContext(CommonContext):
             if isinstance(raw_rmap, dict):
                 self.custom_goal_reward_map = {str(k): str(v) for k, v in raw_rmap.items()}
             elif self.custom_goal_internal_map:
-                # fallback: invert internal map
+
                 self.custom_goal_reward_map = {v: k for k, v in self.custom_goal_internal_map.items()}
             else:
                 self.custom_goal_reward_map = {}
@@ -722,6 +724,41 @@ class MysteryContext(CommonContext):
             self.custom_goal_reward_map = {}
             self.custom_goal_reward_paired = False
             self.custom_goal_done = False
+        try:
+            raw_per = slot_data.get("mystery_custom_goal_per_slot", {})
+            if isinstance(raw_per, dict) and raw_per:
+                per: Dict[str, dict] = {}
+                for slot_name, data in raw_per.items():
+                    if not isinstance(slot_name, str) or not isinstance(data, dict):
+                        continue
+                    locs = {str(x).strip() for x in data.get("mystery_custom_goal_locations", []) if isinstance(x, str) and str(x).strip()}
+                    raw_it = data.get("mystery_custom_goal_items", {})
+                    its = {str(k).strip(): int(v) for k, v in raw_it.items() if isinstance(k, str) and isinstance(v, int) and int(v) >= 1} if isinstance(raw_it, dict) else {}
+                    per[slot_name] = {
+                        "enabled": bool(data.get("mystery_custom_goal", False)) or bool(locs) or bool(its),
+                        "locations": locs,
+                        "items": its,
+                        "any_items": bool(data.get("mystery_custom_goal_any_items", False)),
+                        "tag": str(data.get("mystery_custom_goal_tag", "mystery_custom_goal")),
+                        "token": str(data.get("mystery_custom_goal_token", "Mystery Goal Token")),
+                        "internal_map": dict(data.get("mystery_custom_goal_internal_map", {})),
+                        "pairs": [dict(p) for p in data.get("mystery_custom_goal_pairs", []) if isinstance(p, dict) and "source" in p and "reward" in p],
+                        "reward_map": dict(data.get("mystery_custom_goal_reward_map", {})) if isinstance(data.get("mystery_custom_goal_reward_map"), dict) else {},
+                        "reward_paired": bool(data.get("mystery_custom_goal_reward_paired", False)),
+                    }
+                    if not per[slot_name]["reward_map"] and per[slot_name]["internal_map"]:
+                        per[slot_name]["reward_map"] = {v: k for k, v in per[slot_name]["internal_map"].items()}
+                self.custom_goal_per_slot = per
+                self.custom_goal_done_per_slot = {k: False for k in per}
+                if per:
+                    client_logger.info(f"Mystery per-slot custom goals: {list(per.keys())} -> { {k: (len(v['locations']), len(v['items'])) for k,v in per.items() } }")
+            else:
+                self.custom_goal_per_slot = {}
+                self.custom_goal_done_per_slot = {}
+        except Exception as e:
+            client_logger.debug(f"Mystery per-slot custom goal parse failed: {e}")
+            self.custom_goal_per_slot = {}
+            self.custom_goal_done_per_slot = {}
         client_logger.info(
             "Mystery connected: %d puzzle(s), %d unlock(s), lock=%s, %d tracked slot(s)",
             len(self.puzzle_names), len(self.unlock_map),
@@ -1129,9 +1166,9 @@ class MysteryContext(CommonContext):
                 continue
             mode = self.nuzlocke_extra_distribution
             targets: List[str] = []
-            if mode == 1:  # for_all
+            if mode == 1:
                 targets = list(self.real_slots.keys())
-            elif mode == 2:  # for_specific (pre-assigned round-robin)
+            elif mode == 2:
                 total = sum(self.nuzlocke_extra_earned.values())
                 if self.nuzlocke_extra_assignments:
                     target = self.nuzlocke_extra_assignments[total % len(self.nuzlocke_extra_assignments)]
@@ -1145,7 +1182,7 @@ class MysteryContext(CommonContext):
                     picked = self._pick_random_nuzlocke_slot()
                     if picked:
                         targets = [picked]
-            else:  # for_picker
+            else:
                 finder = getattr(item, "player", None)
                 picker: Optional[str] = None
                 try:
@@ -1211,7 +1248,7 @@ class MysteryContext(CommonContext):
             return False
         if getattr(self, "custom_goal_done", False):
             return True
-        # Check locations: need standard Goal Tokens count
+
         locs = getattr(self, "custom_goal_locations", set())
         if locs:
             token_name = getattr(self, "custom_goal_token", "Mystery Goal Token")
@@ -1224,17 +1261,17 @@ class MysteryContext(CommonContext):
                     continue
                 if name == token_name:
                     have_tokens += 1
-                # Backwards compat: also accept old per-location tokens
+
                 elif name.startswith("Mystery Goal Token: "):
                     have_tokens += 1
             if have_tokens < need_tokens:
                 return False
-        # Check items: need counts, handling any vs specific via flags
+
         needed: Dict[str, int] = getattr(self, "custom_goal_items", {})
         if needed:
             any_mode = bool(getattr(self, "custom_goal_any_items", False))
-            # For any_mode, count any item with matching name
-            # For specific, count only GOAL_MARKED items (flags & 8)
+
+
             counts: Dict[str, int] = {}
             for it in getattr(self, "items_received", []):
                 try:
@@ -1244,25 +1281,25 @@ class MysteryContext(CommonContext):
                 if name not in needed:
                     continue
                 if not any_mode:
-                    # Specific: only count if GOAL_MARKED
+
                     flags = int(getattr(it, "flags", 0) or 0)
-                    is_marked = bool(flags & 8)  # GOAL_MARKED_FLAG
-                    # Also accept attribute if present (fallback)
+                    is_marked = bool(flags & 8)
+
                     if not is_marked:
-                        # Check if NetworkItem has extra? items_received entries are NetworkItem with flags
-                        # If not flagged, skip (don't count unmarked filler)
+
+
                         continue
                 counts[name] = counts.get(name, 0) + 1
-                # For any_mode we already counted; for specific we only counted marked
-            # For any_mode, the above counted only filtered names, but for specific we filtered by flag.
-            # For any_mode, we counted all; for specific, only marked.
-            # However, if specific items are not flagged due to old generation, fallback to counting all (compat)
-            # Detect if no marked items were found but we expected specific: fallback
+
+
+
+
+
             if not any_mode:
-                # If zero counted but there are needed items, check if any of those items exist without flag (old saves)
-                # We can fallback to counting by name if no flagged items at all
+
+
                 if all(counts.get(n, 0) == 0 for n in needed):
-                    # Fallback: count by name without flag filter
+
                     fallback_counts: Dict[str, int] = {}
                     for it in getattr(self, "items_received", []):
                         try:
@@ -1271,7 +1308,7 @@ class MysteryContext(CommonContext):
                             continue
                         if name in needed:
                             fallback_counts[name] = fallback_counts.get(name, 0) + 1
-                    # Use fallback if it has counts
+
                     if any(fallback_counts.values()):
                         counts = fallback_counts
             for name, need in needed.items():
@@ -1280,29 +1317,283 @@ class MysteryContext(CommonContext):
         return True
 
     def _check_custom_goal(self, args: dict | None = None) -> None:
-        """Track custom goal and send goaled if met."""
-        if not getattr(self, "custom_goal_enabled", False):
+        has_global = bool(getattr(self, "custom_goal_enabled", False))
+        has_per = bool(getattr(self, "custom_goal_per_slot", None))
+        if not has_global and not has_per:
             return
-        if getattr(self, "custom_goal_done", False):
-            return
-        if self._is_custom_goal_met():
-            self.custom_goal_done = True
-            client_logger.info("Mystery: custom goal completed - %s locations, %s items", self.custom_goal_locations, self.custom_goal_items)
+        if has_global:
             try:
-                from NetUtils import ClientStatus
-                async_start(self.send_msgs([{"cmd": "StatusUpdate", "status": ClientStatus.CLIENT_GOAL}]))
-            except Exception:
-                try:
-                    async_start(self.send_msgs([{"cmd": "StatusUpdate", "status": 30}]))
-                except Exception:
-                    pass
-            try:
-                self.finished_game = True
+                self._check_custom_goal_rewards()
             except Exception:
                 pass
-            self._refresh_ui()
+            if not getattr(self, "custom_goal_done", False) and self._is_custom_goal_met():
+                self.custom_goal_done = True
+                client_logger.info("Mystery: custom goal completed - %s locations, %s items", self.custom_goal_locations, self.custom_goal_items)
+                try:
+                    from NetUtils import ClientStatus
+                    async_start(self.send_msgs([{"cmd": "StatusUpdate", "status": ClientStatus.CLIENT_GOAL}]))
+                except Exception:
+                    try:
+                        async_start(self.send_msgs([{"cmd": "StatusUpdate", "status": 30}]))
+                    except Exception:
+                        pass
+                try:
+                    self.finished_game = True
+                except Exception:
+                    pass
+                self._refresh_ui()
+        if has_per:
+            try:
+                self._check_custom_goal_per_slot()
+            except Exception as e:
+                client_logger.debug(f"Mystery per-slot check failed: {e}")
+                pass
 
-    # --- Custom goal paired reward helpers (exposed for client/UI and external tools) ---
+    def _check_custom_goal_rewards(self) -> None:
+        try:
+            if not getattr(self, "custom_goal_enabled", False):
+                return
+            if not getattr(self, "custom_goal_reward_paired", False):
+                return
+            pairs = getattr(self, "custom_goal_pairs", None) or []
+            internal = getattr(self, "custom_goal_internal_map", None) or {}
+            if not pairs and not internal:
+                return
+            token_name = getattr(self, "custom_goal_token", "Mystery Goal Token")
+            have = 0
+            for it in getattr(self, "items_received", []):
+                try:
+                    name = self.item_name_for(getattr(it, "item", None))
+                except Exception:
+                    continue
+                if name == token_name or name.startswith("Mystery Goal Token: "):
+                    have += 1
+            if have <= 0:
+                return
+            rewards: list[str] = []
+            if pairs:
+                try:
+                    ordered = sorted(pairs, key=lambda x: int(x.get("index", 0)) if isinstance(x.get("index"), int) else 0)
+                except Exception:
+                    ordered = list(pairs)
+                for p in ordered:
+                    if len(rewards) >= have:
+                        break
+                    rew = p.get("reward")
+                    if isinstance(rew, str) and rew.strip():
+                        rewards.append(rew.strip())
+            elif internal:
+                for src, rew in sorted(internal.items()):
+                    if len(rewards) >= have:
+                        break
+                    if isinstance(rew, str) and rew.strip():
+                        rewards.append(rew.strip())
+            if not rewards:
+                return
+            to_check: list[int] = []
+            checked = set(getattr(self, "checked_locations", set()) or set())
+            try:
+                checked |= set(getattr(self, "locations_checked", set()) or set())
+            except Exception:
+                pass
+            for rew in rewards:
+                try:
+                    loc_id = None
+                    try:
+                        loc_id = getattr(self, "_local_location_ids", {}).get(rew)
+                    except Exception:
+                        loc_id = None
+                    if loc_id is None:
+                        try:
+                            loc_id = self.location_names.lookup_in_game(rew, "Mystery Game")
+                        except Exception:
+                            try:
+                                loc_id = self.location_names.lookup_in_slot(rew)
+                            except Exception:
+                                loc_id = None
+                    if loc_id is None:
+                        continue
+                    if int(loc_id) in checked:
+                        continue
+                    if int(loc_id) in getattr(self, "locations_checked", set()):
+                        continue
+                    to_check.append(int(loc_id))
+                except Exception:
+                    continue
+            if to_check:
+                client_logger.info(f"Mystery: auto-checking {len(to_check)} paired reward(s) for {have} token(s): {rewards[:len(to_check)]}")
+                async_start(self.send_msgs([{"cmd": "LocationChecks", "locations": to_check}]))
+        except Exception as e:
+            client_logger.debug(f"Mystery reward check failed: {e}")
+            pass
+
+    def _check_custom_goal_per_slot(self) -> None:
+        per = getattr(self, "custom_goal_per_slot", None) or {}
+        if not per:
+            return
+        done_map = getattr(self, "custom_goal_done_per_slot", None)
+        if done_map is None:
+            done_map = {}
+            self.custom_goal_done_per_slot = done_map
+        for slot_name, data in list(per.items()):
+            try:
+                if done_map.get(slot_name):
+                    continue
+                relay = getattr(self, "relays", {}).get(slot_name)
+                locs: set = set(data.get("locations", set()) or set())
+                needed_items: dict = dict(data.get("items", {}) or {})
+                any_items = bool(data.get("any_items", False))
+                pairs = list(data.get("pairs", []) or [])
+                internal = dict(data.get("internal_map", {}) or {})
+                if not pairs and internal:
+                    pairs = [{"source": s, "reward": r, "index": i+1} for i, (s, r) in enumerate(sorted(internal.items()))]
+                loc_met = True
+                if locs:
+                    if relay is not None:
+                        try:
+                            checked = set(getattr(relay, "checked_locations", set()) or set())
+                            checked |= set(getattr(relay, "locations_checked", set()) or set())
+                            missing = []
+                            for loc_name in locs:
+                                loc_id = None
+                                try:
+                                    real_game = getattr(relay, "real_game", None) or getattr(relay, "game", None)
+                                    if real_game:
+                                        try:
+                                            loc_id = relay.location_names.lookup_in_game(loc_name, real_game)
+                                        except Exception:
+                                            loc_id = None
+                                    if loc_id is None:
+                                        try:
+                                            loc_id = relay.location_names.lookup_in_slot(loc_name)
+                                        except Exception:
+                                            loc_id = None
+                                except Exception:
+                                    loc_id = None
+                                if loc_id is None:
+                                    try:
+                                        loc_id = self._local_location_ids.get(loc_name)
+                                    except Exception:
+                                        loc_id = None
+                                if loc_id is None or int(loc_id) not in checked:
+                                    missing.append(loc_name)
+                            loc_met = len(missing) == 0
+                        except Exception:
+                            try:
+                                token_name = data.get("token", "Mystery Goal Token")
+                                have = sum(1 for it in getattr(self, "items_received", []) if self.item_name_for(getattr(it, "item", None)) == token_name)
+                                loc_met = have >= len(locs)
+                            except Exception:
+                                loc_met = False
+                    else:
+                        try:
+                            token_name = data.get("token", "Mystery Goal Token")
+                            have = 0
+                            for it in getattr(self, "items_received", []):
+                                try:
+                                    n = self.item_name_for(getattr(it, "item", None))
+                                except Exception:
+                                    continue
+                                if n == token_name or n.startswith("Mystery Goal Token: "):
+                                    have += 1
+                            loc_met = have >= len(locs)
+                        except Exception:
+                            loc_met = False
+                items_met = True
+                if needed_items:
+                    source_items = getattr(relay, "items_received", None) if relay is not None else getattr(self, "items_received", [])
+                    if source_items is None:
+                        source_items = getattr(self, "items_received", [])
+                    counts: Dict[str, int] = {}
+                    for it in list(source_items or []):
+                        try:
+                            name = relay.item_name_for(getattr(it, "item", None)) if relay is not None else self.item_name_for(getattr(it, "item", None))
+                        except Exception:
+                            try:
+                                name = self.item_name_for(getattr(it, "item", None))
+                            except Exception:
+                                continue
+                        if name not in needed_items:
+                            continue
+                        if not any_items:
+                            flags = int(getattr(it, "flags", 0) or 0)
+                            if not (flags & 8):
+                                continue
+                        counts[name] = counts.get(name, 0) + 1
+                    if not any_items and all(counts.get(n, 0) == 0 for n in needed_items):
+                        fallback: Dict[str, int] = {}
+                        for it in list(source_items or []):
+                            try:
+                                name = relay.item_name_for(getattr(it, "item", None)) if relay is not None else self.item_name_for(getattr(it, "item", None))
+                            except Exception:
+                                continue
+                            if name in needed_items:
+                                fallback[name] = fallback.get(name, 0) + 1
+                        if any(fallback.values()):
+                            counts = fallback
+                    for name, need in needed_items.items():
+                        if counts.get(name, 0) < int(need):
+                            items_met = False
+                            break
+                if loc_met and items_met:
+                    done_map[slot_name] = True
+                    client_logger.info(f"Mystery per-slot custom goal completed for {slot_name}: locs={locs} items={needed_items}")
+                    try:
+                        rewards = [p.get("reward") for p in pairs if isinstance(p.get("reward"), str)]
+                        if rewards:
+                            to_check = []
+                            checked_m = set(getattr(self, "checked_locations", set()) or set())
+                            checked_m |= set(getattr(self, "locations_checked", set()) or set())
+                            for rew in rewards[:len(locs) if locs else len(rewards)]:
+                                try:
+                                    loc_id = getattr(self, "_local_location_ids", {}).get(rew)
+                                    if loc_id is None:
+                                        try:
+                                            loc_id = self.location_names.lookup_in_game(rew, "Mystery Game")
+                                        except Exception:
+                                            loc_id = None
+                                    if loc_id is not None and int(loc_id) not in checked_m:
+                                        to_check.append(int(loc_id))
+                                except Exception:
+                                    continue
+                            if to_check:
+                                client_logger.info(f"Mystery per-slot auto-checking {len(to_check)} reward(s) for {slot_name}: {rewards[:len(to_check)]}")
+                                async_start(self.send_msgs([{"cmd": "LocationChecks", "locations": to_check}]))
+                    except Exception:
+                        pass
+                    try:
+                        from NetUtils import ClientStatus
+                        if relay is not None and getattr(relay, "slot", None) is not None:
+                            async_start(relay.send_msgs([{"cmd": "StatusUpdate", "status": ClientStatus.CLIENT_GOAL}]))
+                            client_logger.info(f"Mystery: sent CLIENT_GOAL for relay {slot_name} (slot {relay.slot})")
+                        else:
+                            client_logger.info(f"Mystery per-slot {slot_name} goal met but no relay – reward already auto-checked")
+                            try:
+                                pid = None
+                                for p, name in getattr(self, "player_ids", {}).items() if hasattr(self, "player_ids") else []:
+                                    if name == slot_name:
+                                        pid = p
+                                        break
+                                if pid is None:
+                                    for p, n in self.player_names.items() if hasattr(self, "player_names") else []:
+                                        if n == slot_name:
+                                            pid = p
+                                            break
+                                if pid is not None:
+                                    async_start(self.send_msgs([{"cmd": "Bounced", "tags": ["Mystery"], "data": {"cmd": "StatusUpdate", "status": 30}, "slot": pid}]))
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        client_logger.debug(f"Mystery per-slot StatusUpdate failed for {slot_name}: {e}")
+                        try:
+                            if relay is not None:
+                                async_start(relay.send_msgs([{"cmd": "StatusUpdate", "status": 30}]))
+                        except Exception:
+                            pass
+            except Exception as e:
+                client_logger.debug(f"Mystery per-slot check failed for {slot_name}: {e}")
+                continue
+
     def get_reward_for_source(self, source_name: str) -> Optional[str]:
         """Given a source location name, return its paired reward location name, if any."""
         try:
@@ -1325,7 +1616,7 @@ class MysteryContext(CommonContext):
                     return p.get("source")
         except Exception:
             pass
-        # fallback inverse
+
         try:
             for src, rew in self.custom_goal_internal_map.items():
                 if rew == reward_name:
@@ -1651,7 +1942,7 @@ class MysteryContext(CommonContext):
             client_logger.warning("Mystery: Nuzlocke hit %s %d/%d%s (remaining %d) – relay stays up", log_slot, new_hits, lives, f" ({cause})" if cause else "", remaining)
             if self.proxy is not None:
                 try:
-                    # Broadcast hit to all clients for this slot (multi-client)
+
                     for ws in list(self.proxy._get_sockets_for_slot(slot)):
                         try:
                             await ws.send(encode([{"cmd": "PrintJSON", "data": [{"text": f"Nuzlocke: {slot} hit {new_hits}/{lives} – {remaining} lives remaining{': ' + cause if cause else '.'}"}]}]))
@@ -1928,7 +2219,7 @@ class MysteryContext(CommonContext):
                 self.proxy_tab.update_status()
             if self.relay_tracker_tab is not None:
                 try:
-                    # RelayTrackerTab has refresh_all
+
                     self.relay_tracker_tab.refresh_all()
                 except Exception:
                     pass
@@ -1977,12 +2268,12 @@ class MysteryContext(CommonContext):
     async def connection_closed(self) -> None:
         await super().connection_closed()
         await self.drop_all_relays("main connection closed")
-        # Ensure no stale slot_data remains for next connect
+
         self._clear_session_state()
 
     def _clear_session_state(self) -> None:
         """Clear all per-connection state to avoid desync on reconnect."""
-        # Puzzles / unlocks
+
         self.puzzle_names = []
         self.unlock_map = {}
         self.solved_puzzles = set()
@@ -1998,7 +2289,7 @@ class MysteryContext(CommonContext):
         self.puzzle_hints = {}
         self.puzzle_state = {}
         self.caches = {}
-        # Nuzlocke
+
         self.nuzlocke_enabled = False
         self.nuzlocke_deathlink = 0
         self.nuzlocke_per_game_modes = {}
@@ -2012,7 +2303,7 @@ class MysteryContext(CommonContext):
         self.nuzlocke_dead = set()
         self.nuzlocke_set_hits = {}
         self.nuzlocke_set_extra_earned = {}
-        # Custom goal
+
         self.custom_goal_enabled = False
         self.custom_goal_locations = set()
         self.custom_goal_items = {}
@@ -2024,11 +2315,11 @@ class MysteryContext(CommonContext):
         self.custom_goal_reward_map = {}
         self.custom_goal_reward_paired = False
         self.custom_goal_done = False
-        # Relays
+
         self.relays = {}
         self.active_relay = None
         self.relay_disabled = set()
-        # Ensure proxy/bridge state is not stale (ports kept, but routes cleared)
+
         if self.proxy is not None:
             try:
                 self.proxy.routes.clear()
@@ -2177,12 +2468,12 @@ class RelayContext(CommonContext):
         if cmd in ("Connected", "RoomInfo"):
             super().on_package(cmd, args)
             if cmd == "Connected":
-                # Store slot_data for optional Relay Tracker tab
+
                 try:
                     self.slot_data = dict(args.get("slot_data", {}))  # type: ignore[attr-defined]
                 except Exception:
                     self.slot_data = {}  # type: ignore[attr-defined]
-                # Notify relay tracker tab if present
+
                 try:
                     if getattr(self.owner, "relay_tracker_tab", None) is not None:
                         self.owner._refresh_ui()
@@ -2195,7 +2486,7 @@ class RelayContext(CommonContext):
                 async_start(self._maybe_alias())
             return
         if cmd == "ReceivedItems":
-            # Forward or stash
+
             if self.owner.is_locked(self.relay_slot):
                 items: List[dict] = [
                     {"item": item.item, "location": item.location,
@@ -2268,6 +2559,11 @@ class RelayContext(CommonContext):
                     self.owner._refresh_hints_ui()
             except Exception:
                 pass
+        try:
+            if hasattr(self.owner, "_check_custom_goal"):
+                self.owner._check_custom_goal()
+        except Exception:
+            pass
 
 class MysteryProxy:
     """Local proxy for games."""
@@ -2278,30 +2574,30 @@ class MysteryProxy:
         self.port: int = port
         self.is_global: bool = bool(is_global)
         self.routes: Dict[str, str] = {}
-        # Multi-client tracking: alias -> list of sockets, slot -> list of sockets, plus per-socket metadata
-        self.game_sockets: Dict[str, List[Any]] = {}  # alias -> list[websocket] (multi-client)
-        self._sockets: Dict[int, Any] = {}  # id(ws) -> websocket
-        self._socket_alias: Dict[int, str] = {}  # id -> alias
-        self._socket_slot: Dict[int, str] = {}  # id -> slot
-        self._socket_tags: Dict[int, set] = {}  # id -> tags set
-        self._socket_handling: Dict[int, int] = {}  # id -> items_handling
-        self._socket_sent_connected: set = set()  # set of id(ws) that have received Connected preamble
-        self.slot_to_sockets: Dict[str, List[Any]] = {}  # slot -> list[websocket]
-        self.slot_to_aliases: Dict[str, set] = {}  # slot -> set(alias)
+
+        self.game_sockets: Dict[str, List[Any]] = {}
+        self._sockets: Dict[int, Any] = {}
+        self._socket_alias: Dict[int, str] = {}
+        self._socket_slot: Dict[int, str] = {}
+        self._socket_tags: Dict[int, set] = {}
+        self._socket_handling: Dict[int, int] = {}
+        self._socket_sent_connected: set = set()
+        self.slot_to_sockets: Dict[str, List[Any]] = {}
+        self.slot_to_aliases: Dict[str, set] = {}
         self.preamble: Dict[str, List[dict]] = {}
         self._relay_events: Dict[str, asyncio.Event] = {}
         self._relay_failed: Dict[str, str] = {}
         self._known_checksums: Dict[str, str] = {}
-        self.game_tags: Dict[str, set] = {}  # aggregated union per slot
-        self.game_items_handling: Dict[str, int] = {}  # aggregated OR per slot
-        self._sent_connected: set = set()  # legacy alias set (compat)
+        self.game_tags: Dict[str, set] = {}
+        self.game_items_handling: Dict[str, int] = {}
+        self._sent_connected: set = set()
         self.slot_servers: Dict[str, Any] = {}
         self.slot_ports: Dict[str, int] = {}
         self.pending_packets: Dict[str, List[dict]] = {}
         self.server: Any = None
         self.running: bool = False
 
-    # ---------- Multi-client helpers ----------
+
     def _sid(self, ws: Any) -> int:
         """_sid."""
         return id(ws)
@@ -2316,11 +2612,11 @@ class MysteryProxy:
             self._socket_tags[sid] = set(tags)
         if handling is not None:
             self._socket_handling[sid] = int(handling)
-        # alias -> list
+
         self.game_sockets.setdefault(alias, [])
         if ws not in self.game_sockets[alias]:
             self.game_sockets[alias].append(ws)
-        # slot -> list
+
         self.slot_to_sockets.setdefault(slot, [])
         if ws not in self.slot_to_sockets[slot]:
             self.slot_to_sockets[slot].append(ws)
@@ -2352,7 +2648,7 @@ class MysteryProxy:
             if not lst2:
                 self.slot_to_sockets.pop(slot, None)
                 self.slot_to_aliases.pop(slot, None)
-                # keep aggregates? recompute will clear
+
             else:
                 self._recompute_slot_aggregates(slot)
         else:
@@ -2650,11 +2946,11 @@ class MysteryProxy:
             if not got_message:
                 logger.info("MysteryProxy: %s closed without sending anything "
                             "(probe, retry abort, or wrong address?)", peer)
-            # Multi-client unregister - only remove this socket, not all for alias
+
             try:
                 self._unregister_socket(websocket)
             except Exception:
-                # Fallback legacy cleanup
+
                 if alias is not None:
                     try:
                         lst = self.game_sockets.get(alias, [])
@@ -2669,19 +2965,19 @@ class MysteryProxy:
 
     async def stop(self) -> None:
         self.running = False
-        # Close all multi-client sockets
+
         all_sockets: List[Any] = []
         try:
             all_sockets.extend(list(self._sockets.values()))
         except Exception:
             pass
-        # Fallback: legacy game_sockets lists
+
         for lst in list(self.game_sockets.values()):
             if isinstance(lst, list):
                 all_sockets.extend(lst)
             else:
                 all_sockets.append(lst)
-        # Deduplicate
+
         seen_ids = set()
         uniq: List[Any] = []
         for s in all_sockets:
@@ -2796,7 +3092,7 @@ class MysteryProxy:
                 {"text": "This game isn't unlocked yet."}]}]))
             await websocket.close()
             return None
-        # Multi-client: parse tags/handling per-socket
+
         incoming_tags: set = set()
         try:
             incoming: Any = msg.get("tags", [])
@@ -2811,11 +3107,11 @@ class MysteryProxy:
                 incoming_handling = int(ih_tmp)
         except Exception:
             incoming_handling = None
-        # Register socket (multi-client)
+
         try:
             self._register_socket(websocket, alias, slot, incoming_tags, incoming_handling)
         except Exception:
-            # Fallback legacy
+
             self.routes[alias] = slot
             if alias not in self.game_sockets:
                 self.game_sockets[alias] = []
@@ -2869,7 +3165,7 @@ class MysteryProxy:
                 pass
         else:
             try:
-                # Update relay tags/handling from aggregated union across all clients for this slot
+
                 aggregated_tags = self.game_tags.get(slot, set())
                 if aggregated_tags:
                     relay.tags = set(aggregated_tags) | {"MysteryRelay"}
@@ -2915,16 +3211,16 @@ class MysteryProxy:
 
     async def _send_preamble(self, websocket: Any, alias: str, slot: str) -> None:
         """Send preamble."""
-        # Use the explicit websocket, not alias lookup, to support multi-client
+
         target = websocket
         if target is None:
-            # fallback to alias lookup
+
             lst = self.game_sockets.get(alias, [])
             if not lst:
                 return
             target = lst[-1]
         sid = self._sid(target)
-        # Avoid duplicate send per socket
+
         if sid in self._socket_sent_connected:
             return
         for packet in self.preamble.get(slot, []):
@@ -3017,7 +3313,7 @@ class MysteryProxy:
                     for game, checksum in base_checksums.items():
                         if isinstance(game, str) and isinstance(checksum, str):
                             known.setdefault(game, checksum)
-                    # Also pull from _known_checksums (proxy's cache of all seen checksums)
+
                     try:
                         for game, checksum in dict(getattr(self, "_known_checksums", {}) or {}).items():
                             if isinstance(game, str) and isinstance(checksum, str):
@@ -3034,13 +3330,13 @@ class MysteryProxy:
                             server = info.get("server_game")
                             if isinstance(real, str) and isinstance(server, str):
                                 if server in known and real not in known:
-                                    # Always map real -> server checksum, even if server not in known yet (use base or ctx)
-                                    # Try to find checksum for server in any source
+
+
                                     cs = known.get(server) or base_checksums.get(server) or getattr(ctx, "checksums", {}).get(server) or self._known_checksums.get(server)
                                     if cs:
                                         real_to_server.setdefault(real, cs)
                                     else:
-                                        # Fallback: if we have no checksum for server, still map to allow GetDataPackage translation
+
                                         real_to_server.setdefault(real, known.get(server, ""))
                                 elif server in known:
                                     real_to_server.setdefault(real, known[server])
@@ -3062,11 +3358,11 @@ class MysteryProxy:
                                     checksums[game] = self._known_checksums[game]
                             except Exception:
                                 pass
-                    # Ensure every game in `games` has a checksum entry, even if empty, to avoid TUNIC "incompatible"
-                    # For TUNIC and other proxied games, ensure we have an entry even if we had to synthesize
+
+
                     for game in games:
                         if game not in checksums:
-                            # Try to find via identities: if game is real, use server's checksum
+
                             try:
                                 for info in ctx.identities.values():
                                     if info.get("game") == game and info.get("server_game") in known:
@@ -3136,7 +3432,7 @@ class MysteryProxy:
             self.owner.start_relay(slot, make_active=False)
             relay = self.owner.relays.get(slot)
             if relay is None:
-                # Send error to the specific websocket that sent the message
+
                 try:
                     await websocket.send(encode([{"cmd": "PrintJSON", "data": [
                         {"text": self._relay_refusal(slot)}]}]))
@@ -3176,10 +3472,10 @@ class MysteryProxy:
                     if isinstance(tags, list):
                         cleaned: set = {str(tag) for tag in tags}
                         cleaned.discard("MysteryRelay")
-                        # Update per-socket tags
+
                         self._socket_tags[sid] = cleaned
                         self._recompute_slot_aggregates(slot)
-                        # Use aggregated for relay
+
                         aggregated = self.game_tags.get(slot, set())
                         msg = dict(msg, tags=sorted(aggregated | {"MysteryRelay"}))
                     ih = msg.get("items_handling")
@@ -3203,7 +3499,7 @@ class MysteryProxy:
                                 cause = str(data.get("cause") or data.get("source") or "")
                         except Exception:
                             cause = ""
-                        # Determine which socket sent this Bounce for targeted feedback
+
                         sender_ws = websocket
                         if mode == 1:
                             async_start(self.owner.trigger_nuzlocke(slot, cause))
@@ -3252,13 +3548,13 @@ class MysteryProxy:
             if msg.get("cmd") == "GetDataPackage" and not getattr(self.owner, "expose_proxied_items", True):
                 requested = msg.get("games", [])
                 if isinstance(requested, list):
-                    # Always allow the slot's real game even when not exposing, otherwise TUNIC etc. gets incompatible
+
                     allowed = {"Archipelago", "Mystery Game"}
                     try:
                         real = self.owner.real_slots.get(slot, "")
                         if isinstance(real, str) and real:
                             allowed.add(real)
-                        # Also allow any game that is in identities for this slot
+
                         info = self.owner.identities.get(slot, {})
                         rg = info.get("game")
                         if isinstance(rg, str) and rg:
@@ -3299,7 +3595,7 @@ class MysteryProxy:
         else:
             logger.warning("MysteryProxy: no relay for %s, dropping %s",
                            slot, msg.get("cmd"))
-        # Also keep per-socket handling updated if message contained items_handling outside ConnectUpdate
+
         try:
             ih = msg.get("items_handling")
             if isinstance(ih, int) and 0 <= ih <= 7:
@@ -3333,7 +3629,7 @@ class MysteryProxy:
         elif slot in self.owner.unlocked_slots:
             packet = self._revealed_for(slot, packet)
         delivered: bool = False
-        # Broadcast to all sockets for this slot (Tracker + Game etc.)
+
         for ws in list(self._get_sockets_for_slot(slot)):
             try:
                 await ws.send(encode([packet]))
@@ -3343,7 +3639,7 @@ class MysteryProxy:
                     self._unregister_socket(ws)
                 except Exception:
                     pass
-        # Legacy fallback: also try alias map if slot_to_sockets empty
+
         if not delivered:
             for alias, routed in list(self.routes.items()):
                 if routed == slot and alias in self.game_sockets:
@@ -3372,17 +3668,17 @@ class MysteryProxy:
         self.pending_packets[slot] = []
         if not to_send:
             return
-        # Determine targets: if alias specified, deliver only to sockets for that alias; else all for slot
+
         target_sockets: List[Any] = []
         if alias is not None:
-            # Prefer per-alias sockets, fallback to slot
+
             lst = self._get_sockets_for_alias(alias)
             if lst and self.routes.get(alias) == slot:
                 target_sockets = lst
             else:
                 target_sockets = self._get_sockets_for_slot(slot)
                 if not target_sockets:
-                    # legacy
+
                     target_sockets = []
                     for a, r in list(self.routes.items()):
                         if r == slot and a in self.game_sockets:
@@ -3515,10 +3811,10 @@ class MysteryProxy:
             return
         connected: bool = len(self._get_sockets_for_slot(slot)) > 0
         if not connected:
-            # legacy fallback via routes
+
             for alias, routed in list(self.routes.items()):
                 if routed == slot and alias in self.game_sockets and self.game_sockets.get(alias):
-                    # value is list; non-empty means connected
+
                     try:
                         lst = self.game_sockets.get(alias)
                         if lst and len(lst) > 0:
@@ -3677,7 +3973,7 @@ if gui_enabled:
                         port_info = " " + " ".join(ports)
                 except Exception:
                     pass
-                # Multi-client count
+
                 try:
                     cnt = 0
                     if proxy is not None:
@@ -3686,7 +3982,7 @@ if gui_enabled:
                         cnt += len(gbridge._get_sockets_for_slot(slot))
                     if cnt > 0:
                         port_info += f" [{cnt} client(s)]"
-                        # Show per-client handling breakdown for debugging
+
                         try:
                             handlings = []
                             for ws in proxy._get_sockets_for_slot(slot) if proxy else []:
@@ -3750,7 +4046,7 @@ if gui_enabled:
             container = super().build()
             self.add_client_tab("Mystery", MysteryTab(self.ctx))
             self.add_client_tab("Proxy", ProxyTab(self.ctx))
-            # Optional Relay Tracker tab – only if Universal Tracker is installed
+
             try:
                 from .tracker_bridge import is_tracker_available, create_relay_tracker_tab
                 if is_tracker_available():
@@ -3777,7 +4073,7 @@ if gui_enabled:
                                 h.get("item"),
                                 h.get("entrance", ""),
                             )
-                        # Hint NamedTuple or object
+
                         return (
                             getattr(h, "receiving_player", None),
                             getattr(h, "finding_player", None),
