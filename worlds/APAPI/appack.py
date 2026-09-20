@@ -50,6 +50,31 @@ def list_top_level_folders(appack_path: str | os.PathLike) -> list[str]:
     return folders
 
 
+def list_top_level_apworlds(appack_path: str | os.PathLike) -> list[str]:
+    apworlds: list[str] = []
+    seen: set[str] = set()
+    with zipfile.ZipFile(appack_path, "r") as zf:
+        for info in zf.infolist():
+            filename = info.filename
+            if not filename or filename.startswith("/") or ".." in filename.split("/"):
+                continue
+            if "/" in filename:
+                continue
+            if not filename.lower().endswith(APWORLD_SUFFIX):
+                continue
+            if filename not in seen:
+                seen.add(filename)
+                apworlds.append(filename)
+    return apworlds
+
+
+def _is_safe_apworld_name(name: str) -> bool:
+    if not name.lower().endswith(APWORLD_SUFFIX):
+        return False
+    base = name[:-len(APWORLD_SUFFIX)]
+    return _is_safe_folder_name(base)
+
+
 def _folder_has_init(zf: zipfile.ZipFile, folder: str, namelist: set[str]) -> bool:
     """Input: zip, folder, namelist. Returns: True if folder has __init__.py."""
     return f"{folder}/__init__.py" in namelist or f"{folder}/__init__.pyc" in namelist
@@ -84,6 +109,41 @@ def build_apworld_from_folder(
                     os.remove(tmp_name)
             except OSError:
                 pass
+
+
+def _register_and_load_apworld(target: pathlib.Path) -> bool:
+    try:
+        import worlds
+        import bisect
+        for existing in worlds.world_sources:
+            try:
+                if pathlib.Path(existing.resolved_path) == target:
+                    logger.info("World already loaded. Restart required to update: %s", target)
+                    return True
+            except Exception:
+                continue
+        source = worlds.WorldSource(str(target), is_zip=True, relative=False)
+        bisect.insort(worlds.world_sources, source)
+        logger.info("Loading APWorld from: %s...", target)
+        ok = bool(source.load())
+        if ok:
+            try:
+                from worlds.AutoWorld import AutoWorldRegister
+                from worlds.Files import APWorldContainer
+                apworld = APWorldContainer(str(target))
+                apworld.read()
+                game = apworld.game
+                if game and game in AutoWorldRegister.world_types:
+                    data = AutoWorldRegister.world_types[game].get_data_package_data()
+                    worlds.network_data_package["games"][game] = data
+            except Exception as exc:
+                logger.warning("Failed to register and load APWorld from: %s (%s)", target, exc) #TODO: Add traceback for clarification.
+                pass
+        else:
+            logger.warning("Failed to load APWorld from: %s", target)
+        return ok
+    except Exception:
+        return False
 
 
 def _user_folder() -> pathlib.Path:
@@ -139,9 +199,16 @@ def install_appack(
                 skipped.append(f"{folder} (missing __init__.py)")
                 continue
             valid.append(folder)
-        if not valid:
+        apworld_files = list_top_level_apworlds(src)
+        valid_apworlds: list[str] = []
+        for apw in apworld_files:
+            if not _is_safe_apworld_name(apw):
+                skipped.append(f"{apw} (unsafe name)")
+                continue
+            valid_apworlds.append(apw)
+        if not valid and not valid_apworlds:
             raise Exception(
-                "APack appears to contain no worlds. (expected top-level folders with __init__.py)")
+                "APack appears to contain no worlds. (expected top-level folders with __init__.py or top-level .apworld files)")
 
     installed: list[pathlib.Path] = []
     skipped_existing: list[str] = []
@@ -152,6 +219,38 @@ def install_appack(
             continue
         build_apworld_from_folder(src, folder, target)
         installed.append(target)
+        try:
+            _register_and_load_apworld(target)
+        except Exception:
+            pass
+    for apw in valid_apworlds:
+        target = dest_dir / apw
+        if target.exists() and not overwrite:
+            skipped_existing.append(f"{apw} (already installed)")
+            continue
+        try:
+            with zipfile.ZipFile(src, "r") as zf2:
+                data = zf2.read(apw)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp_fd, tmp_name = tempfile.mkstemp(prefix=pathlib.Path(apw).stem + "_", suffix=APWORLD_SUFFIX, dir=str(dest_dir))
+            try:
+                with os.fdopen(tmp_fd, "wb") as tmp_file:
+                    tmp_file.write(data)
+                shutil.move(tmp_name, target)
+            finally:
+                try:
+                    if os.path.exists(tmp_name):
+                        os.remove(tmp_name)
+                except OSError:
+                    pass
+            installed.append(target)
+            try:
+                _register_and_load_apworld(target)
+            except Exception:
+                pass
+        except Exception as exc:
+            skipped.append(f"{apw} ({exc})")
+            continue
 
     return src, installed, skipped + skipped_existing
 
@@ -174,35 +273,52 @@ def ensure_appack_association() -> bool:
     if sys.platform != "win32":
         return False
     try:
-        exe = sys.executable
-        if not exe.lower().endswith(".exe"):
+        import os
+        cur_exe = sys.executable
+        if not cur_exe.lower().endswith(".exe"):
+            return False
+        try:
+            from Utils import local_path
+            normal = local_path("ArchipelagoLauncher.exe")
+        except Exception:
+            normal = os.path.join(os.path.dirname(cur_exe), "ArchipelagoLauncher.exe")
+        exe = normal if os.path.isfile(normal) else cur_exe
+        if os.path.basename(exe).lower() != "archipelagolauncher.exe":
+            cand = os.path.join(os.path.dirname(cur_exe), "ArchipelagoLauncher.exe")
+            if os.path.isfile(cand):
+                exe = cand
+            else:
+                return False
+        if not exe.lower().endswith("archipelagolauncher.exe"):
             return False
     except Exception:
         return False
-    # Check both suffixes (appack with one p and two p's) for robustness
-    for suffix in (APPACK_SUFFIX, APPACK_SUFFIX_ALT, ".apack", ".appack"):
+    prog_id = "ArchipelagoAPack"
+    for suffix in (APPACK_SUFFIX, APPACK_SUFFIX_ALT):
         if not suffix.startswith("."):
             suffix = "." + suffix
-        prog_id = "ArchipelagoAPack"
-        # Use HKCU for per-user without admin, fallback to HKCR is handled by installer
-        # Check if already associated correctly
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{suffix}") as k:
                 val, _ = winreg.QueryValueEx(k, "")
-                if val == prog_id:
-                    # Check open command
+                already_ok = (val == prog_id)
+                if already_ok:
                     try:
                         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}\\shell\\open\\command") as k2:
                             cmd, _ = winreg.QueryValueEx(k2, "")
                             if exe in cmd:
-                                continue
+                                try:
+                                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}") as k3:
+                                        desc, _ = winreg.QueryValueEx(k3, "")
+                                        if desc == "Archipelago World Pack":
+                                            continue
+                                except FileNotFoundError:
+                                    pass
                     except FileNotFoundError:
                         pass
         except FileNotFoundError:
             pass
         except Exception:
-            continue
-        # Not correctly associated, create it (first launch)
+            pass
         try:
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{suffix}") as k:
                 winreg.SetValueEx(k, "", 0, winreg.REG_SZ, prog_id)
@@ -226,5 +342,6 @@ __all__ = [
     "build_apworld_from_folder",
     "ensure_appack_association",
     "install_appack",
+    "list_top_level_apworlds",
     "list_top_level_folders",
 ]

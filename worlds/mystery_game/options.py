@@ -184,7 +184,7 @@ class AllowUnlockWithOthers(Toggle):
     """Allow unlocking slots even when there are non-Mystery slots in the multiworld.
 
     When enabled, Mystery will still create and randomize starting unlocked slots even if
-    there are other human players (non-controlled slots) in the seed. This allows Mystery
+    there are other players (non-controlled slots) in the seed. This allows Mystery
     to act as a player's own game rather than just a meta-game, letting them start with
     one of their own games. When disabled (default), starting slots only apply to
     mystery-only seeds.

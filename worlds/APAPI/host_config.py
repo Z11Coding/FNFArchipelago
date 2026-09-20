@@ -13,6 +13,15 @@ from Utils import user_path
 
 logger = logging.getLogger("APAPI")
 
+class YAMLComment(str):
+    """Represents a YAML comment."""
+    def __new__(cls, content: str) -> YAMLComment:
+        return str.__new__(cls, content)
+    def __repr__(self) -> str:
+        return f"YAMLComment({super().__repr__()})"
+    def __str__(self) -> str:
+        return f"# {super().__str__()}"
+
 
 APAPI_DEFAULT_CONFIG = {
     "apapi": {
@@ -21,7 +30,7 @@ APAPI_DEFAULT_CONFIG = {
         },
         "universal_tracker_snapshot": {
             "enabled": True,
-            "verbose_location_log": True,
+            "verbose_location_log": False,
         },
         "verbose_collection_state": {
             "enabled": False,

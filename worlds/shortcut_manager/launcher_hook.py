@@ -1,7 +1,11 @@
 """Launcher Hook for Shortcut Manager - integrates shortcuts into launcher components."""
 
+import multiprocessing
+import argparse
 from pathlib import Path
 from typing import Optional
+
+from yaml import parser
 from Utils import local_path, user_path
 
 from .shortcut_manager import ShortcutStorage, ShortcutExecutor
@@ -676,13 +680,38 @@ def _setup_launcher_restart_on_failure() -> None:
         """Restart launcher as a new process if it closed without being confirmed as running."""
         global _exit_normally
         if not _exit_normally and is_launcher_arg:
-            print("[SHORTCUT-MANAGER] Launcher closed prematurely or failed before confirmation, restarting...")
+            print("[SHORTCUT-MANAGER] Launcher closed prematurely or failed before confirmation... Redoing the process, just in case!")
             try:
-                # Spawn completely fresh launcher process
-                subprocess.Popen([sys.executable, "-m", "Launcher"], start_new_session=True)
+                # Spawn a new launcher, instead of making a new process.
+                import Launcher
+                import multiprocessing  
+                multiprocessing.freeze_support()
+                multiprocessing.set_start_method("spawn")  # if launched process uses kivy, fork won't work
+                parser = argparse.ArgumentParser(
+                description='Archipelago Launcher',
+                usage="[-h] [--update_settings] [Patch|Game|Component] [-- component args here]"
+                )
+                run_group = parser.add_argument_group("Run")
+                run_group.add_argument("--update_settings", action="store_true",
+                                    help="Update host.yaml and exit.")
+                run_group.add_argument("Patch|Game|Component|url", type=str, nargs="?",
+                                    help="Pass either a patch file, a generated game, the component name to run, or a url to "
+                                            "connect with.")
+                run_group.add_argument("args", nargs="*",
+                                    help="Arguments to pass to component.")
+                main(parser.parse_args())
             except Exception as e:
                 print(f"[SHORTCUT-MANAGER] Failed to restart launcher: {e}")
-    
+                return sys.exit(1)
+
+
+            from worlds.LauncherComponents import processes
+
+            for process in processes:
+                process.join()
+
+
+
     atexit.register(restart_launcher_on_early_exit)
 
 

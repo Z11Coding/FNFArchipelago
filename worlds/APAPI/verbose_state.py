@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""APAPI Fill Diagnostic – lightweight, works for any game.
+"""APAPI Fill Diagnostic - lightweight, works for any game.
 
 Enable via host.yaml:
   apapi:
@@ -13,8 +13,7 @@ On Fill.FillError it writes output/fill_diagnostic_<seed>.txt with:
 - completion per player (has_beaten/can_beat_game) and mystery custom goal token/item counts
 - state summary (checked/advancements)
 
-No VerboseCollectionState, no per-predicate logging – just APAPI logic_api + get_all_state,
-so it does not freeze and works for any world.
+WIP.
 """
 
 import logging

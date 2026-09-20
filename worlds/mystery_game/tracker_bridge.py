@@ -93,24 +93,6 @@ def _install_mystery_identity_hook() -> None:
         logger.warning("[MysteryTrackerBridge] failed to install identity hook: %s", exc)
 
 
-def _make_mystery_ut_friendly(mystery_cls: Any) -> None:
-    """Ensure Mystery Game itself is not tracked by UT. UT should track underlying real games instead."""
-    try:
-        # Explicitly disable UT for Mystery Game itself – UT should track the underlying real games, not the Mystery wrapper
-        # We set a flag so if UT ever tries to connect to Mystery Game, it will show disabled message rather than attempt generation
-        # Leave ut_can_gen_without_yaml as is (default False) – don't enable
-        # If the world had it enabled, we leave it; but we ensure disable_ut is set if not already
-        # Actually we want to prevent UT tracking Mystery Game itself, so we can set disable_ut = True
-        # However to avoid breaking existing behavior for users who might want it, we just ensure there's no forced enable
-        if getattr(mystery_cls, "ut_can_gen_without_yaml", False):
-            # User clarified they don't want Mystery Game itself tracked – log but don't force off if author enabled
-            logger.info("[MysteryTrackerBridge] Mystery Game ut_can_gen_without_yaml left as %s (UT will not track Mystery itself per user request)", getattr(mystery_cls, "ut_can_gen_without_yaml"))
-        # We do NOT inject interpret_slot_data for Mystery Game
-        logger.info("[MysteryTrackerBridge] Mystery Game left not UT-friendly (as requested)")
-    except Exception as exc:
-        logger.warning("[MysteryTrackerBridge] _make_mystery_ut_friendly failed: %s", exc)
-
-
 def _patch_ut_for_mystery_relay(tracker_cls: Any = None) -> None:
     """Patch UT to use mystery_real_game from slot_data when connecting to hashed Mystery slots."""
     try:
@@ -251,7 +233,7 @@ def install() -> None:
     # Patch Mystery Game when it becomes available (it is already loaded now, but use hook for safety)
     def _on_mystery(cls: Any) -> None:
         if cls is not None:
-            _make_mystery_ut_friendly(cls)
+            # _make_mystery_ut_friendly(cls)
 
     def _on_ut(cls: Any) -> None:
         if cls is not None:
@@ -271,7 +253,7 @@ def install() -> None:
         from worlds.AutoWorld import AutoWorldRegister
         m_cls = AutoWorldRegister.world_types.get("Mystery Game")
         if m_cls is not None:
-            _make_mystery_ut_friendly(m_cls)
+            # _make_mystery_ut_friendly(m_cls)
         # UT may not be registered yet; will be handled by when_game_available
         t_cls = AutoWorldRegister.world_types.get("Universal Tracker")
         if t_cls is not None:

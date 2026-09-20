@@ -136,26 +136,40 @@ def scan_and_unpack_pending(notify: bool = True) -> tuple[list[pathlib.Path], li
         return installed_all, notes
     for appack_path in candidates:
         try:
-            src, installed, skipped = install_appack(appack_path, overwrite=False)
+            src, installed, skipped = install_appack(appack_path, overwrite=True)
         except Exception as exc:
             notes.append(f"{appack_path.name}: {exc}")
             logger.warning("[APAPI:loader] auto-unpack failed for %s: %s", appack_path, exc)
             continue
         for target in installed:
-            _register_and_load_apworld(target)
+            try:
+                _register_and_load_apworld(target)
+            except Exception:
+                pass
         if installed:
             installed_all.extend(installed)
             dprint("loader", f"auto-unpacked {appack_path.name}: "
                              f"{', '.join(t.stem for t in installed)}")
+            try:
+                appack_path.unlink()
+                dprint("loader", f"removed auto-installed {appack_path.name}")
+            except Exception as exc:
+                logger.debug(f"Could not remove {appack_path}: {exc}")
+                notes.append(f"{appack_path.name}: installed but could not remove ({exc})")
         if skipped:
             notes.append(f"{appack_path.name}: skipped {', '.join(skipped)}")
+            if installed:
+                try:
+                    appack_path.unlink()
+                except Exception:
+                    pass
     if notify and installed_all:
         names = ", ".join(path.stem for path in installed_all)
-        text = f"APack file(s) in custom_worlds were automatically unpacked:\n{names}"
+        text = f"APack file(s) in custom_worlds were automatically installed:\n{names}"
         logging.info(text)
         try:
             import Utils
-            Utils.messagebox("APack auto-unpacked.", text)
+            Utils.messagebox("APack auto-installed.", text)
         except Exception:
             pass
     return installed_all, notes
@@ -202,9 +216,8 @@ def initialize() -> None:
         logger.debug("[APAPI:loader] appack association check failed: %s", exc)
     try:
         from .world_ready import on_worlds_loaded, worlds_loading_complete
-        if worlds_loading_complete():
-            _auto_unpack_once()
-        else:
+        _auto_unpack_once()
+        if not worlds_loading_complete():
             on_worlds_loaded(_auto_unpack_once)
     except Exception:
         _auto_unpack_once()

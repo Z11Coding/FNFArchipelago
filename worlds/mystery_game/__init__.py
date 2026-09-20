@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# from worlds import APAPI
+
 """Mystery Game: randomizes which games fill other slots with unlock/lock and identity scrambling."""
 
 import logging
@@ -117,6 +119,16 @@ from .puzzles import (
 
 logger = logging.getLogger("APAPI.MysteryGame")
 
+
+def APAPI_Available() -> bool:
+    try:
+        import worlds.APAPI  # noqa: F401
+        from worlds.APAPI import get_current_stage  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 EXPANSION_NOTES: str = (
     "Mystery expansion adds players to the LIVE MultiWorld during generate_early "
     "via APAPI inject_player_now (worlds/APAPI/midgen.py): the roster, caches, "
@@ -186,6 +198,8 @@ class MysteryGameWorld(World):
     author: str = "Yutamon"
     web: ClassVar[WebWorld] = MysteryWeb()
 
+    disable_ut: bool = True
+
     options_dataclass = MysteryGameOptions
     options: MysteryGameOptions
 
@@ -233,6 +247,10 @@ class MysteryGameWorld(World):
         self.cheese = self.random.random() < 0.01
         if self.cheese:
             dprint("mystery", f"player {self.player}: MYSTERY CHEESE rolled!")
+
+        if not APAPI_Available():
+            raise RuntimeError("APAPI is required for Mystery Game. Please install it before proceeding.")
+        
         self.pre_existing_players = sorted(
             player for player in self.multiworld.player_ids if player != self.player)
         added: list[int] = self._expand_now()
@@ -1155,7 +1173,7 @@ def _log_stage(multiworld: MultiWorld, *args: Any) -> None:
     dprint("mystery", f"entering stage {get_current_stage()}")
 
 
-for _stage in ("generate_early", "create_regions", "create_items", "set_rules", "pre_fill", "post_fill"):
+for _stage in ("generate_early", "create_regions", "create_items", "set_rules", "pre_fill", "post_fill"): # for testing, as of now.
     try:
         on_stage(_stage, _log_stage)
     except Exception:

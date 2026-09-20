@@ -3,7 +3,7 @@ from __future__ import annotations
 """Launch context detection for APAPI.
 
 Detects which core entry point is currently running (Generate, Launcher, etc.)
-Works for both frozen (PyInstaller/cx_Freeze) and non-frozen (python *.py) launches.
+Works for both frozen) and non-frozen (python *.py) launches.
 
 Usage:
     from worlds.APAPI import get_launch_context, is_generate_context, should_skip_app_window
