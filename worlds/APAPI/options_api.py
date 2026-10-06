@@ -4,7 +4,7 @@ from collections import OrderedDict
 import inspect
 import logging
 import time
-from typing import Dict, List, Type
+from typing import Any, Dict, List, Type
 
 from BaseClasses import MultiWorld
 from Options import OptionGroup, PerGameCommonOptions, Range
@@ -157,7 +157,19 @@ def _patch_multiworld_set_options() -> None:
             self.worlds[player] = world_type(self, player)
 
             options_dataclass: type[PerGameCommonOptions] = world_type.options_dataclass
-            kwargs = {option_key: getattr(args, option_key)[player] for option_key in options_dataclass.type_hints}
+            type_hints = options_dataclass.type_hints
+            kwargs: Dict[str, Any] = {}
+            for option_key in type_hints:
+                # args may lack keys that were injected into type_hints after
+                # args was built (e.g. No Logic meta options registered globally
+                # via a cleared type-hint cache). Fall back to the option default
+                # instead of crashing, mirroring Generate's missing-option path.
+                values = getattr(args, option_key, None)
+                if isinstance(values, dict) and player in values:
+                    kwargs[option_key] = values[player]
+                else:
+                    option_class = type_hints[option_key]
+                    kwargs[option_key] = option_class.from_any(option_class.default)
 
             init_params = set(inspect.signature(options_dataclass).parameters) - {"self"}
             overflow = {k: v for k, v in kwargs.items() if k not in init_params}
