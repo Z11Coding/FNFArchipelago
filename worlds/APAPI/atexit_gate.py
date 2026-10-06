@@ -424,8 +424,26 @@ def _roll_settings_wrapper(next_callable, yaml, *args, **kwargs):
         msg = str(exc)
         if "No world found" not in msg and "No functional world" not in msg:
             raise
+        game = yaml.get("game") if isinstance(yaml, dict) else None
+        # The game may have failed its first import only because an apworld it
+        # depends on (e.g. APAPI) had not loaded yet: apworlds load in world
+        # version order, so dependents can come first. Reload failed worlds
+        # synchronously and re-roll once, so the yaml does not fail for
+        # load-order reasons alone. Worlds still fail fast on real errors
+        # (no tolerant imports), and this never needs generation_retry.
         try:
-            game = yaml.get("game") if isinstance(yaml, dict) else None
+            from .world_ready import _try_reload_failed_worlds
+            _try_reload_failed_worlds()
+        except Exception:
+            pass
+        try:
+            if game:
+                from worlds.AutoWorld import AutoWorldRegister
+                if str(game) in AutoWorldRegister.world_types:
+                    return next_callable(yaml, *args, **kwargs)
+        except Exception:
+            pass
+        try:
             spec = None
             if isinstance(yaml, dict):
                 if "apworld_version_wanted" in yaml:

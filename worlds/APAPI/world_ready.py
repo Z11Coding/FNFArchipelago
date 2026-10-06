@@ -253,13 +253,49 @@ def _prompt_replace_existing(target: str) -> bool:
     return False
 
 
+def _discard_failed_world(worlds_module: Any, name: str) -> None:
+    """Input: worlds module + failed entry name. Returns: None (drops the entry)."""
+    try:
+        store = getattr(worlds_module, "failed_world_loads", None)
+        if isinstance(store, dict):
+            # Archipelago >= 0.6.8: name -> reason mapping.
+            store.pop(name, None)
+        elif isinstance(store, list):
+            # Archipelago <= 0.6.7: plain name list.
+            while name in store:
+                store.remove(name)
+    except Exception:
+        pass
+
+
+def _record_failed_world(worlds_module: Any, name: str, reason: str = "") -> None:
+    """Input: worlds module + failed entry name. Returns: None (records it if absent)."""
+    try:
+        store = getattr(worlds_module, "failed_world_loads", None)
+        if isinstance(store, dict):
+            store.setdefault(name, reason)
+        elif isinstance(store, list):
+            if name not in store:
+                store.append(name)
+    except Exception:
+        pass
+
+
 def _try_reload_failed_worlds() -> None:
     try:
         import worlds
-        raw_failed = list(getattr(worlds, "failed_world_loads", []))
-        failed = list(dict.fromkeys(raw_failed))
-        if len(failed) != len(raw_failed):
-            worlds.failed_world_loads[:] = failed
+        raw_store = getattr(worlds, "failed_world_loads", [])
+        if isinstance(raw_store, dict):
+            # Archipelago >= 0.6.8 (dict); keys are already unique.
+            failed = [name for name in raw_store.keys()]
+        else:
+            # Archipelago <= 0.6.7 (list); de-duplicate in place.
+            failed = list(dict.fromkeys(raw_store))
+            if len(failed) != len(raw_store):
+                try:
+                    raw_store[:] = failed
+                except Exception:
+                    pass
         if not failed:
             return
         to_retry = [name for name in failed if name not in ("", None) and name not in _retried_failed_worlds]
@@ -344,9 +380,8 @@ def _try_reload_failed_worlds() -> None:
                                     pass
                                 # Update failed list name
                                 try:
-                                    worlds.failed_world_loads.remove(world_name)
-                                    if root_folder not in worlds.failed_world_loads:
-                                        worlds.failed_world_loads.append(root_folder)
+                                    _discard_failed_world(worlds, world_name)
+                                    _record_failed_world(worlds, root_folder)
                                 except Exception:
                                     pass
                                 world_name = root_folder
@@ -357,10 +392,7 @@ def _try_reload_failed_worlds() -> None:
                 except Exception as me:
                     logger.debug(f"[APAPI:ready] misname check failed for {world_name}: {me}")
                 if src.load():
-                    try:
-                        worlds.failed_world_loads.remove(world_name)
-                    except ValueError:
-                        pass
+                    _discard_failed_world(worlds, world_name)
                     # Also try to remove any old misnamed entry
                     try:
                         for n in list(worlds.failed_world_loads):
