@@ -131,6 +131,67 @@ class LocationData:
         self.accessRuleFunc = access_rule_func
 
 
+def _unwrap_pending(value):
+    """Unwrap an APAPI PendingRandom without importing APAPI.
+
+    Keeps module import working when APAPI is absent; duck-typed so real
+    PendingRandom values resolve to .raw exactly like pre_gen's _unwrap.
+    """
+    if type(value).__name__ == "PendingRandom" and hasattr(value, "raw"):
+        return value.raw
+    return value
+
+
+class _FNFYamlWrapper:
+    """Duck-typed FNF yaml object used by pre_gen.
+
+    Mirrors the yutautil_APYaml surface that the shared table builder
+    expects (.name, .game, .settings, .getSongList(), .handle_name())
+    so both yaml sources flow through identical code.
+    """
+    def __init__(self, d):
+        self._d = d
+        self.name = d.get("name", "Unknown")
+        self.game = d.get("game", "Friday Night Funkin")
+        if not isinstance(self.game, str):
+            self.game = "Friday Night Funkin"
+            try:
+                for _t in d.get("triggers") or []:
+                    if not isinstance(_t, dict):
+                        continue
+                    if _t.get("option_name") != "game":
+                        continue
+                    if _t.get("option_result") != "Friday Night Funkin":
+                        continue
+                    _opts = _t.get("options") or {}
+                    _root = _opts.get("") or {}
+                    _n = _root.get("name") if isinstance(_root, dict) else None
+                    if isinstance(_n, str) and _n.strip():
+                        self.name = _n.strip()
+                        break
+            except Exception:
+                pass
+        fnf_sec = d.get("Friday Night Funkin", {}) if isinstance(d.get("Friday Night Funkin"), dict) else {}
+        self.settings = type("S", (), {})()
+        for kk, vv in fnf_sec.items():
+            setattr(self.settings, kk, _unwrap_pending(vv))
+        if not hasattr(self.settings, "songList"):
+            self.settings.songList = _unwrap_pending(fnf_sec.get("songList") or fnf_sec.get("song_list") or d.get("songList") or [])
+        if not hasattr(self.settings, "song_limit"):
+            self.settings.song_limit = getattr(self.settings, "song_limit", 5)
+        for kk in ("modData", "sanity", "stagesanity", "charactersanity", "songBundleEnabled", "songBundleWeight"):
+            if not hasattr(self.settings, kk) and kk in fnf_sec:
+                setattr(self.settings, kk, fnf_sec[kk])
+    def getSongList(self):
+        return getattr(self.settings, "songList", [])
+    def handle_name(self, name, pid, counter=None):
+        if counter is None:
+            counter = {}
+        c = counter.get(name, 0) + 1
+        counter[name] = c
+        return name.replace("{number}", str(c)).replace("{NUMBER}", str(c)).replace("{player}", str(pid)).replace("{PLAYER}", str(pid))
+
+
 class FunkinWeb(WebWorld):
     tutorials = [Tutorial(
         "Friday Night Funkin Setup Guide",
@@ -209,36 +270,51 @@ class FunkinWorld(World):
         return yutautil_APYaml.clean_yaml_song_list(song_list)
 
     @staticmethod
-    def stuff():
+    def stuff(yamls_override=None, folder_path_override=None):
+        """Build class-level item/location tables from FNF yaml objects.
+
+        Inputs: list of (player_id, yaml) tuples + player folder path.
+        When called with no arguments (legacy/class-body path), yamls are
+        parsed from the player folder exactly as before. pre_gen() passes
+        pre-wrapped yamls + the same folder so both paths act identically.
+        """
         try:
             import Utils
             from .Yutautil import yutautil_APYaml
             import sys
             import os
             fnfUtil = FunkinUtils()
-            user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
-            folder_path = sys.argv[
-                sys.argv.index("--player_files_path") + 1] if "--player_files_path" in sys.argv else user_path
-            import time
-            time.sleep(1)
+            if yamls_override is not None:
+                # Caller-supplied yamls (pre_gen path): same objects flow through
+                # the shared pipeline below, keyed by caller player ids.
+                indexed_yamls = list(yamls_override)
+                all_yamls = [yaml_data for _, yaml_data in indexed_yamls]
+                folder_path = folder_path_override
+            else:
+                user_path = Utils.user_path(Utils.get_settings()["generator"]["player_files_path"])
+                folder_path = sys.argv[
+                    sys.argv.index("--player_files_path") + 1] if "--player_files_path" in sys.argv else user_path
+                import time
+                time.sleep(1)
 
-            if not os.path.isdir(folder_path):
-                raise ValueError(f"The path {folder_path} is not a valid directory.")
+                if not os.path.isdir(folder_path):
+                    raise ValueError(f"The path {folder_path} is not a valid directory.")
 
-            # Load all FNF YAML files
-            all_yamls = []
-            for item in os.listdir(folder_path):
-                item_path = os.path.join(folder_path, item)
-                if os.path.isfile(item_path):
-                    try:
-                        with open(item_path, 'r', encoding='utf-8') as file:
-                            file_content = file.read()
-                            yaml = yutautil_APYaml(file_content)
-                            if yaml.game == "Friday Night Funkin":
-                                all_yamls.append(yaml)
-                    except Exception as e:
-                        print(f"Error reading YAML file {item}: {e}")
-                        continue
+                # Load all FNF YAML files
+                all_yamls = []
+                for item in os.listdir(folder_path):
+                    item_path = os.path.join(folder_path, item)
+                    if os.path.isfile(item_path):
+                        try:
+                            with open(item_path, 'r', encoding='utf-8') as file:
+                                file_content = file.read()
+                                yaml = yutautil_APYaml(file_content)
+                                if yaml.game == "Friday Night Funkin":
+                                    all_yamls.append(yaml)
+                        except Exception as e:
+                            print(f"Error reading YAML file {item}: {e}")
+                            continue
+                indexed_yamls = [(i + 1, yaml_data) for i, yaml_data in enumerate(all_yamls)]
 
             if not all_yamls:
                 print("No FNF YAML files found, using default songs")
@@ -258,30 +334,33 @@ class FunkinWorld(World):
 
             print("Loading custom AP logic files...")
 
-            # First, collect all player names from YAML files
+            # Collect all player names from YAML files (ids come from the caller:
+            # folder scan order for stuff(), real player ids for pre_gen).
             player_names = set()
             name_counter = {}  # Track name counts for {number} placeholder
-            for i, yaml_data in enumerate(all_yamls):
+            for player_index, yaml_data in indexed_yamls:
                 if hasattr(yaml_data, 'name'):
-                    # Process name placeholders using player index + 1 as player_id
-                    processed_name = yaml_data.handle_name(yaml_data.name, i + 1, name_counter)
+                    # Process name placeholders using the caller-provided player id
+                    processed_name = yaml_data.handle_name(yaml_data.name, player_index, name_counter)
                     yaml_data.name = processed_name  # Update the YAML object with processed name
                     player_names.add(processed_name)
 
             # Check if fnfModData folder exists and use it if available
-            folder_path = f"{folder_path}\\fnfModData" if os.path.exists(f"{folder_path}\\fnfModData") and os.path.isdir(f"{folder_path}\\fnfModData") else folder_path
+            if folder_path and os.path.exists(f"{folder_path}\\fnfModData") and os.path.isdir(f"{folder_path}\\fnfModData"):
+                folder_path = f"{folder_path}\\fnfModData"
 
             # First, process modData from YAML files (embedded compressed Python code)
             print("Processing modData from YAML files...")
             import base64
             for yaml_data in all_yamls:
-                if hasattr(yaml_data.settings, 'modData') and yaml_data.settings.modData:
+                mod_data_value = getattr(yaml_data.settings, 'modData', None) or getattr(yaml_data.settings, 'mod_data', None)
+                if mod_data_value:
                     player_name = getattr(yaml_data, 'name', 'Unknown Player')
                     try:
                         print(f"Processing embedded modData for player '{player_name}'")
 
-                        # Decode Base64 compressed Python script
-                        compressed_script = yaml_data.settings.modData
+                        # Decode Base64 compressed Python script (modData or mod_data key)
+                        compressed_script = mod_data_value
                         custom_script = base64.b64decode(compressed_script).decode('utf-8')
 
                         # Create execution environment
@@ -432,8 +511,12 @@ class FunkinWorld(World):
             # Store sanity items for later use in create_items
             sanity_items_list = sanity_items
 
-            # Look for player-specific custom data files
-            for item in os.listdir(folder_path):
+            # Look for player-specific custom data files (skipped when no folder
+            # is available, e.g. pre_gen without a resolvable player path)
+            folder_files = []
+            if folder_path and os.path.isdir(folder_path):
+                folder_files = os.listdir(folder_path)
+            for item in folder_files:
                 if item.endswith("_customFNFData.py"):
                     # Extract player name from filename
                     player_name = item[:-len("_customFNFData.py")]
@@ -575,6 +658,35 @@ class FunkinWorld(World):
 
                         if cleaned_song:
                             all_songs.add(cleaned_song)
+
+            # Union alternate song sources both paths understand: the
+            # `song_list` key variant, and yaml-level custom song additions
+            # (list of {"name": ...} dicts or plain strings). No-ops when absent.
+            for yaml_data in all_yamls:
+                yaml_settings = getattr(yaml_data, 'settings', None)
+                if yaml_settings is None:
+                    continue
+                alt_song_list = getattr(yaml_settings, 'song_list', None)
+                alt_song_list = _maybe_b64_to_list(alt_song_list) if alt_song_list is not None else None
+                if isinstance(alt_song_list, list):
+                    for song in alt_song_list:
+                        if isinstance(song, str):
+                            cleaned_song = yutautil_APYaml.clean_yaml_song_name(song.strip())
+                            if cleaned_song:
+                                all_songs.add(cleaned_song)
+                for additions_key in ("custom_song_additions", "song_additions"):
+                    additions = getattr(yaml_settings, additions_key, None)
+                    if not isinstance(additions, list):
+                        continue
+                    for item in additions:
+                        if isinstance(item, dict) and "name" in item:
+                            cleaned_song = yutautil_APYaml.clean_yaml_song_name(str(item["name"]).strip())
+                            if cleaned_song:
+                                all_songs.add(cleaned_song)
+                        elif isinstance(item, str):
+                            cleaned_song = yutautil_APYaml.clean_yaml_song_name(item.strip())
+                            if cleaned_song:
+                                all_songs.add(cleaned_song)
 
             # Add fallback songs if no custom songs found
             if not all_songs:
@@ -1161,204 +1273,81 @@ class FunkinWorld(World):
             fnf_yamls = [y for y in yamls if _is_fnf_yaml(y)]
             if not fnf_yamls:
                 return
-            from worlds.APAPI.pre_gen import PendingRandom as _PR2
-            def _unwrap(v):
-                if isinstance(v, _PR2):
-                    return v.raw
-                return v
+            # Map ctx docs to (player id, wrapped yaml) pairs, preserving real
+            # player ids for {player} placeholder handling.
+            fnf_by_player = []
             try:
-                if not getattr(cls, "item_name_to_id", None):
-                    try:
-                        fu = FunkinUtils()
-                        base_items = {
-                            fu.SHOW_TICKET_NAME: fu.SHOW_TICKET_CODE,
-                            fu.GIRLFRIENDS_LOVE_NAME: fu.GIRLFRIENDS_LOVE_CODE,
-                        }
-                        base_items.update(fu.filler_items)
-                        base_items.update(fu.normal_items)
-                        base_items.update(fu.one_time_items)
-                        base_items.update(fu.trap_items)
-                        base_items.update(fu.trap_filler_items)
-                        base_items.update(fu.z11_permatrap_items)
-                        base_items.update(fu.z11_antitrap_items)
-                        base_items.update(fu.z11_hardmode_items)
-                        cls.item_name_to_id = dict(base_items)
-                        cls.location_name_to_id = {"Victory Goal": max(base_items.values()) + 1000}
-                        cls.song_items = {}
-                        cls.song_locations = {}
-                    except Exception:
-                        pass
-                class _Wrapper:
-                    def __init__(self, d):
-                        self._d = d
-                        self.name = d.get("name", "Unknown")
-                        self.game = d.get("game", "Friday Night Funkin")
-                        if not isinstance(self.game, str):
-                            self.game = "Friday Night Funkin"
-                            try:
-                                for _t in d.get("triggers") or []:
-                                    if not isinstance(_t, dict):
-                                        continue
-                                    if _t.get("option_name") != "game":
-                                        continue
-                                    if _t.get("option_result") != "Friday Night Funkin":
-                                        continue
-                                    _opts = _t.get("options") or {}
-                                    _root = _opts.get("") or {}
-                                    _n = _root.get("name") if isinstance(_root, dict) else None
-                                    if isinstance(_n, str) and _n.strip():
-                                        self.name = _n.strip()
-                                        break
-                            except Exception:
-                                pass
-                        fnf_sec = d.get("Friday Night Funkin", {}) if isinstance(d.get("Friday Night Funkin"), dict) else {}
-                        self.settings = type("S", (), {})()
-                        for kk, vv in fnf_sec.items():
-                            setattr(self.settings, kk, _unwrap(vv))
-                        if not hasattr(self.settings, "songList"):
-                            self.settings.songList = _unwrap(fnf_sec.get("songList") or fnf_sec.get("song_list") or d.get("songList") or [])
-                        if not hasattr(self.settings, "song_limit"):
-                            self.settings.song_limit = getattr(self.settings, "song_limit", 5)
-                        for kk in ("modData", "sanity", "stagesanity", "charactersanity", "songBundleEnabled", "songBundleWeight"):
-                            if not hasattr(self.settings, kk) and kk in fnf_sec:
-                                setattr(self.settings, kk, fnf_sec[kk])
-                    def getSongList(self):
-                        return getattr(self.settings, "songList", [])
-                    def handle_name(self, name, pid, counter=None):
-                        if counter is None:
-                            counter = {}
-                        c = counter.get(name, 0) + 1
-                        counter[name] = c
-                        return name.replace("{number}", str(c)).replace("{NUMBER}", str(c)).replace("{player}", str(pid)).replace("{PLAYER}", str(pid))
+                _get_players = getattr(ctx, "get_players_for_game", None)
+                _get_all = getattr(ctx, "get_all_yamls", None)
+                if callable(_get_players) and callable(_get_all):
+                    _all_docs = _get_all()
+                    for _pid in _get_players("Friday Night Funkin"):
+                        if _pid in _all_docs and _is_fnf_yaml(_all_docs[_pid]):
+                            fnf_by_player.append((_pid, _all_docs[_pid]))
+            except Exception:
+                fnf_by_player = []
+            if not fnf_by_player:
+                # Fall back to the filtered list with positional ids.
+                fnf_by_player = [(i + 1, _y) for i, _y in enumerate(fnf_yamls)]
+            wrapped = []
+            for _pid, _doc in fnf_by_player:
                 try:
-                    cls.all_yamls = [_Wrapper(d) for d in fnf_yamls]
+                    wrapped.append((_pid, _FNFYamlWrapper(_doc)))
+                except Exception:
+                    continue
+            if not wrapped:
+                return
+            # Copy mutable song lists so table-building mutations stay local
+            # (ctx docs may be live generation inputs).
+            for _, _w in wrapped:
+                try:
+                    _sl = getattr(_w.settings, "songList", None)
+                    if isinstance(_sl, list):
+                        _w.settings.songList = list(_sl)
                 except Exception:
                     pass
-                all_songs = set()
-                for ydict in fnf_yamls:
-                    fnf_sec = ydict.get("Friday Night Funkin", {}) if isinstance(ydict.get("Friday Night Funkin"), dict) else {}
-                    song_list = fnf_sec.get("songList") or fnf_sec.get("song_list") or ydict.get("songList") or []
-                    if isinstance(song_list, _PR2):
-                        song_list = song_list.raw if isinstance(song_list.raw, list) else []
-                    song_list = _maybe_b64_to_list(song_list)
-                    if isinstance(song_list, list):
-                        for s in song_list:
-                            s = _unwrap(s)
-                            if isinstance(s, str) and s.strip():
-                                cs = cls._clean_yaml_song_name(s.strip())
-                                if cs:
-                                    all_songs.add(cs)
-                    for key in ["custom_song_additions", "song_additions"]:
-                        if key in fnf_sec:
-                            val = _unwrap(fnf_sec[key])
-                            if isinstance(val, list):
-                                for item in val:
-                                    if isinstance(item, dict) and "name" in item:
-                                        cs = cls._clean_yaml_song_name(str(item["name"]).strip())
-                                        if cs:
-                                            all_songs.add(cs)
-                                    elif isinstance(item, str):
-                                        cs = cls._clean_yaml_song_name(item.strip())
-                                        if cs:
-                                            all_songs.add(cs)
-                import base64
-                for ydict2 in fnf_yamls:
-                    fnf_sec2 = ydict2.get("Friday Night Funkin", {}) if isinstance(ydict2.get("Friday Night Funkin"), dict) else {}
-                    for md_key in ("modData", "mod_data"):
-                        md = fnf_sec2.get(md_key) or ydict2.get(md_key) or ydict2.get("modData")
-                        if md and isinstance(md, str):
-                            try:
-                                custom_script = base64.b64decode(md).decode('utf-8')
-                                eg = {}
-                                el = {}
-                                exec(custom_script, eg, el)
-                                cd = None
-                                if 'INSTANCE' in el:
-                                    inst = el['INSTANCE']
-                                    if hasattr(inst, 'get_custom_data_for_class'):
-                                        cd = inst.get_custom_data_for_class()
-                                elif 'get_custom_data_for_class' in el:
-                                    cd = el['get_custom_data_for_class']()
-                                if cd:
-                                    for song in cd.get('song_additions', []):
-                                        if isinstance(song, dict) and "name" in song:
-                                            cs = cls._clean_yaml_song_name(str(song["name"]).strip())
-                                            if cs:
-                                                all_songs.add(cs)
-                                        elif isinstance(song, str):
-                                            cs = cls._clean_yaml_song_name(song.strip())
-                                            if cs:
-                                                all_songs.add(cs)
-                            except Exception:
-                                pass
-                if not all_songs:
-                    class FunkinPreloadError(Exception):
-                        pass
-                    raise FunkinPreloadError("No songs found for Friday Night Funkin - at least one song required")
-                new_items: dict[str, int] = {}
-                new_locs: dict[str, int] = {}
-                try:
-                    max_item_id = max(cls.item_name_to_id.values(), default=0)
-                    max_loc_id = max(cls.location_name_to_id.values(), default=0)
-                except Exception:
-                    max_item_id = 0
-                    max_loc_id = 0
-                for song in sorted(all_songs):
-                    if song not in cls.song_items and song not in cls.item_name_to_id:
-                        max_item_id += 1
-                        while max_item_id in cls.item_name_to_id.values():
-                            max_item_id += 1
-                        try:
-                            from .Items import SongData
-                            new_items[song] = max_item_id
-                            if not hasattr(cls, "song_items") or not isinstance(cls.song_items, dict):
-                                cls.song_items = {}
-                        except Exception:
-                            new_items[song] = max_item_id
-                    if song not in cls.song_locations and f"{song}-0" not in cls.location_name_to_id:
-                        max_loc_id += 1
-                        while max_loc_id in cls.location_name_to_id.values() or max_loc_id in new_locs.values():
-                            max_loc_id += 1
-                        new_locs[f"{song}-0"] = max_loc_id
-                        max_loc_id += 1
-                        while max_loc_id in cls.location_name_to_id.values() or max_loc_id in new_locs.values():
-                            max_loc_id += 1
-                        new_locs[f"{song}-1"] = max_loc_id
-                    for j in range(3):
-                        nk = f"Note {j}: {song}"
-                        if nk not in cls.song_locations and nk not in cls.location_name_to_id and nk not in new_locs:
-                            max_loc_id += 1
-                            while max_loc_id in cls.location_name_to_id.values() or max_loc_id in new_locs.values():
-                                max_loc_id += 1
-                            new_locs[nk] = max_loc_id
-                for k, v in new_items.items():
-                    if k not in cls.item_name_to_id:
-                        cls.item_name_to_id[k] = v
-                for k, v in new_locs.items():
-                    if k not in cls.location_name_to_id:
-                        cls.location_name_to_id[k] = v
-                    try:
-                        if not hasattr(cls, "song_locations") or not isinstance(cls.song_locations, dict):
-                            cls.song_locations = {}
-                        if k not in cls.song_locations:
-                            cls.song_locations[k] = v
-                    except Exception:
-                        pass
-                for song in sorted(all_songs):
-                    if song not in cls.song_items:
-                        try:
-                            from .Items import SongData
-                            sid = new_items.get(song) or cls.item_name_to_id.get(song)
-                            if sid:
-                                cls.song_items[song] = SongData(sid, True, song, "", [])
-                        except Exception:
-                            pass
-                print(f"[FNF pre_gen] updated class with {len(new_items)} items and {len(new_locs)} locations from {len(fnf_yamls)} yamls (multiworld={'yes' if multiworld else 'no'})")
+            # Resolve the player folder exactly like stuff() does, so folder
+            # script scans behave identically.
+            folder_path = None
+            try:
+                import Utils as _Utils
+                _user_path = _Utils.user_path(_Utils.get_settings()["generator"]["player_files_path"])
+                import sys as _sys
+                if "--player_files_path" in _sys.argv:
+                    folder_path = _sys.argv[_sys.argv.index("--player_files_path") + 1]
+                else:
+                    folder_path = _user_path
+            except Exception:
+                folder_path = None
+            try:
+                tables = cls.stuff(wrapped, folder_path)
             except Exception as e:
                 import traceback
                 print(f"[FNF pre_gen] failed: {e}")
                 traceback.print_exc()
                 raise
+            cls.item_name_to_id = tables["items"]
+            cls.location_name_to_id = tables["locations"]
+            cls.song_items = tables["song_items"]
+            cls.song_locations = tables["song_locations"]
+            cls.all_yamls = [w for _, w in wrapped]
+            cls.player_song_additions = tables.get("vip_songs", {})
+            cls.custom_access_rules = tables.get("custom_access_rules", {})
+            cls.custom_location_data = tables.get("custom_location_data", {})
+            cls.custom_items_list = tables.get("custom_items", {})
+            cls.custom_trap_items_list = tables.get("custom_trap_items", {})
+            cls.custom_location_items = tables.get("custom_location_items", {})
+            cls.custom_song_additions = tables.get("custom_song_additions", {})
+            cls.custom_song_exclusions = tables.get("custom_song_exclusions", {})
+            cls.custom_song_requirements = tables.get("custom_song_requirements", {})
+            cls.song_bundles = tables.get("song_bundles", {})
+            cls.bundle_locations = tables.get("bundle_locations", {})
+            cls.songs_in_bundles = tables.get("songs_in_bundles", set())
+            cls.sanity_items_list = tables.get("sanity_items_list", [])
+            cls.sanity_location_ids = tables.get("sanity_location_ids", {})
+            print(f"[FNF pre_gen] updated class with {len(tables['song_items'])} songs, "
+                  f"{len(tables['items'])} items and {len(tables['locations'])} locations "
+                  f"from {len(wrapped)} yamls (multiworld={'yes' if multiworld else 'no'})")
     try:
         from worlds.APAPI.pre_gen import PreGenContext as _PGC  # type: ignore
         _APAPI_AVAILABLE = True
@@ -3639,6 +3628,19 @@ class FunkinWorld(World):
             print(f"No sanity items available for {self.player_name}")
         self.location_count = len(menu_region.locations)
 
+        # Duplicate-name diagnostic: two Location objects sharing one name
+        # report as one entry while fill sees two slots (or vice versa).
+        _seen_location_names = set()
+        _duplicate_location_names = set()
+        for _loc in menu_region.locations:
+            if _loc.name in _seen_location_names:
+                _duplicate_location_names.add(_loc.name)
+            _seen_location_names.add(_loc.name)
+        if _duplicate_location_names:
+            print(f"WARNING: {len(_duplicate_location_names)} duplicate location name(s) for "
+                  f"{self.player_name}: {sorted(_duplicate_location_names)}. "
+                  f"Duplicates share one spoiler entry but consume separate fill slots.")
+
         print('-- FNF LOCATION GEN FINISHED --')
 
     # def create_uno_filler(self) -> None:
@@ -3895,15 +3897,21 @@ class FunkinWorld(World):
                     self.multiworld.itempool.append(self.create_item(item_list[index]))
                     item_count += 1
 
-            # Add filler trap items
+            # Add filler trap items, capped so the pool cannot overshoot slots
             remaining_slots = self.location_count - item_count
             filler_trap_count = min(remaining_slots, self.get_filler_trap_count())
             filler_list = self.get_available_filler_traps()
             if len(filler_list) > 0 and filler_trap_count > 0:
+                filler_added = 0
                 for item in filler_list:
                     for trapitem in range(self.filter_items_weights[item]):
+                        if filler_added >= filler_trap_count:
+                            break
                         self.multiworld.itempool.append(self.create_item(item))
                         item_count += 1
+                        filler_added += 1
+                    if filler_added >= filler_trap_count:
+                        break
 
             # Fill remaining slots with song duplicates and weighted random selection
             remaining_slots = self.location_count - item_count
