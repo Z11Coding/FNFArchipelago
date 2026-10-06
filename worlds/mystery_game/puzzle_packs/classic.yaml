@@ -1,0 +1,80 @@
+# Classic Mystery puzzle pack (ships with the world).
+#
+# Each entry is either a bare name or a mapping with:
+#   name:   display name (required, unique)
+#   pieces: piece items required to solve (else the Pieces Per Puzzle option)
+#   hints:  hint texts, revealed one per "Puzzle Hint" item found
+#
+# Add your own packs in <Players>/mystery/*.yaml — same format.
+# Player packs win name conflicts and are picked first for the roster.
+puzzles:
+  - name: "The Patient Lock"
+    pieces: 3
+    hints:
+      - "Every lock waits longer than the hand that tries it."
+      - "The first piece is patience; the second is attention."
+      - "What opens without touching? A name remembered."
+
+  - name: "Echoes in the Well"
+    pieces: 3
+    hints:
+      - "Shout, and the dark shouts back a moment later."
+      - "The well keeps one word from every traveler."
+      - "Your answer is the word you dropped first."
+
+  - name: "The Cartographer's Regret"
+    pieces: 4
+    hints:
+      - "The map is accurate; the island moved."
+      - "North was only a suggestion that morning."
+      - "Follow the shoreline that isn't drawn."
+      - "X never marks the spot. Look beside it."
+
+  - name: "Seven Bells, Six Rings"
+    pieces: 3
+    hints:
+      - "Count the bells, then count again."
+      - "One bell never rings. That silence is the hinge."
+      - "Six rings, seven bells: the missing one is yours to supply."
+
+  - name: "The Lantern Ledger"
+    pieces: 2
+    hints:
+      - "Every flame borrowed must be written down."
+      - "The ledger's last page is blank, and it is yours."
+
+  - name: "Salt and Cinder"
+    pieces: 4
+    hints:
+      - "The sea keeps what the fire forgets."
+      - "Taste the wind before you trust the map."
+      - "Cinder floats; salt sinks; truth does both."
+      - "The recipe calls for one impossible ingredient: restraint."
+
+  - name: "The Second Door"
+    pieces: 2
+    hints:
+      - "The first door was a decoy with excellent hinges."
+      - "Knock twice. The second knock is the key."
+
+  - name: "The Shy Star"
+    pieces: 3
+    hints:
+      - "Sailors name stars the way travelers name save files: hopefully."
+      - "It only appears when you stop looking directly at it."
+      - "The charts call it the shy one. Be patient."
+
+  - name: "The Unplayed Chord"
+    pieces: 3
+    hints:
+      - "Three strings sound; the fourth decides."
+      - "Tune down your certainty a half step."
+      - "The chord resolves when nobody is listening."
+
+  - name: "Moss and Marble"
+    pieces: 4
+    hints:
+      - "The statue was winning until the moss arrived."
+      - "Soft things inherit the hard places."
+      - "Read the inscription through the green."
+      - "Marble remembers the chisel; moss remembers the rain."

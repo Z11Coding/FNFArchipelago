@@ -148,6 +148,7 @@ for world_source in world_sources:
             for file in filenames:
                 if file.endswith("archipelago.json"):
                     with open(os.path.join(dirpath, file), mode="r", encoding="utf-8") as manifest_file:
+                        logger.info(f"Loading manifest from {os.path.join(dirpath, file)}")
                         manifest = json.load(manifest_file)
                     break
             if manifest:
@@ -236,6 +237,7 @@ if apworlds:
                     assert apworld.path
                     with ZipFile(apworld.path, "r") as zf:
                         manifest = apworld.read_contents(zf)
+                    logger.info(f"Loaded manifest for {apworld.game} from {apworld.path}")
                     # version/compatible_version shouldn't be needed by world, makes it consistent with folder world
                     manifest.pop("version", None)
                     manifest.pop("compatible_version", None)

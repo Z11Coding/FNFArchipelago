@@ -1,0 +1,7 @@
+{
+  "name": "Preset Manager",
+  "author": "Yutamon",
+  "base_id": 0,
+  "version": "1.0.0",
+  "description": "Utility APWorld for managing and applying option presets in OptionsCreator and Launcher"
+}
