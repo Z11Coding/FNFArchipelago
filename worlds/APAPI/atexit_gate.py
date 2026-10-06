@@ -483,6 +483,31 @@ def _install_wrappers() -> None:
         hard_patches.add_wrapper("Generate.roll_settings", _roll_settings_wrapper, load_missing=True)
     except Exception:
         pass
+    # Frozen/script runs execute Generate.py as __main__, not as the importable
+    # Generate module: the wrappers above would sit on an unused module copy and
+    # never fire. Patch the live __main__ namespace too when it looks like the
+    # Generate entry script (fingerprinted by its distinctive entry points).
+    try:
+        main_mod = sys.modules.get("__main__")
+        patched_main = False
+        if main_mod is not None and all(
+            callable(getattr(main_mod, name, None))
+            for name in ("mystery_argparse", "roll_settings", "read_weights_yamls")
+        ):
+            try:
+                hard_patches.add_wrapper("__main__.main", _generate_wrapper, load_missing=False)
+            except Exception:
+                pass
+            try:
+                hard_patches.add_wrapper("__main__.roll_settings", _roll_settings_wrapper, load_missing=False)
+            except Exception:
+                pass
+            else:
+                patched_main = True
+        if patched_main:
+            logger.info("[APAPI:gate] patched live __main__ Generate entry points")
+    except Exception:
+        pass
 
 
 def _install_excepthook() -> None:
