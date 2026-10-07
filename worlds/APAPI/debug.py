@@ -96,6 +96,46 @@ def dprint(tag: str, message: str) -> None:
         logger.info("[APAPI:%s] %s", tag, message)
 
 
+class _ForwardToWorlds(logging.Handler):
+    """Mirror APAPI records to the 'Worlds' logger's own handlers.
+
+    The Launcher loading screen listens on logging.getLogger("Worlds") while
+    worlds import. Records are delivered only to handlers attached directly
+    to "Worlds" (never root), so Generate-console output is not duplicated,
+    and only while somebody is listening.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            worlds_logger = logging.getLogger("Worlds")
+            targets = worlds_logger.handlers
+            if not targets:
+                return
+            if record.name == "Worlds" or record.name.startswith("Worlds."):
+                return
+            for handler in targets:
+                handler.handle(record)
+        except Exception:
+            self.handleError(record)
+
+
+_worlds_forward_installed: bool = False
+
+
+def install_worlds_log_forwarding() -> None:
+    """Input: None. Returns: None (attaches APAPI->Worlds forwarder once)."""
+    global _worlds_forward_installed
+    if _worlds_forward_installed:
+        return
+    apapi_logger = logging.getLogger("APAPI")
+    for existing in apapi_logger.handlers:
+        if isinstance(existing, _ForwardToWorlds):
+            _worlds_forward_installed = True
+            return
+    apapi_logger.addHandler(_ForwardToWorlds())
+    _worlds_forward_installed = True
+
+
 def record_hook_time(game: str, method: str, elapsed: float) -> None:
     """Input: game, method, elapsed. Returns: None (records timing)."""
     with _stats_lock:
@@ -213,6 +253,7 @@ __all__ = [
     "dump_referrer_report",
     "get_hook_stats",
     "hook_timer",
+    "install_worlds_log_forwarding",
     "is_debug_enabled",
     "is_refcount_debug_enabled",
     "record_hook_time",

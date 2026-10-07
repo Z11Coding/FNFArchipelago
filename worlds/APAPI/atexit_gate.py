@@ -301,7 +301,7 @@ def _ensure_yaml_versions() -> None:
     try:
         from .yaml_tools import resolve_player_files_dir, iter_player_yaml_files, read_yaml_documents_file
         from worlds.AutoWorld import AutoWorldRegister
-        from .updater import download_apworld_for_spec, get_temp_apworld_dir
+        from .updater import download_apworld_for_spec, get_run_temp_dir
         import pathlib, worlds, bisect
         pdir = resolve_player_files_dir()
         if not pdir or not pdir.is_dir():
@@ -322,7 +322,11 @@ def _ensure_yaml_versions() -> None:
                         continue
                     if game in AutoWorldRegister.world_types:
                         continue
-                    dest = download_apworld_for_spec(game, spec, get_temp_apworld_dir() / f"retry_{game.replace(' ', '_')}")
+                    from .updater import consent_to_download
+                    if not consent_to_download(str(game), spec):
+                        logger.info(f"Download of {game} {spec} was not approved; skipping yaml pre-ensure.")
+                        continue
+                    dest = download_apworld_for_spec(game, spec, get_run_temp_dir() / f"retry_{game.replace(' ', '_')}")
                     if dest and dest.is_file() and not any(pathlib.Path(s.resolved_path) == dest for s in worlds.world_sources):
                         src = worlds.WorldSource(str(dest), is_zip=True, relative=False)
                         bisect.insort(worlds.world_sources, src)
@@ -399,6 +403,22 @@ def _generate_wrapper(next_callable, *args: Any, **kwargs: Any) -> Any:
     except Exception:
         pass
     try:
+        from worlds.APAPI.updater import sweep_stale_temp_apworlds
+        sweep_stale_temp_apworlds()
+    except Exception:
+        pass
+    try:
+        # Ask up front for any temp apworld downloads this generation may
+        # need, so nothing is fetched without consent. Denials fail fast
+        # here with a clear message instead of mid-generation.
+        from worlds.APAPI.updater import precollect_consent, ConsentDeniedError, _scan_apworld_specs_from_yamls
+        precollect_consent(_scan_apworld_specs_from_yamls())
+    except ConsentDeniedError:
+        raise
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger("APAPI.AtexitGate").debug(f"precollect consent skipped: {exc}")
+    try:
         result = next_callable(*args, **kwargs)
         try:
             if isinstance(result, tuple) and len(result) == 2:
@@ -418,13 +438,69 @@ def _generate_wrapper(next_callable, *args: Any, **kwargs: Any) -> Any:
 
 
 def _roll_settings_wrapper(next_callable, yaml, *args, **kwargs):
+    game = yaml.get("game") if isinstance(yaml, dict) else None
+    spec = None
+    if isinstance(yaml, dict) and game:
+        if "apworld_version_wanted" in yaml:
+            spec = str(yaml["apworld_version_wanted"]).strip() or None
+        elif isinstance(yaml.get(str(game), {}), dict) and "apworld_version_wanted" in yaml[str(game)]:
+            spec = str(yaml[str(game)]["apworld_version_wanted"]).strip() or None
+    if game and not spec:
+        # Opt-in: missing game with no requested version -> latest index
+        # version, else the official Archipelago copy when the index marks
+        # the game supported; both flow through consent + routing afterwards.
+        try:
+            from worlds.AutoWorld import AutoWorldRegister as _Reg
+            if str(game) not in _Reg.world_types:
+                from worlds.APAPI.updater import _install_missing_from_index_enabled, _resolve_latest_from_index
+                if _install_missing_from_index_enabled():
+                    latest = _resolve_latest_from_index(str(game))
+                    if latest:
+                        import logging as _logging
+                        _logging.getLogger("APAPI.AtexitGate").info(
+                            f"No version requested for missing game {game}; index suggests {latest}.")
+                        spec = latest
+                    else:
+                        from worlds.APAPI.updater import _ensure_official_apworld, _record_implied_spec, get_run_temp_dir
+                        _cls, _ver = _ensure_official_apworld(
+                            str(game), None, get_run_temp_dir())
+                        if _cls is not None and _ver:
+                            _Reg.world_types[str(game)] = _cls
+                            try:
+                                _pname = str(yaml.get("name", "")).strip() if isinstance(yaml, dict) else ""
+                            except Exception:
+                                _pname = ""
+                            if _pname:
+                                _record_implied_spec(str(game), _pname, _ver)
+                            spec = _ver
+                        else:
+                            import logging as _logging2
+                            _logging2.getLogger("APAPI.AtexitGate").warning(
+                                f"Game {game} is not installed and the index lists no downloadable "
+                                f"versions for it; provide apworld_version_wanted (a version or "
+                                f"download URL) or install the apworld manually.")
+        except Exception:
+            pass
+        except Exception:
+            pass
+    if game and spec:
+        # Roll each yaml against its wanted version's options schema, so
+        # per-player options come from the right version even when versions
+        # differ across players in one generation.
+        try:
+            from worlds.APAPI.updater import ensure_versioned_class
+            from worlds.AutoWorld import AutoWorldRegister
+            cls = ensure_versioned_class(str(game), spec)
+            if cls is not None:
+                AutoWorldRegister.world_types[str(game)] = cls
+        except Exception:
+            pass
     try:
         return next_callable(yaml, *args, **kwargs)
     except Exception as exc:
         msg = str(exc)
         if "No world found" not in msg and "No functional world" not in msg:
             raise
-        game = yaml.get("game") if isinstance(yaml, dict) else None
         # The game may have failed its first import only because an apworld it
         # depends on (e.g. APAPI) had not loaded yet: apworlds load in world
         # version order, so dependents can come first. Reload failed worlds
@@ -444,23 +520,16 @@ def _roll_settings_wrapper(next_callable, yaml, *args, **kwargs):
         except Exception:
             pass
         try:
-            spec = None
-            if isinstance(yaml, dict):
-                if "apworld_version_wanted" in yaml:
-                    spec = str(yaml["apworld_version_wanted"]).strip()
-                elif isinstance(yaml.get(str(game), {}), dict) and "apworld_version_wanted" in yaml[str(game)]:
-                    spec = str(yaml[str(game)]["apworld_version_wanted"]).strip()
             if game and spec:
                 from worlds.AutoWorld import AutoWorldRegister
                 if str(game) not in AutoWorldRegister.world_types:
-                    from worlds.APAPI.updater import download_apworld_for_spec, get_temp_apworld_dir
-                    import pathlib, worlds, bisect
-                    dest = download_apworld_for_spec(str(game), spec, get_temp_apworld_dir() / f"roll_{str(game).replace(' ', '_')}")
-                    if dest and dest.is_file() and not any(pathlib.Path(s.resolved_path) == dest for s in worlds.world_sources):
-                        src = worlds.WorldSource(str(dest), is_zip=True, relative=False)
-                        bisect.insort(worlds.world_sources, src)
-                        if src.load():
-                            return next_callable(yaml, *args, **kwargs)
+                    from worlds.APAPI.updater import ensure_versioned_class, get_run_temp_dir
+                    cls = ensure_versioned_class(
+                        str(game), spec,
+                        get_run_temp_dir() / f"roll_{str(game).replace(' ', '_')}")
+                    if cls is not None:
+                        AutoWorldRegister.world_types[str(game)] = cls
+                        return next_callable(yaml, *args, **kwargs)
         except Exception:
             pass
         raise

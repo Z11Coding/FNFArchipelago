@@ -187,7 +187,8 @@ def _prompt_rename_apworld(src_path: str, world_name: str, root_folder: str) -> 
     msg = f'The APWorld {world_name} seems to expect to be named {root_folder}. Would you like to rename and try again?'
     if is_gen:
         try:
-            ans = input(f"\n{msg} [y/N]: ").strip().lower()
+            from .updater import _prompt_user
+            ans = (_prompt_user(f"\n{msg}\n [y/N]: ") or "").strip().lower()
             return ans in ("y", "yes")
         except (EOFError, OSError):
             logger.info(f"[APAPI:ready] {msg} (non-interactive, can't consent...)")
@@ -228,7 +229,8 @@ def _prompt_replace_existing(target: str) -> bool:
     msg = f"An APWorld named {target} already exists. Replace it?"
     if is_gen:
         try:
-            ans = input(f"\n{msg} [y/N]: ").strip().lower()
+            from .updater import _prompt_user
+            ans = (_prompt_user(f"\n{msg}\n [y/N]: ") or "").strip().lower()
             return ans in ("y", "yes")
         except (EOFError, OSError):
             return False
@@ -281,6 +283,23 @@ def _record_failed_world(worlds_module: Any, name: str, reason: str = "") -> Non
         pass
 
 
+def _is_temp_apworld_source(src: Any) -> bool:
+    """True when a world source lives under APAPI's temp dir (updater-owned)."""
+    try:
+        from pathlib import Path as _Path
+        from worlds.APAPI.updater import get_temp_apworld_dir as _temp_dir
+        _resolved = str(getattr(src, "resolved_path", None) or getattr(src, "path", "") or "")
+        if not _resolved:
+            return False
+        try:
+            _Path(_resolved).relative_to(_temp_dir())
+            return True
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+
 def _try_reload_failed_worlds() -> None:
     try:
         import worlds
@@ -321,6 +340,11 @@ def _try_reload_failed_worlds() -> None:
                     except Exception:
                         continue
                 if src is None:
+                    continue
+                # APAPI-managed temp apworlds (versioned side-loads) are owned
+                # by the updater: never retry, reload, or rename them here.
+                if _is_temp_apworld_source(src):
+                    logger.debug(f"[APAPI:ready] skipping temp apworld {world_name} in retry")
                     continue
                 # Check for misnamed apworld (root folder vs file stem)
                 try:

@@ -45,8 +45,9 @@ APAPI_DEFAULT_CONFIG = {
             "auto_update_enabled": False,
             "ask_in_terminal": True,
             "accept_mode": "each",
-            "index_url": "https://raw.githubusercontent.com/dowlle/Archipelago-index/main/index.json",
+            "index_url": "https://github.com/dowlle/Archipelago-index",
             "index_version": "latest",
+            "install_missing_from_index": False,
         },
         "generation_retry": {
             "enabled": False,

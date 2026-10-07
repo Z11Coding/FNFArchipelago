@@ -540,18 +540,44 @@ def _inject_nologic_meta_options():
 
         def _nl_set_options(multiworld_self, args):
             from worlds import AutoWorld as _AutoWorld
+            try:
+                # Prefer APAPI's shared tolerant builder when available; it
+                # handles version-routed classes and missing keys identically.
+                from worlds.APAPI.options_api import build_player_options as _build_opts
+            except Exception:
+                _build_opts = None
+            routed = getattr(multiworld_self, "_apapi_version_classes", None) or {}
+            unions = getattr(multiworld_self, "_apapi_option_union", None) or {}
+            labels = getattr(multiworld_self, "_apapi_version_labels", None) or {}
             for player in multiworld_self.player_ids:
-                world_type = _AutoWorld.AutoWorldRegister.world_types[
-                    multiworld_self.game[player]]
+                # Prefer a routed versioned class when the updater assigned one.
+                game = multiworld_self.game[player]
+                world_type = routed.get(player) or _AutoWorld.AutoWorldRegister.world_types[game]
                 multiworld_self.worlds[player] = world_type(multiworld_self, player)
-                options_dataclass = world_type.options_dataclass
-                dc_fields = getattr(options_dataclass, '__dataclass_fields__', {})
-                # Build kwargs filtered to only the fields the constructor actually knows.
-                multiworld_self.worlds[player].options = options_dataclass(**{
-                    k: getattr(args, k)[player]
-                    for k in options_dataclass.type_hints
-                    if k in dc_fields
-                })
+                if _build_opts is not None:
+                    multiworld_self.worlds[player].options = _build_opts(
+                        world_type, args, player, option_union=unions.get(game),
+                        game=game, version=labels.get(player, ""))
+                    dc_fields = getattr(world_type.options_dataclass, '__dataclass_fields__', {})
+                else:
+                    options_dataclass = world_type.options_dataclass
+                    dc_fields = getattr(options_dataclass, '__dataclass_fields__', {})
+                    # Build kwargs filtered to only the fields the constructor actually knows,
+                    # tolerating keys no player rolled (version divergence).
+                    _kwargs = {}
+                    for k in options_dataclass.type_hints:
+                        if k not in dc_fields:
+                            continue
+                        try:
+                            _kwargs[k] = getattr(args, k)[player]
+                        except Exception:
+                            try:
+                                _kwargs[k] = options_dataclass.type_hints[k].from_any(
+                                    options_dataclass.type_hints[k].default)
+                            except Exception:
+                                continue
+                    # Build kwargs filtered to only the fields the constructor actually knows.
+                    multiworld_self.worlds[player].options = options_dataclass(**_kwargs)
                 # For worlds without native nl_ support, attach values as plain attributes
                 # so NoLogic can always read them regardless of loading order.
                 if 'nl_force_progression_items' not in dc_fields:

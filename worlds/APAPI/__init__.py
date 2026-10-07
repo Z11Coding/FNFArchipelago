@@ -57,9 +57,11 @@ from .debug import (
     dump_referrer_report,
     get_hook_stats,
     hook_timer,
+    install_worlds_log_forwarding,
     is_debug_enabled,
     set_debug_enabled,
 )
+from .compat import install_compat, set_compat_enabled
 from .generation import KNOWN_STAGES, StageCallback, get_current_stage, initialize_stage_tracking, on_stage
 from .injection import GameRef, inject_option, inject_world_behavior, list_injected_options
 from .midgen import ExpansionSpec, LiveInjectError, inject_player_now
@@ -68,6 +70,8 @@ from .logic_api import first_blockades, sphere_summary_with_inventory
 from .nested_hooks import wrap_runtime_local_function
 from .options_api import (
     FlexibleRange,
+    NotImplementedOption,
+    build_player_options,
     list_global_options,
     register_global_option,
     register_global_options,
@@ -117,6 +121,7 @@ from .updater import ApworldVersionWanted  # noqa: F401 - ensures apworld_versio
 from .generation_gate import initialize_generation_gate, wait_for_all_patches
 from .atexit_gate import get_atexit_state, initialize_atexit_gate, remove_atexit_gate
 from .progress import initialize_progress, is_progress_enabled, set_progress_enabled
+from .progress import suspend_console_output, resume_console_output, install_input_override
 from .fuzzy import did_you_mean, format_did_you_mean
 from .launch_context import (
     GENERATE as LAUNCH_GENERATE,
@@ -212,6 +217,8 @@ __all__ = [
     "register_main_write_multidata_after",
     "set_current_multiworld",
     "FlexibleRange",
+    "NotImplementedOption",
+    "build_player_options",
     "register_global_option",
     "register_global_options",
     "register_option_for_games",
@@ -260,6 +267,9 @@ __all__ = [
     "dump_referrer_report",
     "get_hook_stats",
     "hook_timer",
+    "install_compat",
+    "set_compat_enabled",
+    "install_worlds_log_forwarding",
     "is_debug_enabled",
     "set_debug_enabled",
     "check_world_version",
@@ -287,6 +297,9 @@ __all__ = [
     "initialize_progress",
     "is_progress_enabled",
     "set_progress_enabled",
+    "suspend_console_output",
+    "resume_console_output",
+    "install_input_override",
     "did_you_mean",
     "format_did_you_mean",
     "LAUNCH_GENERATE",
@@ -364,6 +377,16 @@ __all__ = [
 ]
 
 
+# Mirror APAPI records to the "Worlds" logger while it has listeners (e.g.
+# the Launcher loading screen), so import/load/patch progress is visible.
+install_worlds_log_forwarding()
+# Compatibility shims for worlds written against older cores (lazy: only
+# worlds touching removed APIs are affected).
+install_compat()
+# Prompt-safe console: route builtins.input through APAPI quiescing so
+# background progress rendering cannot bury prompts awaiting input.
+# Semantics identical otherwise; removable via remove_input_override().
+install_input_override()
 initialize_core_hooks()
 initialize_multiworld_features()
 initialize_stage_tracking()

@@ -128,6 +128,45 @@ def _compress_yaml_metadata(yaml_string: str, options_dict: dict, formats_dict: 
         raise
 
 
+def _options_to_plain(options_obj: Any) -> Dict[str, Any]:
+    """Flatten an options object to plain values for compression/logging.
+
+    Options can be dataclass-like (read .value) or dict-like. Values whose
+    .value access raises (e.g. APAPI NotImplementedOption sentinels, which
+    raise by design on value use) fall back to their display string, so one
+    marker can never break slot data building.
+    """
+    plain: Dict[str, Any] = {}
+    try:
+        if hasattr(options_obj, '__dict__'):
+            # Dataclass-like object
+            for key, value in options_obj.__dict__.items():
+                if key.startswith('_'):
+                    continue
+                try:
+                    plain[key] = value.value if hasattr(value, 'value') else value
+                except Exception:
+                    try:
+                        plain[key] = str(value)
+                    except Exception:
+                        continue
+        elif hasattr(options_obj, 'items'):
+            # Dict-like object
+            for option_name, option in options_obj.items():
+                try:
+                    plain[option_name] = option.value if hasattr(option, 'value') else option
+                except Exception:
+                    try:
+                        plain[option_name] = str(option)
+                    except Exception:
+                        continue
+        else:
+            logger.warning(f"[YAML Embedder] Options object type unknown: {type(options_obj)}")
+    except Exception as e:
+        logger.warning(f"[YAML Embedder] Failed to flatten options: {e}")
+    return plain
+
+
 def _decompress_yaml_metadata(compressed_string: str) -> Dict[str, Any]:
     """Decompress YAML metadata from a base64-encoded gzip string.
     
@@ -744,25 +783,8 @@ def _patched_world_getattribute(self, name: str):
                 world_name = _original_world_getattribute(self, '__class__').__name__
                 player = _original_world_getattribute(self, 'player')
                 options_obj = _original_world_getattribute(self, 'options')
-                
-                # Options can be a dataclass or dict-like - handle both
-                if hasattr(options_obj, '__dict__'):
-                    # Dataclass-like object
-                    slot_options_for_compression = {
-                        key: value.value if hasattr(value, 'value') else value
-                        for key, value in options_obj.__dict__.items()
-                        if not key.startswith('_')
-                    }
-                elif hasattr(options_obj, 'items'):
-                    # Dict-like object
-                    slot_options_for_compression = {
-                        option_name: option.value if hasattr(option, 'value') else option
-                        for option_name, option in options_obj.items()
-                    }
-                else:
-                    logger.warning(f"[YAML Embedder] Options object type unknown: {type(options_obj)}")
-                    slot_options_for_compression = {}
-                
+                slot_options_for_compression = _options_to_plain(options_obj)
+
                 logger.info(f"[YAML Embedder] Built options for compression for {world_name} P{player}: {len(slot_options_for_compression)} keys")
             except Exception as e:
                 logger.warning(f"[YAML Embedder] Failed to build options for {world_name} P{player}: {e}")

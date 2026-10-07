@@ -7,7 +7,7 @@ import time
 from typing import Any, Dict, List, Type
 
 from BaseClasses import MultiWorld
-from Options import OptionGroup, PerGameCommonOptions, Range
+from Options import Option, OptionGroup, PerGameCommonOptions, Range
 from worlds.AutoWorld import AutoWorldRegister, WebWorld, WebWorldRegister
 
 from .debug import dprint
@@ -142,45 +142,129 @@ def _patch_webworld_register() -> None:
     _patched_webworld_register = True
 
 
+class NotImplementedOption(Option[str]):
+    """Sentinel for an option that does not exist in a world's version schema.
+
+    Assigned (never rolled or defaulted) for option keys the rest of the
+    multiworld has but this version never defined, so older worlds never
+    silently receive "default" values for options that were never part of
+    them. Loud on value use (prevents incorrect use in logic); safe to
+    display (spoiler/log surfaces show "NotImplemented").
+    """
+
+    display_name = "Not Implemented"
+    default = "NotImplemented"
+
+    def __init__(self, option_key: str = "", game: str = "", version: str = "") -> None:
+        self._option_key = str(option_key)
+        self._game = str(game)
+        self._version = str(version)
+
+    @classmethod
+    def from_any(cls, data: Any) -> "NotImplementedOption":
+        if isinstance(data, NotImplementedOption):
+            return data
+        return cls()
+
+    @property
+    def value(self) -> str:  # type: ignore[override]
+        raise NotImplementedError(
+            f"Option '{self._option_key}' is not implemented"
+            + (f" in {self._game}" if self._game else "")
+            + (f" {self._version}" if self._version else "")
+            + "; it must not be read for logic.")
+
+    @property
+    def current_option_name(self) -> str:
+        return "NotImplemented"
+
+    def __str__(self) -> str:
+        return "NotImplemented"
+
+
+def build_player_options(world_type: Any, args: Any, player: int,
+                         option_union: Any = None, game: str = "",
+                         version: str = "") -> Any:
+    """Build one player's options object, tolerating schema divergence.
+
+    Missing option keys (versioned schemas, globally injected options that
+    postdate args) fall back to the option default instead of crashing,
+    mirroring Generate's missing-option path. Keys the dataclass constructor
+    does not accept are attached afterwards. Shared by the set_options loops
+    so versioned and unversioned generations behave identically.
+
+    option_union: keys present anywhere in this generation for the game. Keys
+    the player's version schema lacks get a NotImplementedOption marker
+    instead of a silent default, so older worlds never receive defaults for
+    options that were never part of them (loud on value use, "NotImplemented"
+    on display).
+    """
+    options_dataclass: type[PerGameCommonOptions] = world_type.options_dataclass
+    type_hints = options_dataclass.type_hints
+    kwargs: Dict[str, Any] = {}
+    for option_key in type_hints:
+        # args may lack keys that were injected into type_hints after
+        # args was built (e.g. No Logic meta options registered globally
+        # via a cleared type-hint cache), or keys another routed version
+        # rolled but this player's version lacks. Fall back to the default.
+        values = getattr(args, option_key, None)
+        if isinstance(values, dict) and player in values:
+            kwargs[option_key] = values[player]
+        else:
+            option_class = type_hints[option_key]
+            kwargs[option_key] = option_class.from_any(option_class.default)
+
+    init_params = set(inspect.signature(options_dataclass).parameters) - {"self"}
+    overflow = {k: v for k, v in kwargs.items() if k not in init_params}
+    ctor_kwargs = {k: v for k, v in kwargs.items() if k in init_params}
+
+    options = options_dataclass(**ctor_kwargs)
+    for option_key, option_value in overflow.items():
+        setattr(options, option_key, option_value)
+    if option_union:
+        schema_keys = set(type_hints)
+        for option_key in sorted(set(option_union)):
+            if option_key in schema_keys or hasattr(options, option_key):
+                continue
+            try:
+                setattr(options, option_key, NotImplementedOption(option_key, game, version))
+            except Exception:
+                continue
+    return options
+
+
 def _patch_multiworld_set_options() -> None:
     global _patched_set_options
     if _patched_set_options:
         return
 
+    try:
+        from .hard_patch import hard_patches
+        if "BaseClasses.MultiWorld.set_options" in hard_patches.list_targets():
+            # The updater's routing wrapper already carries an equivalent
+            # tolerant loop; a direct assignment here would silently replace
+            # it and drop per-player version routing.
+            _patched_set_options = True
+            return
+    except Exception:
+        pass
+
     original = MultiWorld.set_options
 
     def patched_set_options(self: MultiWorld, args: Any) -> None:
-        from worlds import AutoWorld
-
+        # Prefer a routed versioned class when the updater assigned one;
+        # otherwise use the registered class (unchanged behavior).
+        routed = getattr(self, "_apapi_version_classes", None) or {}
+        unions = getattr(self, "_apapi_option_union", None) or {}
+        labels = getattr(self, "_apapi_version_labels", None) or {}
         for player in self.player_ids:
-            world_type = AutoWorld.AutoWorldRegister.world_types[self.game[player]]
+            game = self.game[player]
+            world_type = routed.get(player) or AutoWorldRegister.world_types[game]
             self.worlds[player] = world_type(self, player)
-
-            options_dataclass: type[PerGameCommonOptions] = world_type.options_dataclass
-            type_hints = options_dataclass.type_hints
-            kwargs: Dict[str, Any] = {}
-            for option_key in type_hints:
-                # args may lack keys that were injected into type_hints after
-                # args was built (e.g. No Logic meta options registered globally
-                # via a cleared type-hint cache). Fall back to the option default
-                # instead of crashing, mirroring Generate's missing-option path.
-                values = getattr(args, option_key, None)
-                if isinstance(values, dict) and player in values:
-                    kwargs[option_key] = values[player]
-                else:
-                    option_class = type_hints[option_key]
-                    kwargs[option_key] = option_class.from_any(option_class.default)
-
-            init_params = set(inspect.signature(options_dataclass).parameters) - {"self"}
-            overflow = {k: v for k, v in kwargs.items() if k not in init_params}
-            ctor_kwargs = {k: v for k, v in kwargs.items() if k in init_params}
-
-            if overflow:
-                self.worlds[player].options = options_dataclass(**ctor_kwargs)
-                for option_key, option_value in overflow.items():
-                    setattr(self.worlds[player].options, option_key, option_value)
-            else:
-                self.worlds[player].options = options_dataclass(**kwargs)
+            self.worlds[player].options = build_player_options(
+                world_type, args, player,
+                option_union=unions.get(game), game=game,
+                version=labels.get(player, ""))
 
     MultiWorld.set_options = patched_set_options
     _patched_set_options = True

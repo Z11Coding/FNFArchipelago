@@ -35,6 +35,510 @@ _start_time: float | None = None
 _enabled = True
 _initialized = False
 
+# Console suspension: while > 0, tqdm rendering is held (monitor thread and
+# update paths included) so prompts awaiting input are not erased or buried.
+# Internal counters keep updating, so bars resume accurately.
+_suspend_count = 0
+_suspend_snapshot: dict[int, Any] = {}
+
+# Deferred console output: while suspended, sub-warning console log records
+# and console print() text are buffered in arrival order and replayed on
+# resume, so background threads cannot print over a prompt awaiting input.
+# File handlers are never touched (nothing is ever lost), WARNING+ always
+# prints immediately, and logging/printing is never blocked.
+_defer_lock = threading.Lock()
+_deferred: list[Any] = []  # ("log", handler, record) | ("print", text)
+_wrapped_handlers: dict[int, Any] = {}
+_defer_dropped = 0
+_DEFER_CAP = 1000
+
+
+def _buffer_entry(entry: Any) -> None:
+    global _defer_dropped
+    try:
+        with _defer_lock:
+            _deferred.append(entry)
+            while len(_deferred) > _DEFER_CAP:
+                _deferred.pop(0)
+                _defer_dropped += 1
+    except Exception:
+        pass
+
+
+def _tracked_bars() -> list[Any]:
+    seen: set[int] = set()
+    out: list[Any] = []
+    candidates: list[Any] = [_stage_bar, _fill_bar] + list(_fill_bars.values())
+    try:
+        candidates.append(_overall_fill_bar)
+    except NameError:
+        pass
+    for bar in candidates:
+        if bar is not None and id(bar) not in seen:
+            seen.add(id(bar))
+            out.append(bar)
+    return out
+
+
+def console_suspended() -> bool:
+    """Returns: True while console output is suspended for a prompt."""
+    return _suspend_count > 0
+
+
+def suspend_console_output() -> None:
+    """Hold all APAPI progress rendering (reentrant). Counters keep updating."""
+    global _suspend_count
+    with _progress_lock:
+        _suspend_count += 1
+        if _suspend_count > 1:
+            return
+        _suspend_snapshot.clear()
+        for bar in _tracked_bars():
+            try:
+                _suspend_snapshot[id(bar)] = (bar, bool(getattr(bar, "disable", False)))
+                bar.disable = True
+            except Exception:
+                continue
+        _install_log_defer()
+
+
+def resume_console_output() -> None:
+    """Resume rendering after suspend_console_output (reentrant). Repaints once."""
+    global _suspend_count
+    with _progress_lock:
+        if _suspend_count > 0:
+            _suspend_count -= 1
+        if _suspend_count > 0:
+            return
+        _remove_log_defer()
+        snapshot = dict(_suspend_snapshot)
+        _suspend_snapshot.clear()
+        for _bid, (bar, prev) in snapshot.items():
+            try:
+                bar.disable = prev
+            except Exception:
+                continue
+        for bar in _tracked_bars():
+            try:
+                if id(bar) not in snapshot:
+                    bar.disable = False
+            except Exception:
+                pass
+            try:
+                bar.refresh()
+            except Exception:
+                pass
+
+
+def _console_stream_handlers() -> dict[int, Any]:
+    """Currently attached console (non-file stream) handlers, by id."""
+    import logging as _logging
+    found: dict[int, Any] = {}
+    try:
+        loggers: list[Any] = [_logging.root]
+        try:
+            manager_dict = _logging.Logger.manager.loggerDict
+        except Exception:
+            manager_dict = {}
+        for logger_obj in list(manager_dict.values()):
+            if isinstance(logger_obj, _logging.Logger):
+                loggers.append(logger_obj)
+        for logger_obj in loggers:
+            try:
+                handlers = list(logger_obj.handlers)
+            except Exception:
+                continue
+            for handler in handlers:
+                try:
+                    if isinstance(handler, _logging.StreamHandler) \
+                            and not isinstance(handler, _logging.FileHandler):
+                        found[id(handler)] = handler
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return found
+
+
+def _make_deferring_emit(handler: Any, orig_emit: Any) -> Any:
+    import logging as _logging
+
+    def _emit(record: Any) -> None:
+        try:
+            if record.levelno >= _logging.WARNING:
+                orig_emit(record)
+                return
+        except Exception:
+            pass
+        _buffer_entry(("log", handler, record))
+
+    return _emit
+
+
+def _install_log_defer() -> None:
+    """Buffer sub-warning console records until resume (best effort)."""
+    try:
+        for hid, handler in _console_stream_handlers().items():
+            try:
+                if getattr(handler, "_apapi_defer_wrapped", False):
+                    continue
+                orig_emit = handler.emit
+                handler.emit = _make_deferring_emit(handler, orig_emit)  # type: ignore[method-assign]
+                handler._apapi_defer_wrapped = True  # type: ignore[attr-defined]
+                with _defer_lock:
+                    _wrapped_handlers[hid] = (handler, orig_emit)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+
+def _remove_log_defer() -> None:
+    """Restore console handlers and replay buffered records in order."""
+    try:
+        with _defer_lock:
+            wrapped = list(_wrapped_handlers.values())
+            _wrapped_handlers.clear()
+            pending = list(_deferred)
+            _deferred.clear()
+        for handler, orig_emit in wrapped:
+            try:
+                handler.emit = orig_emit
+            except Exception:
+                continue
+            try:
+                handler._apapi_defer_wrapped = False  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        # Drain anything appended between snapshot and restore, then replay.
+        try:
+            with _defer_lock:
+                pending.extend(_deferred)
+                _deferred.clear()
+        except Exception:
+            pass
+    except Exception:
+        return
+    by_orig: dict[int, Any] = {}
+    for handler, orig_emit in wrapped:
+        try:
+            by_orig[id(handler)] = orig_emit
+        except Exception:
+            continue
+    for entry in pending:
+        try:
+            if not isinstance(entry, tuple) or not entry:
+                continue
+            if entry[0] == "print":
+                try:
+                    import sys as _sys3
+                    _stream = getattr(_sys3, "stdout", None)
+                    if _stream is not None:
+                        _stream.write(entry[1])
+                except Exception:
+                    pass
+                continue
+            _handler, _record = entry[1], entry[2]
+            orig = by_orig.get(id(_handler))
+            (orig or _handler.emit)(_record)
+        except Exception:
+            continue
+    try:
+        import sys as _sys4
+        _sys4.stdout.flush()
+    except Exception:
+        pass
+
+
+_orig_input: Any = None
+_input_installed = False
+
+
+def _apapi_input(prompt: str = "") -> str:
+    """input() with APAPI console quiesced. Semantics identical to builtin."""
+    suspend_console_output()
+    try:
+        try:
+            import sys as _sys
+            _sys.stdout.flush()
+        except Exception:
+            pass
+        try:
+            import sys as _sys2
+            _sys2.stderr.flush()
+        except Exception:
+            pass
+        try:
+            import logging as _logging
+            for _handler in list(_logging.root.handlers):
+                try:
+                    _handler.flush()
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        if _orig_input is None:
+            raise RuntimeError("APAPI input override installed without an original input")
+        return _orig_input(prompt)
+    finally:
+        resume_console_output()
+
+
+def install_input_override() -> None:
+    """Route builtins.input/print and pprint through console quiescing.
+
+    Idempotent. Behavior is otherwise identical: same prompt handling, same
+    return values, same exceptions (EOFError/OSError/RuntimeError propagate
+    unchanged). Console print()/pprint() text and sub-warning console logs
+    arriving while suspended are buffered and replayed in order on resume,
+    so background threads cannot bury prompts awaiting input. Worlds calling
+    input()/inputimeout()/print()/pprint() are covered with no code changes.
+    """
+    global _orig_input, _input_installed, _orig_print, _print_installed
+    if _input_installed:
+        try:
+            _install_pprint_override()
+        except Exception:
+            pass
+        return
+    try:
+        import builtins as _builtins
+    except Exception:
+        return
+    try:
+        current = _builtins.input
+        if getattr(current, "__apapi_input_wrapped__", False):
+            _input_installed = True
+        else:
+            _orig_input = current
+
+            def _wrapped(prompt: str = "") -> str:
+                return _apapi_input(prompt)
+
+            _wrapped.__apapi_input_wrapped__ = True  # type: ignore[attr-defined]
+            try:
+                _wrapped.__name__ = "input"
+            except Exception:
+                pass
+            _builtins.input = _wrapped  # type: ignore[assignment]
+        current_print = _builtins.print
+        if getattr(current_print, "__apapi_print_wrapped__", False):
+            _print_installed = True
+        else:
+            _orig_print = current_print
+
+            def _wrapped_print(*args: Any, sep: str = " ", end: str = "\n",
+                               file: Any = None, flush: bool = False) -> None:
+                _apapi_print(*args, sep=sep, end=end, file=file, flush=flush)
+
+            _wrapped_print.__apapi_print_wrapped__ = True  # type: ignore[attr-defined]
+            try:
+                _wrapped_print.__name__ = "print"
+            except Exception:
+                pass
+            _builtins.print = _wrapped_print  # type: ignore[assignment]
+    except Exception:
+        return
+    _input_installed = True
+    _print_installed = True
+    try:
+        _install_pprint_override()
+    except Exception:
+        pass
+
+
+def remove_input_override() -> bool:
+    """Restore the original builtins.input/print and pprint. Returns: True if removed."""
+    global _orig_input, _input_installed, _orig_print, _print_installed
+    global _orig_pprint, _orig_pp, _pprint_installed
+    removed = False
+    try:
+        import builtins as _builtins
+        current = _builtins.input
+        if getattr(current, "__apapi_input_wrapped__", False) and _orig_input is not None:
+            _builtins.input = _orig_input  # type: ignore[assignment]
+            _orig_input = None
+            _input_installed = False
+            removed = True
+    except Exception:
+        pass
+    try:
+        import builtins as _builtins2
+        current_print = _builtins2.print
+        if getattr(current_print, "__apapi_print_wrapped__", False) and _orig_print is not None:
+            _builtins2.print = _orig_print  # type: ignore[assignment]
+            _orig_print = None
+            _print_installed = False
+            removed = True
+    except Exception:
+        pass
+    try:
+        import pprint as _pprint_mod
+        current_pprint = getattr(_pprint_mod, "pprint", None)
+        if getattr(current_pprint, "__apapi_pprint_wrapped__", False) and _orig_pprint is not None:
+            _pprint_mod.pprint = _orig_pprint  # type: ignore[assignment]
+            _orig_pprint = None
+            removed = True
+        current_pp = getattr(_pprint_mod, "pp", None)
+        if current_pp is not None and getattr(current_pp, "__apapi_pprint_wrapped__", False) \
+                and _orig_pp is not None:
+            _pprint_mod.pp = _orig_pp  # type: ignore[assignment]
+            _orig_pp = None
+            removed = True
+    except Exception:
+        pass
+    _pprint_installed = False
+    return removed
+
+
+_orig_print: Any = None
+_print_installed = False
+
+
+def _apapi_print(*args: Any, sep: str = " ", end: str = "\n",
+                 file: Any = None, flush: bool = False) -> None:
+    """print() with console output held while suspended. Semantics identical.
+
+    Only output aimed at the live console (stdout/stderr) is deferred;
+    writes to files or replaced streams pass straight through. Deferred
+    text replays verbatim on resume.
+    """
+    try:
+        import sys as _sys
+        stream = file if file is not None else _sys.stdout
+        try:
+            is_console = stream is not None and (stream is _sys.stdout or stream is _sys.stderr)
+        except Exception:
+            is_console = False
+        if is_console and console_suspended():
+            try:
+                text = sep.join(str(o) for o in args) + end if end else sep.join(str(o) for o in args)
+                _buffer_entry(("print", text))
+                return None
+            except Exception:
+                pass
+    except Exception:
+        pass
+    if _orig_print is None:
+        raise RuntimeError("APAPI print override installed without an original print")
+    return _orig_print(*args, sep=sep, end=end, file=file, flush=flush)
+
+
+_orig_pprint: Any = None
+_orig_pp: Any = None
+_pprint_installed = False
+
+
+def _pprint_target_is_console(stream: Any) -> bool:
+    try:
+        import sys as _sys
+        if stream is None:
+            stream = _sys.stdout
+        return stream is not None and (stream is _sys.stdout or stream is _sys.stderr)
+    except Exception:
+        return False
+
+
+def _apapi_pprint(object: Any, stream: Any = None, indent: int = 1, width: int = 80,
+                  depth: Any = None, *, compact: bool = False, sort_dicts: bool = True,
+                  underscore_numbers: bool = False) -> None:
+    """pprint.pprint() with console output held while suspended. Semantics identical."""
+    try:
+        if _pprint_target_is_console(stream) and console_suspended():
+            try:
+                import pprint as _pprint_mod
+                text = _pprint_mod.pformat(
+                    object, indent=indent, width=width, depth=depth,
+                    compact=compact, sort_dicts=sort_dicts,
+                    underscore_numbers=underscore_numbers) + "\n"
+                _buffer_entry(("print", text))
+                return None
+            except Exception:
+                pass
+    except Exception:
+        pass
+    if _orig_pprint is None:
+        raise RuntimeError("APAPI pprint override installed without an original pprint")
+    return _orig_pprint(object, stream=stream, indent=indent, width=width, depth=depth,
+                        compact=compact, sort_dicts=sort_dicts,
+                        underscore_numbers=underscore_numbers)
+
+
+def _apapi_pp(object: Any, stream: Any = None, indent: int = 1, width: int = 80,
+              depth: Any = None, *, compact: bool = False, sort_dicts: bool = False,
+              underscore_numbers: bool = False) -> None:
+    """pprint.pp() with console output held while suspended. Semantics identical."""
+    try:
+        if _pprint_target_is_console(stream) and console_suspended():
+            try:
+                import pprint as _pprint_mod
+                text = _pprint_mod.pformat(
+                    object, indent=indent, width=width, depth=depth,
+                    compact=compact, sort_dicts=sort_dicts,
+                    underscore_numbers=underscore_numbers) + "\n"
+                _buffer_entry(("print", text))
+                return None
+            except Exception:
+                pass
+    except Exception:
+        pass
+    if _orig_pp is None:
+        raise RuntimeError("APAPI pp override installed without an original pp")
+    return _orig_pp(object, stream=stream, indent=indent, width=width, depth=depth,
+                    compact=compact, sort_dicts=sort_dicts,
+                    underscore_numbers=underscore_numbers)
+
+
+def _install_pprint_override() -> None:
+    """Route pprint.pprint/pp through console quiescing (idempotent)."""
+    global _orig_pprint, _orig_pp, _pprint_installed
+    if _pprint_installed:
+        return
+    try:
+        import pprint as _pprint_mod
+    except Exception:
+        return
+    try:
+        current = getattr(_pprint_mod, "pprint", None)
+        if getattr(current, "__apapi_pprint_wrapped__", False):
+            _pprint_installed = True
+        elif current is not None:
+            _orig_pprint = current
+
+            def _wrapped_pprint(object: Any, stream: Any = None, indent: int = 1,
+                                width: int = 80, depth: Any = None, *, compact: bool = False,
+                                sort_dicts: bool = True, underscore_numbers: bool = False) -> None:
+                return _apapi_pprint(object, stream=stream, indent=indent, width=width,
+                                     depth=depth, compact=compact, sort_dicts=sort_dicts,
+                                     underscore_numbers=underscore_numbers)
+
+            _wrapped_pprint.__apapi_pprint_wrapped__ = True  # type: ignore[attr-defined]
+            try:
+                _wrapped_pprint.__name__ = "pprint"
+            except Exception:
+                pass
+            _pprint_mod.pprint = _wrapped_pprint  # type: ignore[assignment]
+        current_pp = getattr(_pprint_mod, "pp", None)
+        if current_pp is not None and not getattr(current_pp, "__apapi_pprint_wrapped__", False):
+            _orig_pp = current_pp
+
+            def _wrapped_pp(object: Any, stream: Any = None, indent: int = 1,
+                            width: int = 80, depth: Any = None, *, compact: bool = False,
+                            sort_dicts: bool = False, underscore_numbers: bool = False) -> None:
+                return _apapi_pp(object, stream=stream, indent=indent, width=width,
+                                 depth=depth, compact=compact, sort_dicts=sort_dicts,
+                                 underscore_numbers=underscore_numbers)
+
+            _wrapped_pp.__apapi_pprint_wrapped__ = True  # type: ignore[attr-defined]
+            try:
+                _wrapped_pp.__name__ = "pp"
+            except Exception:
+                pass
+            _pprint_mod.pp = _wrapped_pp  # type: ignore[assignment]
+    except Exception:
+        return
+    _pprint_installed = True
+
 
 def is_progress_enabled() -> bool:
     """Return True if progress bar should show."""
@@ -75,6 +579,7 @@ def _ensure_stage_bar():
             dynamic_ncols=True,
             leave=True,
             position=0,
+            disable=console_suspended(),
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}",
         )
         _start_time = time.perf_counter()
@@ -161,6 +666,7 @@ def _ensure_fill_bar(name: str, total: int):
                 dynamic_ncols=True,
                 leave=False,
                 position=2,
+                disable=console_suspended(),
                 bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}] {postfix}",
             )
             _fill_bars[name] = bar
@@ -259,7 +765,7 @@ def _ensure_overall_fill_bar(total: int) -> Any:
                 leave=True,
                 position=1,
                 file=_sys.stderr,
-                disable=False,
+                disable=True if console_suspended() else False,
                 bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}",
             )
             dprint("progress", f"overall fill bar total {total}")
@@ -547,4 +1053,6 @@ def initialize_progress() -> None:
     dprint("progress", "progress initialized")
 
 
-__all__ = ["initialize_progress", "is_progress_enabled", "set_progress_enabled"]
+__all__ = ["initialize_progress", "is_progress_enabled", "set_progress_enabled",
+           "suspend_console_output", "resume_console_output", "console_suspended",
+           "install_input_override", "remove_input_override"]
